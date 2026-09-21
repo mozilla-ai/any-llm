@@ -22,11 +22,13 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.types.model import Model
+from any_llm.types.rerank import RerankResponse, RerankResult, RerankUsage
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 if TYPE_CHECKING:
     from together.types import BatchJob as TogetherBatchJob
     from together.types import Embedding as TogetherEmbedding
+    from together.types import RerankCreateResponse as TogetherRerankResponse
 
 DEFAULT_COMPLETION_WINDOW = "24h"
 
@@ -206,6 +208,29 @@ def _create_openai_embedding_response_from_together(
         data=embeddings,
         model=response.model,
         object="list",
+        usage=usage,
+    )
+
+
+def _convert_together_rerank_response(response: "TogetherRerankResponse") -> RerankResponse:
+    """Convert a Together rerank response to a normalized RerankResponse."""
+    results = [
+        RerankResult(
+            index=result.index,
+            relevance_score=result.relevance_score,
+        )
+        for result in response.results
+    ]
+    # Defensive: Together returns sorted but re-sort to guarantee the docstring contract
+    results.sort(key=lambda r: r.relevance_score, reverse=True)
+
+    usage = None
+    if response.usage is not None:
+        usage = RerankUsage(total_tokens=response.usage.total_tokens)
+
+    return RerankResponse(
+        id=response.id,
+        results=results,
         usage=usage,
     )
 

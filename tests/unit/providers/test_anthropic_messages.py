@@ -12,12 +12,14 @@ import pytest
 from anthropic import transform_schema
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 from anthropic.types.beta import BetaMCPToolUseBlock, BetaMessage, BetaThinkingBlock, BetaUsage
+from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage
+from anthropic.types.parsed_message import ParsedMessage
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas, _pop_anthropic_beta_header
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import CompletionParams, ReasoningEffort
 from any_llm.types.messages import (
     CompactionDelta,
     ContentBlockDeltaEvent,
@@ -417,14 +419,64 @@ async def test_anthropic_sdk_accepts_completion_sampling_parameters() -> None:
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=1024,
                 temperature=0.7,
-                top_p=0.9,
-            )
+                top_p=0.0,
+            ),
         )
 
     assert len(requests) == 1
     request_body = json.loads(requests[0].content)
     assert request_body["temperature"] == 0.7
-    assert request_body["top_p"] == 0.9
+    assert request_body["top_p"] == 0.0
+
+
+@pytest.mark.parametrize("model", ["claude-opus-4-6", "claude-sonnet-4-6"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("effort", "thinking"),
+    [("high", {"type": "adaptive"}), ("auto", None), ("none", {"type": "disabled"})],
+)
+@pytest.mark.asyncio
+async def test_anthropic_sdk_preserves_reasoning_effort_thinking(
+    model: str, stream: bool, effort: ReasoningEffort, thinking: dict[str, str] | None
+) -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if stream:
+            events = [
+                ("message_start", {"type": "message_start", "message": _sdk_message_response()}),
+                ("message_stop", {"type": "message_stop"}),
+            ]
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text="".join(f"event: {event}\ndata: {json.dumps(data)}\n\n" for event, data in events),
+            )
+        return httpx.Response(200, json=_sdk_message_response())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        response = await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=1024,
+                reasoning_effort=effort,
+                stream=stream,
+            )
+        )
+        if stream:
+            assert isinstance(response, AsyncIterator)
+            async for _ in response:
+                pass
+
+    assert len(requests) == 1
+    body = json.loads(requests[0].content)
+    assert body["model"] == model
+    assert body.get("stream", False) is stream
+    assert body.get("thinking") == thinking
+    assert body.get("output_config") == ({"effort": "high"} if effort == "high" else None)
 
 
 @pytest.mark.asyncio
@@ -447,7 +499,7 @@ async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
                 top_k=40,
                 container="container_123",
                 service_tier="standard_only",
-            )
+            ),
         )
 
     assert isinstance(result, MessageResponse)
@@ -787,18 +839,16 @@ def test_messages_betas_rejects_non_list_edits(edits: Any) -> None:
         _messages_betas(params)
 
 
-def test_pop_anthropic_beta_header_decodes_bytes() -> None:
-    kwargs = {
-        "extra_headers": {
-            "anthropic-beta": b"fast-mode-2026-02-01, compact-2026-01-12",
-            "x-custom-header": "custom-value",
-        }
-    }
+def test_pop_anthropic_beta_header_normalizes_bytes_without_mutating_headers() -> None:
+    value = b"fast-mode-2026-02-01, compact-2026-01-12"
+    headers = {"anthropic-beta": value, "x-custom-header": "custom-value"}
+    kwargs = {"extra_headers": headers}
 
     betas = _pop_anthropic_beta_header(kwargs)
 
     assert betas == ["fast-mode-2026-02-01", "compact-2026-01-12"]
-    assert kwargs == {"extra_headers": {"x-custom-header": "custom-value"}}
+    assert kwargs["extra_headers"] == {"x-custom-header": "custom-value"}
+    assert headers == {"anthropic-beta": value, "x-custom-header": "custom-value"}
 
 
 @pytest.mark.parametrize("value", [object(), b"\xff"])
@@ -1233,6 +1283,31 @@ async def test_amessages_non_streaming_with_all_params() -> None:
     assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 8192}
 
 
+@pytest.mark.parametrize("beta_header", ["future-beta", b"future-beta"])
+@pytest.mark.asyncio
+async def test_amessages_sdk_accepts_normalized_beta_header(beta_header: str | bytes) -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_sdk_message_response())
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+    )
+    try:
+        await provider._amessages(params, extra_headers={"anthropic-beta": beta_header})
+    finally:
+        await http_client.aclose()
+
+    assert len(requests) == 1
+    assert requests[0].headers["anthropic-beta"] == "future-beta"
+
+
 @pytest.mark.asyncio
 async def test_amessages_output_format_uses_native_parse() -> None:
     """With output_format set, the native path returns messages.parse output unchanged."""
@@ -1271,6 +1346,9 @@ async def test_amessages_output_format_uses_native_parse() -> None:
         model="claude-3-5-sonnet",
         messages=[{"role": "user", "content": "Capital of France?"}],
         max_tokens=1024,
+        temperature=0.5,
+        top_p=0.9,
+        top_k=40,
         output_format=City,
     )
     result = await BaseAnthropicProvider._amessages(provider, params)
@@ -1284,6 +1362,9 @@ async def test_amessages_output_format_uses_native_parse() -> None:
     # output_format is passed to parse as its dedicated kwarg; other params still flow through.
     call_kwargs = mock_client.messages.parse.call_args.kwargs
     assert call_kwargs["output_format"] is City
+    assert call_kwargs["temperature"] == 0.5
+    assert call_kwargs["top_p"] == 0.9
+    assert call_kwargs["top_k"] == 40
 
 
 @pytest.mark.asyncio
@@ -1337,6 +1418,28 @@ async def test_amessages_effort_only_output_config_reaches_create() -> None:
     await BaseAnthropicProvider._amessages(provider, params)
 
     assert mock_client.messages.create.call_args.kwargs["output_config"] == {"effort": "high"}
+
+
+@pytest.mark.asyncio
+async def test_public_amessages_without_schema_returns_message_response() -> None:
+    """amessages with an effort-only output config takes the create path and returns a plain MessageResponse."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["output_config"] == {"effort": "high"}
+        return httpx.Response(200, json=_sdk_message_response())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        result = await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Capital of France?"}],
+            max_tokens=128,
+            output_format={"effort": "high"},
+        )
+
+    assert isinstance(result, MessageResponse)
+    assert isinstance(result.content[0], TextBlock)
+    assert result.content[0].text == "Hello!"
 
 
 @pytest.mark.asyncio
@@ -1583,6 +1686,34 @@ async def test_amessages_typed_output_format_streams_through_sdk_transport() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("beta_kwargs", [{}, {"betas": ["test-beta"]}, {"context_management": {"edits": []}}])
+@pytest.mark.parametrize("typed", [False, True])
+async def test_public_amessages_parsed_result_type(beta_kwargs: dict[str, Any], typed: bool) -> None:
+    class City(BaseModel):
+        city: str
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_make_message(content=[TextBlock(type="text", text='{"city":"Paris"}')]).model_dump(mode="json"),
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = AnthropicProvider(api_key="test-key", http_client=client)
+        result = await provider.amessages(
+            model="test-model",
+            messages=[{"role": "user", "content": "Capital of France?"}],
+            max_tokens=128,
+            output_format=City if typed else {"format": {"type": "json_schema", "schema": City.model_json_schema()}},
+            **beta_kwargs,
+        )
+
+    expected = ParsedBetaMessage if typed and beta_kwargs else ParsedMessage
+    assert isinstance(result, expected)
+    assert result.parsed_output == (City(city="Paris") if typed else {"city": "Paris"})
+
+
+@pytest.mark.asyncio
 async def test_amessages_cache_control_passthrough() -> None:
     """Test that cache_control is passed through to the API call."""
     mock_message = _make_message(content=[TextBlock(type="text", text="Hello!")])
@@ -1643,10 +1774,12 @@ async def test_amessages_streaming_delegates_to_stream_method() -> None:
         model="claude-3-5-sonnet",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
+        top_p=0.9,
         stream=True,
     )
     await BaseAnthropicProvider._amessages(provider, params)
-    provider._stream_messages_async.assert_called_once()
+    call_kwargs = provider._stream_messages_async.call_args.kwargs
+    assert call_kwargs["top_p"] == 0.9
 
 
 @pytest.mark.asyncio

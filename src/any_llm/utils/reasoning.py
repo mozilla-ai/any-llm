@@ -260,7 +260,7 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
 
     This function mutates the message_dict in place:
     1. First checks for reasoning in provider-specific fields (reasoning_content, thinking, etc.)
-    2. Then extracts reasoning from XML tags in content (<think>, <thinking>, etc.)
+    2. Then extracts reasoning from XML tags in content in textual order (<think>, <thinking>, etc.)
     3. Combines both sources if both exist
     4. Removes XML tags from content and stores reasoning separately
 
@@ -284,18 +284,19 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
 
     content = message_dict.get("content")
     if isinstance(content, str):
-        for tag_name in REASONING_FIELD_NAMES:
-            tag_open = f"<{tag_name}>"
-            tag_close = f"</{tag_name}>"
-            think_pattern = re.escape(tag_open) + r"(.*?)" + re.escape(tag_close)
-            matches = re.findall(think_pattern, content, re.DOTALL)
-            if matches:
-                extracted_reasoning = "\n".join(matches)
-                if reasoning_content:
-                    reasoning_content = f"{reasoning_content}\n{extracted_reasoning}"
-                else:
-                    reasoning_content = extracted_reasoning
-                content = re.sub(think_pattern, "", content, flags=re.DOTALL).strip()
+        tag_names = "|".join(re.escape(tag_name) for tag_name in REASONING_FIELD_NAMES)
+        think_pattern = re.compile(rf"<(?P<tag>{tag_names})>(?P<reasoning>.*?)</(?P=tag)>", re.DOTALL)
+        matches = [match.group("reasoning") for match in think_pattern.finditer(content)]
+        if matches:
+            # An empty block contributes no reasoning, so it must not contribute a separator
+            # either: joining ["", "B"] verbatim would report reasoning that opens with a blank
+            # line, and ["", ""] would report a lone newline as if it were reasoning.
+            extracted_reasoning = "\n".join(match for match in matches if match)
+            if reasoning_content:
+                reasoning_content = f"{reasoning_content}\n{extracted_reasoning}"
+            else:
+                reasoning_content = extracted_reasoning
+            content = think_pattern.sub("", content).strip()
 
         message_dict["content"] = content
 

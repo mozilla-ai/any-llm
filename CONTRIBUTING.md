@@ -193,8 +193,8 @@ Open a PR when you want the provider **listed in our docs and resolvable by name
 
 | Your provider...                                                                                                     | Goes in                                            | See |
 | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | --- |
-| speaks the OpenAI API and needs nothing beyond a base URL, an API key env var, and capability flags                   | a row in `src/any_llm/providers/registry.py`        | [2a](#2a-config-only-gateways-add-a-registry-row) |
-| needs custom auth, non-OpenAI request or response shapes, param translation, or model-list quirks                     | a folder under `src/any_llm/providers/`             | [2b](#2b-providers-that-need-code) |
+| speaks the OpenAI API and needs nothing beyond a base URL, an API key env var (which `api_key_optional` lets go unset), and capability flags | a row in `src/any_llm/providers/registry.py`        | [2a](#2a-config-only-gateways-add-a-registry-row) |
+| needs an auth scheme beyond an API key env var, non-OpenAI request or response shapes, param translation, or model-list quirks | a folder under `src/any_llm/providers/`             | [2b](#2b-providers-that-need-code) |
 
 The deciding question is whether the protocol *requires* the code, judged by the reviewer. Shipping an official SDK is not by itself a reason for a folder, and adding an override that is not needed does not turn a config-only gateway into a code provider.
 
@@ -220,9 +220,12 @@ Before requesting or implementing:
 - [ ] Provider has an official Python SDK **OR** well-documented REST API
 - [ ] Provider is actively maintained and supported
 - [ ] Provider's interface is compatible with any-llm's design
-- [ ] No existing issue/PR for adding this provider
+- [ ] No existing duplicate implementation issue/PR for adding this provider
+- [ ] Someone who does not work on the provider has asked for it
 
-A provider that needs a **code folder** must also clear a usage bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows waive it because a row costs one line to add and one line to remove. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
+**Demand comes before cost.** Being listed is an endorsement, and the endorsement does not shrink with the diff. We add a gateway when an any-llm user who does not work on it has asked for it, in an issue or a discussion, or when a maintainer picks it up. A row submitted by the gateway's own operator with no such request is closed regardless of how clean it is, and regardless of how cheap it is to remove later. Disclose an affiliation in the PR; contributing your own gateway is welcome once someone has asked for it.
+
+A provider that needs a **code folder** carries a further bar: a substantial user base or unique capabilities. A folder is the expensive category, in review attention now and in maintenance and eventual cleanup later, so it carries that bar in both tiers. Registry rows do not carry the usage bar, since a row costs one line to add and one line to remove, but they still carry the demand requirement above. Asking for the **verified** tier raises the bar further, since it commits us to holding a key and fixing breakage.
 
 ### 2a. Config-only Gateways: Add a Registry Row
 
@@ -241,6 +244,8 @@ Add one row to `PROVIDER_REGISTRY` in `src/any_llm/providers/registry.py`:
 That row is the whole change. There is no provider class, no folder, no `__init__.py`, no `pyproject.toml` extra, and no `LLMProvider` member: the name resolves by string everywhere a provider name is accepted, including `AnyLLM.create("examplegw")`, `"examplegw:model"`, and `provider="examplegw"`.
 
 - [ ] Add the row, setting capability flags for what the gateway actually supports. Flags default to the conservative baseline of completion, streaming, and model listing; everything else is opt-in. Do not set a flag you have not exercised against the live endpoint.
+- [ ] Link the issue or discussion where someone asked for this gateway.
+- [ ] Disclose it in the PR if you work on the gateway.
 - [ ] Paste live verification output in the PR (see below).
 
 Two things you may notice in the tree that do *not* apply to a new row. The registry providers already there carry a package directory and an `LLMProvider` member; those are compatibility shims from before they were migrated to rows, kept so their deep-import paths and `LLMProvider.<NAME>` references keep working. And a row is not added to the `tests/conftest.py` model maps, because a community gateway has no CI key.
@@ -325,6 +330,7 @@ For verified providers, add your test config to the following in `tests/conftest
 | [provider_reasoning_model_map](https://github.com/mozilla-ai/any-llm/blob/2aa7401a857c65efe94f9af7d2d7503330b63ab9/tests/conftest.py#L9)           | Default reasoning model                                                                                  |
 | [provider_model_map](https://github.com/mozilla-ai/any-llm/blob/2aa7401a857c65efe94f9af7d2d7503330b63ab9/tests/conftest.py#L26)                    | Default model                                                                                            |
 | [embedding_provider_model_map](https://github.com/mozilla-ai/any-llm/blob/2aa7401a857c65efe94f9af7d2d7503330b63ab9/tests/conftest.py#L60C5-L60C33) | Default embedding model                                                                                  |
+| [rerank_provider_model_map](https://github.com/mozilla-ai/any-llm/blob/main/tests/conftest.py)                                                   | Default rerank model                                                                                     |
 | [provider_client_config](https://github.com/mozilla-ai/any-llm/blob/2aa7401a857c65efe94f9af7d2d7503330b63ab9/tests/conftest.py#L79)             | Extra kwargs to pass to provider factory. Include things like `base_url` here. DO NOT include `api_key`. |
 
 

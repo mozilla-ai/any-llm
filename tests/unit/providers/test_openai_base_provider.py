@@ -767,7 +767,8 @@ async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> 
 
     response = MagicMock(spec=AsyncStream)
     response.__aiter__.side_effect = chunks
-    response.close = AsyncMock(side_effect=RuntimeError("cleanup failure"))
+    close = AsyncMock(side_effect=RuntimeError("cleanup failure"))
+    setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
     convert = MagicMock(side_effect=error)
     stream = OpenAIChunkStream(response, convert)
     expected = (
@@ -782,7 +783,7 @@ async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> 
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     await stream.aclose()
-    response.close.assert_awaited_once()
+    close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -790,11 +791,12 @@ async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> 
 async def test_chunk_stream_stops_after_close(consume_first: bool) -> None:
     response = MagicMock(spec=AsyncStream)
     response.__aiter__.return_value = [MagicMock(), MagicMock()]
-    response.close = AsyncMock()
+    close = AsyncMock()
+    setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
     stream = OpenAIChunkStream(response, MagicMock())
     if consume_first:
         await anext(stream)
     await stream.aclose()
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
-    response.close.assert_awaited_once()
+    close.assert_awaited_once()
