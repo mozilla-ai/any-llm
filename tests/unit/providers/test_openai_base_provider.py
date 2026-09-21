@@ -508,6 +508,58 @@ async def test_stream_with_basemodel_response_format_uses_create_json_schema() -
         mock_client.chat.completions.parse.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_acompletion_strips_extra_content_but_keeps_gemini_thought_signatures() -> None:
+    """Strict OpenAI-compatible backends reject extra_content, but Gemini's needs its google namespace back."""
+
+    class TestProvider(BaseOpenAIProvider):
+        PROVIDER_NAME = "TestProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai_class:
+        mock_client = AsyncMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+
+        provider = TestProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[
+                    {"role": "user", "content": "Weather?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "extra_content": {"anthropic": {"signature": "sig"}},
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "get_weather", "arguments": "{}"},
+                                "extra_content": {"google": {"thought_signature": "c2ln"}},
+                            }
+                        ],
+                    },
+                ],
+            )
+        )
+
+        sent = mock_client.chat.completions.create.call_args.kwargs["messages"]
+        assert sent[1] == {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                }
+            ],
+        }
+
+
 def test_base_provider_maps_max_tokens_to_max_completion_tokens() -> None:
     params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
     result = BaseOpenAIProvider._convert_completion_params(params)
@@ -715,7 +767,8 @@ async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> 
 
     response = MagicMock(spec=AsyncStream)
     response.__aiter__.side_effect = chunks
-    response.close = AsyncMock(side_effect=RuntimeError("cleanup failure"))
+    close = AsyncMock(side_effect=RuntimeError("cleanup failure"))
+    setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
     convert = MagicMock(side_effect=error)
     stream = OpenAIChunkStream(response, convert)
     expected = (
@@ -730,7 +783,7 @@ async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> 
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     await stream.aclose()
-    response.close.assert_awaited_once()
+    close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -738,11 +791,12 @@ async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> 
 async def test_chunk_stream_stops_after_close(consume_first: bool) -> None:
     response = MagicMock(spec=AsyncStream)
     response.__aiter__.return_value = [MagicMock(), MagicMock()]
-    response.close = AsyncMock()
+    close = AsyncMock()
+    setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
     stream = OpenAIChunkStream(response, MagicMock())
     if consume_first:
         await anext(stream)
     await stream.aclose()
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
-    response.close.assert_awaited_once()
+    close.assert_awaited_once()

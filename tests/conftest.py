@@ -44,7 +44,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         # with reasoning_effort set: OpenAI reasoning_effort is not mapped to Anthropic extended
         # thinking). gpt-oss-120b does emit reasoning, which needs the otari SDK reasoning-string
         # fix (mozilla-ai/otari#145) to deserialize.
-        LLMProvider.OTARI: "mzai:openai/gpt-oss-120b",
+        LLMProvider.OTARI: "nebius:openai/gpt-oss-120b",
         LLMProvider.VERTEXAI: "gemini-2.5-flash",
         LLMProvider.GITHUB: "openai/gpt-4.1-nano",
         LLMProvider.GROQ: "openai/gpt-oss-20b",
@@ -80,7 +80,10 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.NEOSANTARA: "deepseek-v4-flash",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
-        LLMProvider.TOGETHER: "openai/gpt-oss-20b",
+        # Together removed gpt-oss-20b from serverless on 2026-09-15 (400 "Unable to access
+        # non-serverless model"); the 120b sibling stays serverless and reports reasoning in the
+        # `reasoning` field TogetherProvider reads, including while streaming.
+        LLMProvider.TOGETHER: "openai/gpt-oss-120b",
         LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3.5-397B-A17B",
         LLMProvider.MINIMAX: "MiniMax-M2",
         LLMProvider.ZAI: "glm-4.5-flash",

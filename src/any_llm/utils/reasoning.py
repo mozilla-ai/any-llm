@@ -1,5 +1,5 @@
 import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Collection
 from typing import Any, Literal, TypeVar
 
 from any_llm.constants import REASONING_FIELD_NAMES
@@ -180,6 +180,79 @@ async def process_streaming_reasoning_chunks(
 
     for held_chunk in held_chunks:
         yield held_chunk
+
+
+def _without_extra_content(container: dict[str, Any], keep_namespaces: Collection[str]) -> dict[str, Any]:
+    """Return ``container`` without the ``extra_content`` namespaces outside ``keep_namespaces``."""
+    if "extra_content" not in container:
+        return container
+    extra_content = container["extra_content"]
+    kept = (
+        {namespace: value for namespace, value in extra_content.items() if namespace in keep_namespaces}
+        if isinstance(extra_content, dict)
+        else {}
+    )
+    if kept and kept == extra_content:
+        return container
+    cleaned = {key: value for key, value in container.items() if key != "extra_content"}
+    if kept:
+        cleaned["extra_content"] = kept
+    return cleaned
+
+
+def strip_extra_content(
+    messages: list[dict[str, Any]], *, keep_namespaces: Collection[str] = ()
+) -> list[dict[str, Any]]:
+    """Drop the ``extra_content`` side-channel from messages and from their tool calls.
+
+    any_llm keeps provider signatures and replayed reasoning in ``extra_content``: on a message
+    (Anthropic thinking signatures, DeepSeek reasoning) and on a tool call (Gemini thought
+    signatures). The OpenAI schema has no such field, the OpenAI SDK forwards unknown message keys
+    verbatim, and strict OpenAI-compatible backends reject the whole request over one, so a
+    conversation carrying another provider's signature would fail on its next turn.
+
+    Namespaces in ``keep_namespaces`` stay, because for some backends they are the wire format:
+    Gemini's OpenAI-compatible API reads a replayed tool call's thought signature from
+    ``extra_content["google"]``. The key is dropped outright when nothing is kept, since an empty
+    ``extra_content`` is still an unknown key. A provider that reads the side-channel has to do so
+    before calling this. The input is never mutated, and a message or tool call with nothing to
+    strip is returned as the same object.
+    """
+    result = []
+    for message in messages:
+        cleaned = _without_extra_content(message, keep_namespaces)
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            cleaned_calls = [
+                _without_extra_content(call, keep_namespaces) if isinstance(call, dict) else call for call in tool_calls
+            ]
+            if any(new is not old for new, old in zip(cleaned_calls, tool_calls, strict=True)):
+                cleaned = {**cleaned, "tool_calls": cleaned_calls}
+        result.append(cleaned)
+    return result
+
+
+def replay_reasoning_content_as_reasoning(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rename a replayed ``reasoning_content`` to ``reasoning`` and drop ``extra_content``.
+
+    For providers whose SDK names the assistant reasoning field ``reasoning`` and whose API rejects
+    any other message key: Groq and Cerebras return 400 ``property 'reasoning_content' is
+    unsupported``. The Messages bridge emits ``reasoning_content`` from a replayed ``thinking``
+    block, and a caller of plain ``completion()`` may send it directly in the shape DeepSeek
+    expects; both are renamed. An explicit ``reasoning`` the caller already set wins over
+    ``reasoning_content``.
+    """
+    result = []
+    for message in strip_extra_content(messages):
+        if "reasoning_content" not in message:
+            result.append(message)
+            continue
+        cleaned = {key: value for key, value in message.items() if key != "reasoning_content"}
+        reasoning_content = message["reasoning_content"]
+        if isinstance(reasoning_content, str) and reasoning_content and "reasoning" not in cleaned:
+            cleaned["reasoning"] = reasoning_content
+        result.append(cleaned)
+    return result
 
 
 def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str, Any]) -> None:

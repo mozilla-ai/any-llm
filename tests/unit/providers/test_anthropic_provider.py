@@ -1,5 +1,7 @@
 import dataclasses
+import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
@@ -40,6 +42,7 @@ from any_llm.providers.anthropic.utils import (
     _convert_response_format,
     _convert_tool_spec,
     _create_openai_chunk_from_anthropic_chunk,
+    _normalize_anthropic_type_arrays,
 )
 from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
@@ -765,6 +768,215 @@ async def test_completion_with_response_format_dict_json_schema() -> None:
 
         call_kwargs = mock_anthropic.return_value.messages.create.call_args[1]
         assert call_kwargs["output_config"] == {"format": {"type": "json_schema", "schema": transform_schema(schema)}}
+
+
+def test_convert_response_format_normalizes_type_arrays() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "code": {"type": "string"},
+            "answer": {"type": ["string", "null"]},
+        },
+        "required": ["code", "answer"],
+        "additionalProperties": False,
+    }
+
+    result = _convert_response_format(
+        {"type": "json_schema", "json_schema": {"name": "CodeStep", "schema": schema}},
+        "anthropic",
+    )
+
+    assert result["format"]["schema"]["properties"]["answer"] == {"anyOf": [{"type": "string"}, {"type": "null"}]}
+
+
+def test_normalize_anthropic_type_arrays_separates_composition_keywords() -> None:
+    schema = {
+        "type": ["string", "null"],
+        "anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}],
+    }
+
+    result = _normalize_anthropic_type_arrays(schema)
+
+    assert result == {
+        "allOf": [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {"anyOf": [{"type": "string", "maxLength": 20}, {"type": "null"}]},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("composition_keyword", "transformed_keyword"),
+    [("anyOf", "anyOf"), ("oneOf", "anyOf"), ("allOf", "allOf")],
+)
+def test_convert_response_format_keeps_type_arrays_separate_from_composition(
+    composition_keyword: str,
+    transformed_keyword: str,
+) -> None:
+    variants = [{"type": "string"}, {"type": "integer"}]
+    schema = {"type": ["string", "null"], composition_keyword: variants}
+
+    result = _convert_response_format(
+        {"type": "json_schema", "json_schema": {"name": "Composed", "schema": schema}},
+        "anthropic",
+    )
+
+    assert result["format"]["schema"] == {
+        "allOf": [
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {transformed_keyword: variants},
+        ]
+    }
+
+
+@pytest.mark.parametrize("composition_keyword", ["anyOf", "oneOf", "allOf"])
+def test_convert_response_format_rejects_type_array_composition_with_ref(composition_keyword: str) -> None:
+    schema = {
+        "$defs": {"Value": {"type": "string"}},
+        "type": ["string", "null"],
+        composition_keyword: [{"$ref": "#/$defs/Value"}],
+    }
+    response_format = {"type": "json_schema", "json_schema": {"name": "Composed", "schema": schema}}
+
+    with pytest.raises(
+        ValueError,
+        match=r"Anthropic structured outputs do not support combining type arrays with composition constraints containing \$ref",
+    ):
+        _convert_response_format(response_format, "anthropic")
+
+
+@pytest.mark.parametrize(
+    "schema_with_ref",
+    [
+        {"properties": {"value": {"$ref": "#/$defs/Value"}}},
+        {"items": [{"$ref": "#/$defs/Value"}]},
+        {"not": {"$ref": "#/$defs/Value"}},
+    ],
+)
+def test_normalize_anthropic_type_arrays_rejects_nested_composition_refs(schema_with_ref: dict[str, Any]) -> None:
+    schema = {"type": ["object", "null"], "anyOf": [schema_with_ref]}
+
+    with pytest.raises(ValueError, match=r"composition constraints containing \$ref"):
+        _normalize_anthropic_type_arrays(schema)
+
+
+def test_normalize_anthropic_type_arrays_ignores_refs_in_instance_values_and_property_names() -> None:
+    composition_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"$ref": {"type": "string"}},
+        "const": {"$ref": "literal const"},
+        "default": {"$ref": "literal default"},
+        "examples": [{"$ref": "literal example"}],
+        "enum": [{"$ref": "literal enum"}],
+    }
+    schema = {"type": ["object", "null"], "anyOf": [composition_schema]}
+
+    normalized = _normalize_anthropic_type_arrays(schema)
+
+    assert normalized["allOf"][1] == {"anyOf": [composition_schema]}
+
+
+def test_normalize_anthropic_type_arrays_keeps_nested_nullable_objects_linear() -> None:
+    schema: dict[str, Any] = {"type": "string"}
+    for _ in range(16):
+        schema = {
+            "type": ["object", "null"],
+            "properties": {"child": schema},
+            "required": ["child"],
+            "description": "Nullable node",
+        }
+
+    normalized = _normalize_anthropic_type_arrays(schema)
+
+    assert len(json.dumps(normalized)) < len(json.dumps(schema)) * 3
+    assert normalized["description"] == "Nullable node"
+    assert normalized["anyOf"][1] == {"type": "null"}
+    assert "properties" in normalized["anyOf"][0]
+
+
+def test_convert_response_format_rejects_legacy_definitions() -> None:
+    schema = {
+        "type": ["object", "null"],
+        "definitions": {"Value": {"type": "string"}},
+        "properties": {"value": {"$ref": "#/definitions/Value"}},
+    }
+    response_format = {"type": "json_schema", "json_schema": {"name": "LegacyDefinitions", "schema": schema}}
+
+    expected_error = (
+        "The Anthropic SDK schema transformer does not support legacy 'definitions'; "
+        "use '$defs' and update '#/definitions/...' references to '#/$defs/...'"
+    )
+    with pytest.raises(ValueError, match=rf"^{re.escape(expected_error)}$"):
+        _convert_response_format(response_format, "anthropic")
+
+
+def test_convert_response_format_accepts_defs() -> None:
+    schema = {
+        "$defs": {"Value": {"type": "string"}},
+        "type": "object",
+        "properties": {"value": {"$ref": "#/$defs/Value"}},
+        "required": ["value"],
+    }
+
+    result = _convert_response_format(
+        {"type": "json_schema", "json_schema": {"name": "ModernDefinitions", "schema": schema}},
+        "anthropic",
+    )
+
+    assert result["format"]["schema"] == {
+        "$defs": {"Value": {"type": "string"}},
+        "type": "object",
+        "properties": {"value": {"$ref": "#/$defs/Value"}},
+        "additionalProperties": False,
+        "required": ["value"],
+    }
+
+
+def test_normalize_anthropic_type_arrays_preserves_instance_values() -> None:
+    schema = {
+        "type": "object",
+        "examples": [{"type": []}],
+        "default": {"type": ["string", "null"], "definitions": {}},
+        "const": {"type": ["integer", "null"]},
+        "enum": [{"type": []}, {"type": ["number", "null"]}],
+    }
+
+    assert _normalize_anthropic_type_arrays(schema) == schema
+
+
+def test_normalize_anthropic_type_arrays_recurses_only_through_subschemas() -> None:
+    schema = {
+        "$defs": {"optionalName": {"type": ["string", "null"]}},
+        "allOf": [{"properties": {"count": {"type": ["integer", "null"]}}}],
+        "items": {"type": ["boolean", "null"]},
+    }
+
+    assert _normalize_anthropic_type_arrays(schema) == {
+        "$defs": {"optionalName": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+        "allOf": [
+            {
+                "properties": {
+                    "count": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                }
+            }
+        ],
+        "items": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+    }
+
+
+@pytest.mark.parametrize(
+    ("type_schema", "error"),
+    [
+        ({"type": []}, "at least one string type"),
+        ({"type": ["string", 1]}, "at least one string type"),
+    ],
+)
+def test_convert_response_format_rejects_invalid_type_arrays(type_schema: dict[str, Any], error: str) -> None:
+    response_format = {"type": "json_schema", "json_schema": {"name": "Invalid", "schema": type_schema}}
+
+    with pytest.raises(ValueError, match=error):
+        _convert_response_format(response_format, "anthropic")
 
 
 @pytest.mark.asyncio

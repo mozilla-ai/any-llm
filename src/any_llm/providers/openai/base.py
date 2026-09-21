@@ -38,6 +38,7 @@ from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import aclose_quietly
+from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
@@ -237,6 +238,8 @@ class BaseOpenAIProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.reasoning_effort == "auto":
             params.reasoning_effort = self._DEFAULT_REASONING_EFFORT
+        # An OpenAI-compatible base URL may be Gemini's, which needs its thought signatures back.
+        params.messages = strip_extra_content(params.messages, keep_namespaces=("google",))
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
 

@@ -1,7 +1,7 @@
 import json
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from anthropic import transform_schema
 from anthropic.lib.streaming import MessageStreamEvent
@@ -57,6 +57,44 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "high": "high",
     "xhigh": "xhigh",
     "max": "max",
+}
+
+_JSON_SCHEMA_MAPPING_KEYWORDS = frozenset(
+    {
+        "$defs",
+        "dependencies",
+        "dependentSchemas",
+        "patternProperties",
+        "properties",
+    }
+)
+_JSON_SCHEMA_COMPOSITION_KEYWORDS = ("anyOf", "oneOf", "allOf")
+_JSON_SCHEMA_SEQUENCE_KEYWORDS = frozenset((*_JSON_SCHEMA_COMPOSITION_KEYWORDS, "prefixItems"))
+_JSON_SCHEMA_VALUE_KEYWORDS = frozenset(
+    {
+        "additionalItems",
+        "additionalProperties",
+        "contains",
+        "contentSchema",
+        "else",
+        "if",
+        "not",
+        "propertyNames",
+        "then",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+    }
+)
+_JSON_SCHEMA_TYPE_SPECIFIC_KEYWORDS: dict[str, frozenset[str]] = {
+    "object": frozenset(
+        {"properties", "additionalProperties", "required", "patternProperties", "minProperties", "maxProperties"}
+    ),
+    "array": frozenset({"items", "minItems", "maxItems", "uniqueItems", "contains"}),
+    "string": frozenset({"format", "pattern", "minLength", "maxLength"}),
+    "integer": frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}),
+    "number": frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}),
+    "boolean": frozenset(),
+    "null": frozenset(),
 }
 
 
@@ -520,6 +558,98 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
 
 
+def _normalize_anthropic_schema_keyword(keyword: str, value: Any) -> Any:
+    if keyword in _JSON_SCHEMA_MAPPING_KEYWORDS and isinstance(value, dict):
+        return {name: _normalize_anthropic_type_arrays(schema) for name, schema in value.items()}
+    if keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS and isinstance(value, list):
+        return [_normalize_anthropic_type_arrays(schema) for schema in value]
+    if keyword == "items" and isinstance(value, list):
+        return [_normalize_anthropic_type_arrays(schema) for schema in value]
+    if keyword == "items" or keyword in _JSON_SCHEMA_VALUE_KEYWORDS:
+        return _normalize_anthropic_type_arrays(value)
+    return value
+
+
+def _contains_json_schema_ref(value: Any) -> bool:
+    """Return whether a schema fragment contains a ``$ref`` keyword."""
+    if not isinstance(value, dict):
+        return False
+    if "$ref" in value:
+        return True
+
+    for keyword, item in value.items():
+        if keyword in _JSON_SCHEMA_MAPPING_KEYWORDS and isinstance(item, dict):
+            if any(_contains_json_schema_ref(schema) for schema in item.values()):
+                return True
+        elif keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS and isinstance(item, list):
+            if any(_contains_json_schema_ref(schema) for schema in item):
+                return True
+        elif keyword == "items" and isinstance(item, list):
+            if any(_contains_json_schema_ref(schema) for schema in item):
+                return True
+        elif keyword == "items" or keyword in _JSON_SCHEMA_VALUE_KEYWORDS:
+            if _contains_json_schema_ref(item):
+                return True
+    return False
+
+
+def _normalize_anthropic_type_arrays(value: Any) -> Any:
+    """Rewrite JSON Schema type arrays that ``anthropic.transform_schema`` rejects."""
+    if not isinstance(value, dict):
+        return value
+    if "definitions" in value:
+        msg = (
+            "The Anthropic SDK schema transformer does not support legacy 'definitions'; "
+            "use '$defs' and update '#/definitions/...' references to '#/$defs/...'"
+        )
+        raise ValueError(msg)
+
+    normalized = {key: _normalize_anthropic_schema_keyword(key, item) for key, item in value.items()}
+    type_value = value.get("type")
+    if not isinstance(type_value, list):
+        return normalized
+    if not type_value or not all(isinstance(item, str) for item in type_value):
+        msg = "JSON Schema type arrays must contain at least one string type"
+        raise ValueError(msg)
+
+    composition_constraints = [
+        {keyword: normalized[keyword]} for keyword in _JSON_SCHEMA_COMPOSITION_KEYWORDS if keyword in normalized
+    ]
+    if any(_contains_json_schema_ref(constraint) for constraint in composition_constraints):
+        msg = (
+            "Anthropic structured outputs do not support combining type arrays "
+            "with composition constraints containing $ref"
+        )
+        raise ValueError(msg)
+    type_names = cast("list[str]", type_value)
+    type_specific_keywords = {
+        keyword
+        for type_name in type_names
+        for keyword in _JSON_SCHEMA_TYPE_SPECIFIC_KEYWORDS.get(type_name, ())
+        if keyword in normalized
+    }
+    branches = [
+        {
+            "type": type_name,
+            **{
+                keyword: normalized[keyword]
+                for keyword in _JSON_SCHEMA_TYPE_SPECIFIC_KEYWORDS.get(type_name, ())
+                if keyword in normalized
+            },
+        }
+        for type_name in type_names
+    ]
+    type_union: dict[str, Any] = {"anyOf": branches}
+    root_keywords = {
+        key: item
+        for key, item in normalized.items()
+        if key not in {"type", *_JSON_SCHEMA_COMPOSITION_KEYWORDS, *type_specific_keywords}
+    }
+    if composition_constraints:
+        return {**root_keywords, "allOf": [type_union, *composition_constraints]}
+    return {**root_keywords, **type_union}
+
+
 def _convert_response_format(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:
     """Convert any-llm response_format to Anthropic's output_config."""
     if is_structured_output_type(response_format):
@@ -541,7 +671,12 @@ def _convert_response_format(response_format: dict[str, Any] | type, provider_na
         msg = f"Unsupported response_format: {response_format}"
         raise ValueError(msg)
 
-    return {"format": {"type": "json_schema", "schema": transform_schema(schema)}}
+    return {
+        "format": {
+            "type": "json_schema",
+            "schema": transform_schema(_normalize_anthropic_type_arrays(schema)),
+        }
+    }
 
 
 def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:

@@ -91,7 +91,7 @@ def test_configuration_errors_have_migration_guidance(options: dict[str, Any], g
 
 @pytest.mark.parametrize("credential", [{"api_key": ""}, {"azure_ad_token": ""}])
 def test_empty_explicit_credentials_never_fall_back(
-    credential: dict[str, str], monkeypatch: pytest.MonkeyPatch
+    credential: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "environment-key")
     monkeypatch.setenv("OPENAI_API_KEY", "generic-key")
@@ -117,7 +117,7 @@ def test_conflicting_explicit_entra_credentials() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("credential", [{"api_key": "explicit-key"}, {"azure_ad_token": "explicit-token"}])
 async def test_static_auth_options_and_transport_ownership(
-    credential: dict[str, str],
+    credential: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "ignored-key")

@@ -8,6 +8,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     PromptTokensDetails,
 )
+from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 
@@ -60,15 +61,13 @@ def _reinject_reasoning_content(messages: list[dict[str, Any]], *, replay_reason
 
     Reference: https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
 
-    ``extra_content`` is an any_llm-internal side-channel and is stripped from every replayed
-    message here so it is never forwarded to DeepSeek's API: the OpenAI SDK passes unknown
-    message keys through verbatim, and only ``reasoning_content`` belongs on the wire.
+    ``extra_content`` is read here and then dropped with ``strip_extra_content``, so only
+    ``reasoning_content`` reaches DeepSeek's API.
     """
     result = []
-    for message in messages:
-        extra_content = message.get("extra_content")
-        cleaned = {k: v for k, v in message.items() if k != "extra_content"} if extra_content is not None else message
+    for message, cleaned in zip(messages, strip_extra_content(messages), strict=True):
         if replay_reasoning and message.get("role") == "assistant":
+            extra_content = message.get("extra_content")
             deepseek_extra = extra_content.get("deepseek") if isinstance(extra_content, dict) else None
             if isinstance(deepseek_extra, dict) and isinstance(deepseek_extra.get("reasoning_content"), str):
                 result.append({**cleaned, "reasoning_content": deepseek_extra["reasoning_content"]})

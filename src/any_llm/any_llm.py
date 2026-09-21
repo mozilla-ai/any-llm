@@ -167,7 +167,22 @@ class AnyLLM(FilesMixin, ABC):
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
-    def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+    _unified_exceptions: bool | None = None
+    """Per-instance override for unified exception conversion.
+
+    ``None`` defers to ``ANY_LLM_UNIFIED_EXCEPTIONS`` at raise time. Declared here so
+    every provider carries the attribute even if a subclass skips ``super().__init__``.
+    """
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        *,
+        unified_exceptions: bool | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._unified_exceptions = unified_exceptions
         self._verify_no_missing_packages()
         self._init_client(
             api_key=self._verify_and_set_api_key(api_key),
@@ -206,7 +221,13 @@ class AnyLLM(FilesMixin, ABC):
 
     @classmethod
     def create(
-        cls, provider: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+        cls,
+        provider: str | LLMProvider,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        *,
+        unified_exceptions: bool | None = None,
+        **kwargs: Any,
     ) -> AnyLLM:
         """Create a provider instance using the given provider name and config.
 
@@ -214,13 +235,17 @@ class AnyLLM(FilesMixin, ABC):
             provider: The provider name (e.g., 'openai', 'anthropic')
             api_key: API key for the provider
             api_base: Base URL for the provider API
+            unified_exceptions: Convert provider exceptions for this instance when True,
+                or preserve them when False. None (default) uses ANY_LLM_UNIFIED_EXCEPTIONS.
             **kwargs: Additional provider-specific arguments
 
         Returns:
             Provider instance for the specified provider
 
         """
-        return cls._create_provider(provider, api_key=api_key, api_base=api_base, **kwargs)
+        return cls._create_provider(
+            provider, api_key=api_key, api_base=api_base, unified_exceptions=unified_exceptions, **kwargs
+        )
 
     @classmethod
     def create_openai_compatible(cls, name: str, api_base: str, api_key: str | None = None, **kwargs: Any) -> AnyLLM:
@@ -235,7 +260,8 @@ class AnyLLM(FilesMixin, ABC):
             name: Identifier for the endpoint (e.g. ``"mygateway"``). Reported as the provider name.
             api_base: Base URL of the OpenAI-compatible endpoint (e.g. ``"https://mygateway.example/v1"``).
             api_key: API key, if the endpoint requires one. Optional for keyless local servers.
-            **kwargs: Additional arguments forwarded to the underlying OpenAI client.
+            **kwargs: Additional provider arguments. ``unified_exceptions`` is consumed by the
+                provider; everything else is forwarded to the underlying OpenAI client.
 
         Returns:
             A provider instance bound to the given endpoint.

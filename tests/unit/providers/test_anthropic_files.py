@@ -151,12 +151,12 @@ def test_file_capabilities_are_explicit() -> None:
     anthropic = AnthropicProvider.get_provider_metadata()
     assert anthropic.files is True
     assert set(anthropic.file_operations) == {"upload", "list", "retrieve", "download", "delete"}
-    assert AnyLLM.get_provider_class("openai").get_provider_metadata().files is False
+    assert AnyLLM.get_provider_class("deepseek").get_provider_metadata().files is False
 
 
 @pytest.mark.asyncio
 async def test_unsupported_provider_does_not_call_network() -> None:
-    provider = AnyLLM.create("openai", api_key="test")
+    provider = AnyLLM.create("deepseek", api_key="test")
     with pytest.raises(NotImplementedError, match="file"):
         await provider.aupload_file(b"data")
 
@@ -369,7 +369,7 @@ def test_public_file_types_are_exported() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["list", "retrieve", "delete", "download"])
 async def test_unsupported_file_operations(operation: str) -> None:
-    provider = AnyLLM.create("openai", api_key="test")
+    provider = AnyLLM.create("deepseek", api_key="test")
     with pytest.raises(NotImplementedError, match="file"):
         if operation == "list":
             await provider.alist_files()
