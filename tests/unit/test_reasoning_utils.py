@@ -33,6 +33,9 @@ def test_normalize_mixed_reasoning_tags_keeps_textual_order(tags: tuple[str, ...
         ("  <think>keep</thinking>  ", "  <think>keep</thinking>  ", None),
         ("  <think></think>answer  ", "answer", ""),
         ("  <think></think><thinking></thinking>answer  ", "answer", ""),
+        # An empty block alongside a real one contributes neither reasoning nor a separator, so
+        # the reasoning must not open with a blank line.
+        ("  <think></think>answer<think>second</think>  ", "answer", "second"),
         ("  <think>  first\n</think> between <thinking> second </thinking>  ", "between", "  first\n\n second "),
     ],
 )

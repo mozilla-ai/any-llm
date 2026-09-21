@@ -288,8 +288,10 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
         think_pattern = re.compile(rf"<(?P<tag>{tag_names})>(?P<reasoning>.*?)</(?P=tag)>", re.DOTALL)
         matches = [match.group("reasoning") for match in think_pattern.finditer(content)]
         if matches:
-            # Empty blocks must not become a nonempty reasoning string just from joining them.
-            extracted_reasoning = "\n".join(matches) if any(matches) else ""
+            # An empty block contributes no reasoning, so it must not contribute a separator
+            # either: joining ["", "B"] verbatim would report reasoning that opens with a blank
+            # line, and ["", ""] would report a lone newline as if it were reasoning.
+            extracted_reasoning = "\n".join(match for match in matches if match)
             if reasoning_content:
                 reasoning_content = f"{reasoning_content}\n{extracted_reasoning}"
             else:
