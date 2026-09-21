@@ -174,6 +174,24 @@ def test_row_optional_api_key_honors_env_var(
     assert provider.client.api_key == "env-key"
 
 
+def test_row_optional_api_key_is_resolved_per_instance_not_per_class(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The minted class is cached for the lifetime of the process, so resolving the env
+    # var when the class is built rather than when it is instantiated would pin the
+    # first value every later caller sees.
+    monkeypatch.delenv(optional_key_row.env_api_key_name, raising=False)
+    before = AnyLLM.create("optionalgateway")
+    monkeypatch.setenv(optional_key_row.env_api_key_name, "late-env-key")
+    after = AnyLLM.create("optionalgateway")
+
+    assert type(before) is type(after)
+    assert isinstance(before, BaseOpenAIProvider)
+    assert isinstance(after, BaseOpenAIProvider)
+    assert before.client.api_key == "no-key-required"
+    assert after.client.api_key == "late-env-key"
+
+
 def test_unregistered_name_still_raises_unsupported_provider() -> None:
     with pytest.raises(UnsupportedProviderError):
         AnyLLM.create("not-a-provider", api_key="k")

@@ -29,8 +29,9 @@ class OpenAICompatibleProviderConfig:
 
     Capability flags default to the conservative gateway baseline (completion,
     streaming and model listing only); rows opt in to anything beyond that.
-    A gateway that needs behavior (custom auth, request/response translation,
-    param remaps) does not belong in the registry and keeps a code folder.
+    A gateway that needs behavior (request/response translation, param remaps,
+    or an auth scheme beyond ``api_key_optional``) does not belong in the registry
+    and keeps a code folder.
     """
 
     name: str
@@ -53,6 +54,10 @@ class OpenAICompatibleProviderConfig:
     supports_image_generation: bool = False
     supports_rerank: bool = False
     api_key_optional: bool = False
+    """Resolve the key as the explicit argument, then the env var, then the
+    ``"no-key-required"`` placeholder, instead of raising ``MissingApiKeyError``.
+    For local runners that may serve keyless on a trusted network while still
+    accepting a key when one is configured."""
 
 
 # Rows replicate each migrated provider's effective flags, including values the
@@ -215,6 +220,20 @@ def get_registry_provider_class(name: str) -> type[BaseOpenAIProvider]:
     return _class_cache[key]
 
 
+class _OptionalApiKeyProvider(BaseOpenAIProvider):
+    """Base for rows that set ``api_key_optional``.
+
+    A class body rather than a function injected into ``type()`` so that mypy
+    checks the signature against ``AnyLLM._verify_and_set_api_key``.
+    """
+
+    @override
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
+        # An explicit key and the env var still win, so the same row works against a
+        # runner that does enforce auth (vLLM's --api-key, a reverse proxy).
+        return api_key or os.getenv(self.ENV_API_KEY_NAME) or "no-key-required"
+
+
 def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOpenAIProvider]:
     attrs: dict[str, Any] = {
         "PROVIDER_NAME": config.name,
@@ -235,16 +254,8 @@ def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOp
         "SUPPORTS_IMAGE_GENERATION": config.supports_image_generation,
         "SUPPORTS_RERANK": config.supports_rerank,
     }
-    if config.api_key_optional:
-
-        @override  # type: ignore[misc]
-        def _verify_and_set_api_key(self: Any, api_key: str | None = None) -> str:
-            env_key = os.getenv(self.ENV_API_KEY_NAME) if self.ENV_API_KEY_NAME else None
-            return api_key or env_key or "no-key-required"
-
-        attrs["_verify_and_set_api_key"] = _verify_and_set_api_key
-
     # The class name follows the same convention as folder-based providers so
     # metadata.class_name is stable across a migration.
     class_name = f"{config.name.capitalize()}Provider"
-    return cast("type[BaseOpenAIProvider]", type(class_name, (BaseOpenAIProvider,), attrs))
+    base = _OptionalApiKeyProvider if config.api_key_optional else BaseOpenAIProvider
+    return cast("type[BaseOpenAIProvider]", type(class_name, (base,), attrs))
