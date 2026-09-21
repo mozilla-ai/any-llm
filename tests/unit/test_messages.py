@@ -200,6 +200,8 @@ def test_messages_params_rejects_malformed_container_skills() -> None:
         {"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": ""}]},
         {"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "v" * 65}]},
         {"skills": [{"type": "anthropic", "skill_id": f"skill-{i}"} for i in range(21)]},
+        {},
+        {"id": None, "skills": None},
     ],
 )
 def test_messages_params_rejects_container_skill_limits(container: dict[str, object]) -> None:

@@ -368,6 +368,40 @@ async def test_amessages_output_format_forwards_container_skills_object() -> Non
 
 
 @pytest.mark.asyncio
+async def test_amessages_output_format_container_uses_beta_parse_when_betas_requested() -> None:
+    """The beta parse helper accepts container, so a beta request keeps using it."""
+
+    class City(BaseModel):
+        city_name: str
+
+    mock_client = Mock()
+    mock_client.beta.messages.parse = AsyncMock(return_value=Mock())
+    mock_client.beta.messages.create = AsyncMock()
+    mock_client.messages.create = AsyncMock()
+
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+
+    container = {"id": "container_123", "skills": [{"type": "anthropic", "skill_id": "xlsx"}]}
+    params = MessagesParams(
+        model="claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=1024,
+        output_format=City,
+        container=container,
+        betas=["future-beta"],
+    )
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    mock_client.messages.create.assert_not_called()
+    mock_client.beta.messages.create.assert_not_called()
+    call_kwargs = mock_client.beta.messages.parse.call_args.kwargs
+    assert call_kwargs["container"] == container
+    assert call_kwargs["output_format"] is City
+    assert call_kwargs["betas"] == ["future-beta"]
+
+
+@pytest.mark.asyncio
 async def test_anthropic_sdk_accepts_completion_sampling_parameters() -> None:
     requests: list[httpx.Request] = []
 

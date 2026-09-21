@@ -124,10 +124,12 @@ class _MessageContainer(BaseModel):
 def _normalize_container(value: object) -> object:
     if value is None or isinstance(value, str):
         return value
-    if isinstance(value, _MessageContainer):
-        return value.model_dump(exclude_none=True)
     if isinstance(value, dict):
-        return _MessageContainer.model_validate(value).model_dump(exclude_none=True)
+        container = _MessageContainer.model_validate(value).model_dump(exclude_none=True)
+        if not container:
+            msg = "container object must set id, skills, or both"
+            raise ValueError(msg)
+        return container
     msg = "container must be a string container ID or an object with optional id and skills"
     raise ValueError(msg)
 

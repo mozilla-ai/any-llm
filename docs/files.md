@@ -240,6 +240,7 @@ response = provider.messages(
 Reuse an existing container while keeping the same Skills:
 
 ```python
+history = [{"role": "user", "content": "Create an Excel spreadsheet."}]
 response = provider.messages(
     model="claude-sonnet-4-6",
     max_tokens=2048,

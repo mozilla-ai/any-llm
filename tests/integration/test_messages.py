@@ -9,7 +9,8 @@ from pydantic import BaseModel
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.types.messages import MessageResponse, MessageStreamEvent, ToolUseBlock
+from any_llm.providers.anthropic.anthropic import AnthropicProvider
+from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedMessage, ToolUseBlock
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
@@ -89,21 +90,27 @@ async def test_anthropic_messages_skills_container_with_typed_output_format() ->
         city_name: str
 
     try:
-        llm = AnyLLM.create(LLMProvider.ANTHROPIC, max_retries=0, timeout=30)
-        result = await llm.amessages(
-            model=os.environ.get("ANTHROPIC_SKILLS_TEST_MODEL", "claude-sonnet-4-6"),
-            messages=[{"role": "user", "content": "What is the capital of France?"}],
-            max_tokens=256,
-            container={"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}]},
-            output_format=City,
-        )
+        provider = AnthropicProvider(max_retries=0, timeout=90)
     except MissingApiKeyError:
         if LLMProvider.ANTHROPIC in EXPECTED_PROVIDERS:
             raise
         pytest.skip("ANTHROPIC_API_KEY is not configured")
-    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
-        raise
 
+    try:
+        result = await provider.amessages(
+            model=os.environ.get("ANTHROPIC_SKILLS_TEST_MODEL", "claude-sonnet-4-6"),
+            messages=[{"role": "user", "content": "What is the capital of France?"}],
+            max_tokens=256,
+            # Anthropic requires the code execution tool whenever a container loads Skills.
+            tools=[{"type": "code_execution_20250825", "name": "code_execution"}],
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}]},
+            output_format=City,
+        )
+    finally:
+        # The container itself has no delete endpoint; it expires on its own at container.expires_at.
+        await provider.client.close()
+
+    assert isinstance(result, ParsedMessage)
     parsed = result.parsed_output
     assert isinstance(parsed, City)
     assert "paris" in parsed.city_name.lower()

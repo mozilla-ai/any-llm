@@ -348,6 +348,9 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                     )
                 return self._stream_messages_async(use_beta=use_beta, **native_kwargs)
             if is_structured_output_type(params.output_format):
+                # The GA messages.parse() helper has no container parameter (still absent on
+                # anthropic 1.7), so this combination has to go through messages.create(); the beta
+                # helper does accept it. Re-check when #1370 moves the pin to anthropic>=1.
                 if params.container is not None and not use_beta:
                     output_config = {
                         "format": {
