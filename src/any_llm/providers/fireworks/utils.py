@@ -1,13 +1,20 @@
 # mypy: disable-error-code="union-attr"
+from typing import Any
+
 from any_llm.types.completion import Reasoning
 from any_llm.types.responses import Response
+from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 
 def extract_reasoning_from_response(response: Response) -> Response:
-    """Extract <think> content from Fireworks response and set reasoning field.
+    """Extract XML-tagged reasoning from a Fireworks response and set the reasoning field.
 
-    Fireworks Responses API may include reasoning content within <think></think> tags.
-    This function extracts that content and moves it to the reasoning field.
+    Fireworks Responses API may include reasoning content within tags such as
+    <think></think>. Parsing is delegated to
+    normalize_reasoning_from_provider_fields_and_xml_tags so this provider keeps the same
+    semantics as every other one: every tagged block is collected, and the surrounding
+    content is preserved rather than truncated to whatever follows the last closing tag.
+
     Args:
         response: The Response object to process
 
@@ -20,11 +27,14 @@ def extract_reasoning_from_response(response: Response) -> Response:
     if not response.output or not response.output[-1].content:
         return response
 
-    content_text = response.output[-1].content[0].text
-    if "<think>" in content_text and "</think>" in content_text:
-        reasoning = content_text.split("<think>")[1].split("</think>")[0].strip()
-        if reasoning:
-            response.reasoning = Reasoning(content=reasoning)  # type: ignore[assignment]
-        response.output[-1].content[0].text = content_text.split("</think>")[1].strip()
+    message: dict[str, Any] = {"content": response.output[-1].content[0].text}
+    normalize_reasoning_from_provider_fields_and_xml_tags(message)
+
+    reasoning = message.get("reasoning")
+    reasoning_text = reasoning.get("content") if isinstance(reasoning, dict) else None
+    if reasoning_text:
+        response.reasoning = Reasoning(content=reasoning_text)  # type: ignore[assignment]
+
+    response.output[-1].content[0].text = message["content"]
 
     return response

@@ -147,6 +147,137 @@ async def test_create_chat_completion_extracts_think_content() -> None:
     assert result.usage.model_extra == {}
 
 
+@pytest.mark.asyncio
+async def test_think_extraction_preserves_content_before_the_tag() -> None:
+    mock_message = Mock(spec=OllamaMessage)
+    mock_message.content = "Preamble text. <think>my reasoning</think>The answer"
+    mock_message.thinking = None
+    mock_message.tool_calls = None
+    mock_message.role = "assistant"
+
+    mock_response = Mock(spec=OllamaChatResponse)
+    mock_response.message = mock_message
+    mock_response.created_at = "2024-01-01T12:00:00.000000Z"
+    mock_response.prompt_eval_count = 10
+    mock_response.eval_count = 20
+    mock_response.model = "llama3.1"
+    mock_response.done_reason = "stop"
+    mock_response.total_duration = None
+    mock_response.load_duration = None
+    mock_response.prompt_eval_duration = None
+    mock_response.eval_duration = None
+
+    result = _create_chat_completion_from_ollama_response(mock_response)
+
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "my reasoning"
+    assert result.choices[0].message.content == "Preamble text. The answer"
+
+
+@pytest.mark.asyncio
+async def test_think_extraction_handles_multiple_tagged_blocks() -> None:
+    mock_message = Mock(spec=OllamaMessage)
+    mock_message.content = "<think>first</think>middle<think>second</think>end"
+    mock_message.thinking = None
+    mock_message.tool_calls = None
+    mock_message.role = "assistant"
+
+    mock_response = Mock(spec=OllamaChatResponse)
+    mock_response.message = mock_message
+    mock_response.created_at = "2024-01-01T12:00:00.000000Z"
+    mock_response.prompt_eval_count = 10
+    mock_response.eval_count = 20
+    mock_response.model = "llama3.1"
+    mock_response.done_reason = "stop"
+    mock_response.total_duration = None
+    mock_response.load_duration = None
+    mock_response.prompt_eval_duration = None
+    mock_response.eval_duration = None
+
+    result = _create_chat_completion_from_ollama_response(mock_response)
+
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "first\nsecond"
+    assert result.choices[0].message.content == "middleend"
+    assert "<think>" not in (result.choices[0].message.content or "")
+
+
+@pytest.mark.asyncio
+async def test_think_extraction_handles_alternate_tag_names() -> None:
+    mock_message = Mock(spec=OllamaMessage)
+    mock_message.content = "<thinking>alt tag reasoning</thinking>The answer"
+    mock_message.thinking = None
+    mock_message.tool_calls = None
+    mock_message.role = "assistant"
+
+    mock_response = Mock(spec=OllamaChatResponse)
+    mock_response.message = mock_message
+    mock_response.created_at = "2024-01-01T12:00:00.000000Z"
+    mock_response.prompt_eval_count = 10
+    mock_response.eval_count = 20
+    mock_response.model = "llama3.1"
+    mock_response.done_reason = "stop"
+    mock_response.total_duration = None
+    mock_response.load_duration = None
+    mock_response.prompt_eval_duration = None
+    mock_response.eval_duration = None
+
+    result = _create_chat_completion_from_ollama_response(mock_response)
+
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "alt tag reasoning"
+    assert result.choices[0].message.content == "The answer"
+
+
+@pytest.mark.asyncio
+async def test_think_extraction_leaves_no_reasoning_for_an_empty_block() -> None:
+    """An empty block is still a block: the tags have to come off the content, but an empty
+    string is not reasoning, so the field stays None rather than carrying "".
+    """
+    mock_message = Mock(spec=OllamaMessage)
+    mock_message.content = "<think></think>The answer"
+    mock_message.thinking = None
+    mock_message.tool_calls = None
+    mock_message.role = "assistant"
+
+    mock_response = Mock(spec=OllamaChatResponse)
+    mock_response.message = mock_message
+    mock_response.created_at = "2024-01-01T12:00:00.000000Z"
+    mock_response.prompt_eval_count = 10
+    mock_response.eval_count = 20
+    mock_response.model = "llama3.1"
+    mock_response.done_reason = "stop"
+    mock_response.total_duration = None
+    mock_response.load_duration = None
+    mock_response.prompt_eval_duration = None
+    mock_response.eval_duration = None
+
+    result = _create_chat_completion_from_ollama_response(mock_response)
+
+    assert result.choices[0].message.reasoning is None
+    assert result.choices[0].message.content == "The answer"
+
+
+@pytest.mark.parametrize("native_thinking", [None, "native reasoning"])
+def test_think_extraction_keeps_mixed_tags_in_textual_order(native_thinking: str | None) -> None:
+    content = "<think>first</think>middle<thinking>second</thinking>end"
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at="2024-01-01T12:00:00.000000Z",
+        message=OllamaMessage(role="assistant", content=content, thinking=native_thinking),
+        done_reason="stop",
+        prompt_eval_count=10,
+        eval_count=20,
+    )
+
+    result = _create_chat_completion_from_ollama_response(response)
+
+    message = result.choices[0].message
+    assert message.reasoning is not None
+    assert message.reasoning.content == (native_thinking or "first\nsecond")
+    assert message.content == (content if native_thinking else "middleend")
+
+
 def test_create_chat_completion_preserves_timing_details() -> None:
     """Provider timing fields survive normalization as extra usage fields."""
     response = OllamaChatResponse(
