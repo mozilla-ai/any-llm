@@ -872,3 +872,92 @@ def test_completion_normalization_preserves_tool_call_precedence(done_reason: st
     assert calls[0].type == "function"
     assert calls[0].function.name == "get_weather"
     assert json.loads(calls[0].function.arguments) == {"city": "Paris"}
+
+
+def test_convert_completion_params_omits_num_ctx_when_unset() -> None:
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+    )
+    converted = OllamaProvider._convert_completion_params(params)
+    assert "num_ctx" not in converted
+
+
+def test_convert_completion_params_omits_explicit_none_num_ctx() -> None:
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+    )
+    converted = OllamaProvider._convert_completion_params(params, num_ctx=None)
+    assert "num_ctx" not in converted
+
+
+def test_convert_completion_params_keeps_explicit_num_ctx() -> None:
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+    )
+    converted = OllamaProvider._convert_completion_params(params, num_ctx=8192)
+    assert converted["num_ctx"] == 8192
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_completion_omits_num_ctx_when_unset(stream: bool) -> None:
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=stream,
+    )
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+
+        if stream:
+            result = await provider._acompletion(params)
+            async for _ in result:  # type: ignore[union-attr]
+                pass
+        else:
+            with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+                await provider._acompletion(params)
+
+        options = provider.client.chat.call_args.kwargs["options"]
+
+    assert "num_ctx" not in options
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_completion_passes_explicit_num_ctx(stream: bool) -> None:
+    async def empty_async_iter() -> AsyncIterator[None]:
+        return
+        yield
+
+    params = CompletionParams(
+        model_id="llama3.1",
+        messages=[{"role": "user", "content": "Hello"}],
+        stream=stream,
+    )
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+
+        if stream:
+            result = await provider._acompletion(params, num_ctx=4096)
+            async for _ in result:  # type: ignore[union-attr]
+                pass
+        else:
+            with patch.object(OllamaProvider, "_convert_completion_response", return_value=Mock()):
+                await provider._acompletion(params, num_ctx=4096)
+
+        options = provider.client.chat.call_args.kwargs["options"]
+
+    assert options["num_ctx"] == 4096
