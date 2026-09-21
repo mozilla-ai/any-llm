@@ -18,6 +18,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, cast
 
+from typing_extensions import override
+
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 
@@ -235,6 +237,7 @@ def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOp
     }
     if config.api_key_optional:
 
+        @override  # type: ignore[misc]
         def _verify_and_set_api_key(self: Any, api_key: str | None = None) -> str:
             env_key = os.getenv(self.ENV_API_KEY_NAME) if self.ENV_API_KEY_NAME else None
             return api_key or env_key or "no-key-required"

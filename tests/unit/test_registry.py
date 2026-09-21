@@ -156,7 +156,10 @@ def test_row_optional_api_key_defaults_to_placeholder(
     assert provider.client.api_key == "no-key-required"
 
 
-def test_row_optional_api_key_honors_explicit_key(optional_key_row: OpenAICompatibleProviderConfig) -> None:
+def test_row_optional_api_key_honors_explicit_key(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(optional_key_row.env_api_key_name, "env-key")
     provider = AnyLLM.create("optionalgateway", api_key="explicit-key")
     assert isinstance(provider, BaseOpenAIProvider)
     assert provider.client.api_key == "explicit-key"
