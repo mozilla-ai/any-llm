@@ -5,13 +5,29 @@ import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
-from typing import Any, Self, cast, get_args
+from typing import TYPE_CHECKING, Any, Self, cast, get_args
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from anthropic import transform_schema
-from anthropic.types import CacheCreation, Message
+from anthropic.lib.streaming import MessageStopEvent as StreamMessageStopEvent
+from anthropic.types import (
+    CacheCreation,
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    Message,
+    MessageDeltaEvent,
+    MessageDeltaUsage,
+    MessageStartEvent,
+    MessageStopEvent,
+    RawMessageStreamEvent,
+    TextBlock,
+    TextDelta,
+    Usage,
+)
 from anthropic.types.model_info import ModelInfo
+from anthropic.types.raw_message_delta_event import Delta
 from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
 
@@ -20,13 +36,18 @@ from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
     REASONING_EFFORT_TO_ANTHROPIC_EFFORT,
+    _convert_messages_for_anthropic,
     _convert_models_list,
+    _convert_response,
     _convert_response_format,
     _convert_tool_spec,
     _create_openai_chunk_from_anthropic_chunk,
     _normalize_anthropic_type_arrays,
 )
 from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
+
+if TYPE_CHECKING:
+    from anthropic.lib.streaming import MessageStreamEvent
 
 
 @contextmanager
@@ -258,15 +279,31 @@ async def test_completion_with_tool_choice_required() -> None:
         {"type": "custom", "custom": {"name": "FOO"}},
     ],
 )
-async def test_completion_with_tool_choice_specific_tool(tool_choice: dict[str, Any]) -> None:
+@pytest.mark.parametrize("parallel_tool_calls", [True, False])
+async def test_completion_with_tool_choice_specific_tool(
+    tool_choice: dict[str, Any], parallel_tool_calls: bool
+) -> None:
     api_key = "test-api-key"
     model = "model-id"
     messages = [{"role": "user", "content": "Hello"}]
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(api_key=api_key)
-        await provider._acompletion(CompletionParams(model_id=model, messages=messages, tool_choice=tool_choice))
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=messages,
+                tool_choice=tool_choice,
+                parallel_tool_calls=parallel_tool_calls,
+            )
+        )
 
-        expected_kwargs = {"tool_choice": {"type": "tool", "name": "FOO"}}
+        expected_kwargs = {
+            "tool_choice": {
+                "type": "tool",
+                "name": "FOO",
+                "disable_parallel_tool_use": not parallel_tool_calls,
+            }
+        }
 
         mock_anthropic.return_value.messages.create.assert_called_once_with(
             model=model,
@@ -684,6 +721,29 @@ async def test_completion_with_response_format_and_reasoning_effort() -> None:
             "effort": "medium",
         }
         assert call_kwargs["thinking"] == {"type": "adaptive"}
+
+
+@pytest.mark.asyncio
+async def test_completion_merges_reasoning_effort_without_mutating_output_config() -> None:
+    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="claude-opus-4-6",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="medium",
+            ),
+            output_config=output_config,
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args.kwargs
+        assert call_kwargs["output_config"] == {
+            "format": {"type": "json_schema", "schema": {"type": "object"}},
+            "effort": "medium",
+        }
+        assert output_config == {"format": {"type": "json_schema", "schema": {"type": "object"}}}
 
 
 @pytest.mark.asyncio
@@ -1117,8 +1177,6 @@ def test_convert_response_without_cache_tokens() -> None:
 
 def test_convert_response_preserves_zero_cache_read_tokens() -> None:
     """An explicit zero cache read remains distinguishable from an absent meter."""
-    from any_llm.providers.anthropic.utils import _convert_response
-
     mock_response = MagicMock()
     mock_response.id = "msg_zero-read"
     mock_response.model = "claude-3-haiku"
@@ -1173,10 +1231,6 @@ def test_streaming_chunk_includes_cache_tokens_in_usage() -> None:
 
 
 def test_streaming_chunk_includes_cache_creation_tokens_in_usage() -> None:
-    from anthropic.types import MessageStopEvent, Usage
-
-    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
-
     usage = Usage(
         input_tokens=3,
         output_tokens=5,
@@ -1528,17 +1582,7 @@ def test_streaming_refusal_preserves_stop_details() -> None:
     [("end_turn", "stop"), ("tool_use", "tool_calls"), ("refusal", "content_filter")],
 )
 def test_stream_sequence_has_one_terminal_reason(stop_reason: StopReason, expected_finish_reason: str) -> None:
-    from anthropic.types import (
-        ContentBlockStopEvent,
-        MessageDeltaEvent,
-        MessageDeltaUsage,
-        MessageStopEvent,
-    )
-    from anthropic.types.raw_message_delta_event import Delta
-
-    from any_llm.providers.anthropic.utils import _create_openai_chunk_from_anthropic_chunk
-
-    events = [
+    events: list[RawMessageStreamEvent] = [
         ContentBlockStopEvent(type="content_block_stop", index=0),
         MessageDeltaEvent(
             type="message_delta",
@@ -1821,6 +1865,22 @@ def test_convert_messages_keeps_text_when_tool_calls_is_empty() -> None:
     assert converted[0]["content"] == [{"type": "text", "text": "I will check the weather."}]
 
 
+def test_convert_messages_does_not_mutate_list_content() -> None:
+    content = [{"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}}]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert messages[0]["content"] is content
+    assert messages == [{"role": "user", "content": content}]
+    assert converted == [
+        {
+            "role": "user",
+            "content": [{"type": "image", "source": {"type": "url", "url": "https://example.com/cat.png"}}],
+        }
+    ]
+
+
 def test_convert_messages_replays_thinking_block_with_text() -> None:
     """A plain-text assistant message that carries a thinking signature should also replay it.
 
@@ -1991,6 +2051,25 @@ def test_convert_tool_spec_parameters_missing_properties() -> None:
     assert tools[0]["input_schema"]["properties"] == {}
 
 
+def test_convert_tool_spec_preserves_complete_schema() -> None:
+    schema = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "$defs": {"count": {"type": "integer", "minimum": 9007199254740993}},
+        "additionalProperties": False,
+        "x-future": {"enabled": False},
+    }
+    tools = _convert_tool_spec(
+        [
+            {"type": "function", "function": {"name": "ping", "parameters": schema}},
+        ]
+    )
+
+    assert tools[0]["input_schema"] == schema
+    assert tools[0]["input_schema"] is not schema
+
+
 def test_convert_models_list_uses_created_at() -> None:
     """The normal path: a real Anthropic listing carries created_at."""
     created_at = datetime(2026, 2, 19, tzinfo=UTC)
@@ -2095,20 +2174,9 @@ def test_convert_response_non_datetime_created_at(created_at: Any) -> None:
 
 def test_stream_trailing_usage_chunk_has_no_choices() -> None:
     """Usage arrives on the message_stop chunk after finish_reason, with choices left empty like OpenAI."""
-    from anthropic.types import (
-        ContentBlockDeltaEvent,
-        ContentBlockStopEvent,
-        MessageDeltaEvent,
-        MessageDeltaUsage,
-        MessageStopEvent,
-        TextDelta,
-        Usage,
-    )
-    from anthropic.types.raw_message_delta_event import Delta
-
     stop_event = MessageStopEvent(type="message_stop")
     stop_event.message = MagicMock(usage=Usage(input_tokens=12, output_tokens=7))  # type: ignore[attr-defined]
-    events = [
+    events: list[RawMessageStreamEvent | MessageStreamEvent] = [
         ContentBlockDeltaEvent(type="content_block_delta", index=0, delta=TextDelta(type="text_delta", text="hi")),
         ContentBlockStopEvent(type="content_block_stop", index=0),
         MessageDeltaEvent(
@@ -2132,8 +2200,6 @@ def test_stream_trailing_usage_chunk_has_no_choices() -> None:
 
 def test_stream_message_stop_without_message_has_no_choices_or_usage() -> None:
     """A raw message_stop event with no accumulated message yields neither choices nor usage."""
-    from anthropic.types import MessageStopEvent
-
     result = _create_openai_chunk_from_anthropic_chunk(MessageStopEvent(type="message_stop"), "claude-sonnet-4-5")
 
     assert result.choices == []
@@ -2147,20 +2213,6 @@ async def test_stream_usage_reaches_openai_style_consumer() -> None:
     OpenAI reports final usage on a trailing chunk with no choices, so callers read it with
     ``if not chunk.choices``. The same loop has to work unchanged when the provider is Anthropic.
     """
-    from anthropic.lib.streaming import MessageStopEvent as StreamMessageStopEvent
-    from anthropic.types import (
-        ContentBlockDeltaEvent,
-        ContentBlockStartEvent,
-        ContentBlockStopEvent,
-        MessageDeltaEvent,
-        MessageDeltaUsage,
-        MessageStartEvent,
-        TextBlock,
-        TextDelta,
-        Usage,
-    )
-    from anthropic.types.raw_message_delta_event import Delta
-
     final_message = Message(
         id="msg_1",
         type="message",

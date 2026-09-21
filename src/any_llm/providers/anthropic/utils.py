@@ -1,15 +1,16 @@
 import json
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from anthropic import transform_schema
+from anthropic.lib.streaming import MessageStreamEvent
 from anthropic.types import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
-    ContentBlockStopEvent,
     Message,
     MessageDeltaEvent,
     MessageStopEvent,
+    RawMessageStreamEvent,
     Usage,
 )
 from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
@@ -41,7 +42,7 @@ _ANTHROPIC_CONTENT_FILTER_REFUSAL = "Response blocked by Anthropic content filte
 # "model_context_window_exceeded" (the model ran out of context rather than out of max_tokens)
 # do have one, and without it a refused or truncated answer looks like a normal completion.
 # See https://docs.claude.com/en/docs/build-with-claude/handling-stop-reasons
-ANTHROPIC_STOP_REASON_TO_FINISH_REASON = {
+ANTHROPIC_STOP_REASON_TO_FINISH_REASON: dict[str, Literal["stop", "length", "tool_calls", "content_filter"]] = {
     "end_turn": "stop",
     "max_tokens": "length",
     "model_context_window_exceeded": "length",
@@ -273,16 +274,19 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                     "content": content_blocks,
                 }
 
-            if "content" in message and isinstance(message["content"], list):
-                message["content"] = _convert_content_for_anthropic(message["content"])
+            content = message.get("content", "")
+            if isinstance(content, list):
+                content = _convert_content_for_anthropic(content)
 
             # Only keep Anthropic-compatible fields (strips OpenAI-specific fields like 'refusal')
-            filtered_messages.append({"role": message["role"], "content": message.get("content", "")})
+            filtered_messages.append({"role": message["role"], "content": content})
 
     return system_message, filtered_messages
 
 
-def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> ChatCompletionChunk:
+def _create_openai_chunk_from_anthropic_chunk(
+    chunk: RawMessageStreamEvent | MessageStreamEvent, model_id: str
+) -> ChatCompletionChunk:
     """Convert Anthropic streaming chunk to OpenAI ChatCompletionChunk format."""
     chunk_dict = {
         "id": f"chatcmpl-{hash(str(chunk))}",
@@ -293,50 +297,10 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
         "usage": None,
     }
 
-    delta: dict[str, Any] = {}
+    delta = _convert_content_block_event(chunk)
     finish_reason = None
 
-    if isinstance(chunk, ContentBlockStartEvent):
-        if chunk.content_block.type == "text":
-            delta = {"content": ""}
-        elif chunk.content_block.type == "tool_use":
-            delta = {
-                "tool_calls": [
-                    {
-                        "index": chunk.index,
-                        "id": chunk.content_block.id,
-                        "type": "function",
-                        "function": {"name": chunk.content_block.name, "arguments": ""},
-                    }
-                ]
-            }
-        elif chunk.content_block.type == "thinking":
-            delta = {"reasoning": {"content": ""}}
-
-    elif isinstance(chunk, ContentBlockDeltaEvent):
-        if chunk.delta.type == "text_delta":
-            delta = {"content": chunk.delta.text}
-        elif chunk.delta.type == "input_json_delta":
-            delta = {
-                "tool_calls": [
-                    {
-                        "index": chunk.index,
-                        "function": {"arguments": chunk.delta.partial_json},
-                    }
-                ]
-            }
-        elif chunk.delta.type == "thinking_delta":
-            delta = {"reasoning": {"content": chunk.delta.thinking}}
-        elif chunk.delta.type == "signature_delta":
-            # The encrypted signature of the thinking block. Must be preserved unmodified
-            # and passed back to Anthropic on subsequent turns (e.g. alongside tool results)
-            # to maintain reasoning continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
-            delta = {"extra_content": {"anthropic": {"signature": chunk.delta.signature}}}
-
-    elif isinstance(chunk, ContentBlockStopEvent):
-        finish_reason = None
-
-    elif isinstance(chunk, MessageDeltaEvent):
+    if isinstance(chunk, MessageDeltaEvent):
         stop_reason = chunk.delta.stop_reason
         finish_reason = (
             ANTHROPIC_STOP_REASON_TO_FINISH_REASON.get(stop_reason, "stop") if stop_reason is not None else None
@@ -363,6 +327,50 @@ def _create_openai_chunk_from_anthropic_chunk(chunk: Any, model_id: str) -> Chat
     chunk_dict["choices"] = [choice]
 
     return ChatCompletionChunk.model_validate(chunk_dict)
+
+
+def _convert_content_block_event(chunk: RawMessageStreamEvent | MessageStreamEvent) -> dict[str, Any]:
+    """Convert content-bearing stream events to an OpenAI delta payload."""
+    payload: dict[str, Any] = {}
+
+    if isinstance(chunk, ContentBlockStartEvent):
+        if chunk.content_block.type == "text":
+            payload = {"content": ""}
+        elif chunk.content_block.type == "tool_use":
+            payload = {
+                "tool_calls": [
+                    {
+                        "index": chunk.index,
+                        "id": chunk.content_block.id,
+                        "type": "function",
+                        "function": {"name": chunk.content_block.name, "arguments": ""},
+                    }
+                ]
+            }
+        elif chunk.content_block.type == "thinking":
+            payload = {"reasoning": {"content": ""}}
+
+    elif isinstance(chunk, ContentBlockDeltaEvent):
+        if chunk.delta.type == "text_delta":
+            payload = {"content": chunk.delta.text}
+        elif chunk.delta.type == "input_json_delta":
+            payload = {
+                "tool_calls": [
+                    {
+                        "index": chunk.index,
+                        "function": {"arguments": chunk.delta.partial_json},
+                    }
+                ]
+            }
+        elif chunk.delta.type == "thinking_delta":
+            payload = {"reasoning": {"content": chunk.delta.thinking}}
+        elif chunk.delta.type == "signature_delta":
+            # The encrypted signature of the thinking block. Must be preserved unmodified
+            # and passed back to Anthropic on subsequent turns (e.g. alongside tool results)
+            # to maintain reasoning continuity. See https://docs.claude.com/en/docs/build-with-claude/extended-thinking
+            payload = {"extra_content": {"anthropic": {"signature": chunk.delta.signature}}}
+
+    return payload
 
 
 def _convert_usage(usage: Usage) -> CompletionUsage:
@@ -458,13 +466,9 @@ def _convert_response(response: Message) -> ChatCompletion:
 
     usage = _convert_usage(response.usage)
 
-    from typing import Literal
-
     choice = Choice(
         index=0,
-        finish_reason=cast(
-            "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']", finish_reason or "stop"
-        ),
+        finish_reason=finish_reason,
         message=message,
     )
 
@@ -490,31 +494,19 @@ def _convert_response(response: Message) -> ChatCompletion:
 
 def _convert_tool_spec(openai_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert OpenAI tool specification to Anthropic format."""
-    generic_tools = []
-
+    anthropic_tools = []
     for tool in openai_tools:
         if tool.get("type") != "function":
             continue
 
         function = tool["function"]
-        generic_tool = {
+        # input_schema is the full JSON Schema, including references and constraints.
+        # https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools
+        schema = {"type": "object", "properties": {}, "required": [], **(function.get("parameters") or {})}
+        anthropic_tool = {
             "name": function["name"],
             "description": function.get("description", ""),
-            "parameters": function.get("parameters") or {},
-        }
-        generic_tools.append(generic_tool)
-
-    anthropic_tools = []
-    for tool in generic_tools:
-        params: dict[str, Any] = tool["parameters"] or {}
-        anthropic_tool = {
-            "name": tool["name"],
-            "description": tool["description"],
-            "input_schema": {
-                "type": "object",
-                "properties": params.get("properties") or {},
-                "required": params.get("required", []),
-            },
+            "input_schema": schema,
         }
         anthropic_tools.append(anthropic_tool)
 
@@ -531,7 +523,11 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     elif isinstance(tool_choice, dict):
         if tool_choice_type := tool_choice.get("type"):
             if tool_choice_type in ("custom", "function"):
-                return {"type": "tool", "name": tool_choice[tool_choice_type]["name"]}
+                return {
+                    "type": "tool",
+                    "name": tool_choice[tool_choice_type]["name"],
+                    "disable_parallel_tool_use": not parallel_tool_calls,
+                }
         msg = f"Unsupported tool_choice format: {tool_choice}"
         raise ValueError(msg)
     return {"type": tool_choice, "disable_parallel_tool_use": not parallel_tool_calls}
@@ -678,9 +674,12 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     if params.reasoning_effort is None or params.reasoning_effort == "none":
         result_kwargs["thinking"] = {"type": "disabled"}
     elif params.reasoning_effort != "auto":
+        # Explicit reasoning effort enables adaptive thinking; effort alone does
+        # not enable it on models whose thinking default is off.
+        # https://platform.claude.com/docs/en/build-with-claude/effort#effort-with-thinking
         result_kwargs["thinking"] = {"type": "adaptive"}
         effort = REASONING_EFFORT_TO_ANTHROPIC_EFFORT[params.reasoning_effort]
-        output_config = result_kwargs.get("output_config", {})
+        output_config = result_kwargs.get("output_config", {}).copy()
         output_config["effort"] = effort
         result_kwargs["output_config"] = output_config
 

@@ -616,9 +616,9 @@ def messages(
         max_tokens: Maximum number of tokens to generate.
         provider: Provider name to use for the request.
         system: System prompt (string or list of content blocks with optional cache_control).
-        temperature: Controls randomness (0.0 to 1.0).
-        top_p: Controls diversity via nucleus sampling.
-        top_k: Only sample from the top K options.
+        temperature: Controls randomness. Anthropic deprecates this for current Claude models.
+        top_p: Controls nucleus sampling. Anthropic deprecates this for current Claude models.
+        top_k: Restricts sampling to the top K options. Anthropic deprecates this for current Claude models.
         stream: Whether to stream the response.
         stop_sequences: Custom stop sequences.
         tools: List of tools in Anthropic format.
@@ -636,8 +636,12 @@ def messages(
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
-            providers with native support can stream schema-constrained Messages events.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``
+            for types or mappings with a non-empty schema dict. Mappings without one return
+            ``MessageResponse``. Providers with native support can stream schema-constrained
+            Messages events.
+            Native Anthropic typed beta requests return ``ParsedBetaMessage`` when
+            ``context_management`` is set or beta identifiers are supplied.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
@@ -649,8 +653,9 @@ def messages(
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse (or ParsedMessage when `output_format` is given), or an iterator of
-        MessageStreamEvent (if streaming).
+        MessageResponse, or ParsedMessage for a typed or schema-backed `output_format`.
+        Native Anthropic typed beta requests return ParsedBetaMessage instead.
+        Streaming calls return an iterator of MessageStreamEvent.
 
     """
     if provider is None:
@@ -724,9 +729,9 @@ async def amessages(
         max_tokens: Maximum number of tokens to generate.
         provider: Provider name to use for the request.
         system: System prompt (string or list of content blocks with optional cache_control).
-        temperature: Controls randomness (0.0 to 1.0).
-        top_p: Controls diversity via nucleus sampling.
-        top_k: Only sample from the top K options.
+        temperature: Controls randomness. Anthropic deprecates this for current Claude models.
+        top_p: Controls nucleus sampling. Anthropic deprecates this for current Claude models.
+        top_k: Restricts sampling to the top K options. Anthropic deprecates this for current Claude models.
         stream: Whether to stream the response.
         stop_sequences: Custom stop sequences.
         tools: List of tools in Anthropic format.
@@ -744,8 +749,12 @@ async def amessages(
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
-            providers with native support can stream schema-constrained Messages events.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``
+            for types or mappings with a non-empty schema dict. Mappings without one return
+            ``MessageResponse``. Providers with native support can stream schema-constrained
+            Messages events.
+            Native Anthropic typed beta requests return ``ParsedBetaMessage`` when
+            ``context_management`` is set or beta identifiers are supplied.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
@@ -757,8 +766,9 @@ async def amessages(
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse (or ParsedMessage when `output_format` is given), or an async iterator
-        of MessageStreamEvent (if streaming).
+        MessageResponse, or ParsedMessage for a typed or schema-backed `output_format`.
+        Native Anthropic typed beta requests return ParsedBetaMessage instead.
+        Streaming calls return an async iterator of MessageStreamEvent.
 
     """
     if provider is None:
