@@ -214,6 +214,48 @@ normal error mapping; it is not treated as an empty download.
 
 Anthropic marks user uploads as non-downloadable. Download files returned by
 native code execution or supported skills, using their structured `file_id`.
+`MessagesParams.container` accepts a string container ID or the documented
+Skills object (`str | ContainerParams` on Anthropic SDK 0.124+). Skills are
+GA on `messages.create`; any-llm does not infer a skills beta header.
+Tenant ownership, authorization, persistence, and cleanup remain
+application responsibilities.
+
+Fresh skill-enabled container:
+
+```python
+response = provider.messages(
+    model="claude-sonnet-4-6",
+    max_tokens=2048,
+    tools=[{"type": "code_execution_20250825", "name": "code_execution"}],
+    messages=[{"role": "user", "content": "Create an Excel spreadsheet."}],
+    container={
+        "skills": [
+            {"type": "anthropic", "skill_id": "xlsx", "version": "latest"},
+        ]
+    },
+    timeout=90,
+)
+```
+
+Reuse an existing container while keeping the same Skills:
+
+```python
+history = [{"role": "user", "content": "Create an Excel spreadsheet."}]
+response = provider.messages(
+    model="claude-sonnet-4-6",
+    max_tokens=2048,
+    tools=[{"type": "code_execution_20250825", "name": "code_execution"}],
+    messages=[*history, {"role": "user", "content": "Add a second sheet."}],
+    container={
+        "id": response.container.id,
+        "skills": [
+            {"type": "anthropic", "skill_id": "xlsx", "version": "latest"},
+        ],
+    },
+    timeout=90,
+)
+```
+
 For example, after a Messages request using the native code execution tool:
 
 ```python

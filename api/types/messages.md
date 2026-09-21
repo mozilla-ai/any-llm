@@ -83,7 +83,7 @@ Normalized parameters for the Anthropic Messages API, used internally to pass st
 | `cache_control` | `dict[str, Any] \| None` | Cache control configuration for prompt caching |
 | `prompt_cache_key` | `str \| None` | A key to use when reading from or writing to a provider's prompt cache. |
 | `service_tier` | `str \| None` | The service tier to use for this request. |
-| `container` | `str \| None` | Container identifier for continuing a previous top-level container. |
+| `container` | `str \| dict[str, Any] \| None` | Container identifier, or an object with optional ``id`` and ``skills``. A string reuses an existing container. An object selects Skills for a fresh container (``skills`` without ``id``) or reuses a container while attaching Skills (``id`` plus ``skills``). Each skill requires ``type`` (``anthropic`` or ``custom``) and ``skill_id``; ``version`` is optional. This matches Anthropic SDK ``MessageCreateParamsContainerParam`` (``str | ContainerParams``) on the pinned ``anthropic>=0.124`` Messages contract. ``messages.create`` accepts the object on the GA path; any-llm does not infer a skills beta header. Tenant ownership, authorization, persistence, and cleanup remain application responsibilities. |
 | `context_management` | `dict[str, Any] \| None` | Anthropic context management configuration |
 | `betas` | `list[str] \| None` | Anthropic beta identifiers |
 | `output_format` | `type \| dict[str, Any] \| None` |  |
