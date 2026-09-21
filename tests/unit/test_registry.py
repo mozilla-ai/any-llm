@@ -24,7 +24,7 @@ from any_llm.api import (
     retrieve_batch_results,
 )
 from any_llm.constants import LLMProvider
-from any_llm.exceptions import UnsupportedProviderError
+from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.providers import registry
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.registry import (
@@ -46,6 +46,21 @@ def community_row(monkeypatch: pytest.MonkeyPatch) -> Generator[OpenAICompatible
     monkeypatch.setitem(registry.PROVIDER_REGISTRY, "testgateway", config)
     yield config
     registry._class_cache.pop("testgateway", None)
+
+
+@pytest.fixture
+def optional_key_row(monkeypatch: pytest.MonkeyPatch) -> Generator[OpenAICompatibleProviderConfig, None, None]:
+    """Inject a registry row for a gateway with optional API key."""
+    config = OpenAICompatibleProviderConfig(
+        name="optionalgateway",
+        api_base="https://optionalgateway.example/v1",
+        env_api_key_name="OPTIONALGATEWAY_API_KEY",
+        provider_documentation_url="https://optionalgateway.example/docs",
+        api_key_optional=True,
+    )
+    monkeypatch.setitem(registry.PROVIDER_REGISTRY, "optionalgateway", config)
+    yield config
+    registry._class_cache.pop("optionalgateway", None)
 
 
 def test_config_lookup_normalizes_name() -> None:
@@ -121,6 +136,39 @@ def test_row_defaults_are_conservative(community_row: OpenAICompatibleProviderCo
     assert not cls.SUPPORTS_BATCH
     assert not cls.SUPPORTS_IMAGE_GENERATION
     assert not cls.SUPPORTS_RERANK
+    assert not community_row.api_key_optional
+
+
+def test_row_api_key_required_by_default(
+    community_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(community_row.env_api_key_name, raising=False)
+    with pytest.raises(MissingApiKeyError):
+        AnyLLM.create("testgateway")
+
+
+def test_row_optional_api_key_defaults_to_placeholder(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(optional_key_row.env_api_key_name, raising=False)
+    provider = AnyLLM.create("optionalgateway")
+    assert isinstance(provider, BaseOpenAIProvider)
+    assert provider.client.api_key == "no-key-required"
+
+
+def test_row_optional_api_key_honors_explicit_key(optional_key_row: OpenAICompatibleProviderConfig) -> None:
+    provider = AnyLLM.create("optionalgateway", api_key="explicit-key")
+    assert isinstance(provider, BaseOpenAIProvider)
+    assert provider.client.api_key == "explicit-key"
+
+
+def test_row_optional_api_key_honors_env_var(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(optional_key_row.env_api_key_name, "env-key")
+    provider = AnyLLM.create("optionalgateway")
+    assert isinstance(provider, BaseOpenAIProvider)
+    assert provider.client.api_key == "env-key"
 
 
 def test_unregistered_name_still_raises_unsupported_provider() -> None:

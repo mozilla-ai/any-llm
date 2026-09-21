@@ -14,6 +14,7 @@ provider policy in https://github.com/mozilla-ai/any-llm/issues/1197.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -37,6 +38,7 @@ class OpenAICompatibleProviderConfig:
     """Static default endpoint. None for providers whose base URL only comes from
     the env var or an explicit api_base argument (e.g. databricks)."""
     env_api_base_name: str | None = None
+    api_key_optional: bool = False
     supports_completion: bool = True
     supports_completion_streaming: bool = True
     supports_completion_reasoning: bool = False
@@ -231,6 +233,14 @@ def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOp
         "SUPPORTS_IMAGE_GENERATION": config.supports_image_generation,
         "SUPPORTS_RERANK": config.supports_rerank,
     }
+    if config.api_key_optional:
+
+        def _verify_and_set_api_key(self: Any, api_key: str | None = None) -> str:
+            env_key = os.getenv(self.ENV_API_KEY_NAME) if self.ENV_API_KEY_NAME else None
+            return api_key or env_key or "no-key-required"
+
+        attrs["_verify_and_set_api_key"] = _verify_and_set_api_key
+
     # The class name follows the same convention as folder-based providers so
     # metadata.class_name is stable across a migration.
     class_name = f"{config.name.capitalize()}Provider"
