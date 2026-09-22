@@ -155,7 +155,10 @@ class _TextStreamState:
             # https://ai.google.dev/gemini-api/docs/interactions/streaming
             return []
         if isinstance(event.step, UnknownStep):
-            _raise_stream_error("Gemini interaction stream returned unsupported model output")
+            # convert_interaction_to_response skips step kinds it does not model, so streaming
+            # does the same; otherwise a new Google step type fails only the calls that stream.
+            logger.warning("Skipping unknown Gemini Interactions step")
+            return []
         if not isinstance(event.step, ModelOutputStep):
             return []
 
@@ -271,14 +274,19 @@ class _TextStreamState:
         if self.open_steps:
             _raise_stream_error(f"Gemini interaction stream completed before step.stop for step {min(self.open_steps)}")
         interaction = event.interaction.model_copy(update={"id": self.interaction_id})
-        response = convert_interaction_to_response(interaction, fallback_model=self.model)
-        if not response.output:
+        if self.text_steps:
+            # Steps are keyed by Google's index, which need not arrive in order, while the
+            # streamed item ids follow arrival. Rebuilding from the streamed text keeps the
+            # terminal snapshot consistent with the ids the consumer already saw.
             interaction = interaction.model_copy(
                 update={
-                    "steps": [ModelOutputStep(content=[TextContent(text=text)]) for _, text in self.text_steps.values()]
+                    "steps": [
+                        ModelOutputStep(content=[TextContent(text=text)])
+                        for _, text in sorted(self.text_steps.values())
+                    ]
                 }
             )
-            response = convert_interaction_to_response(interaction, fallback_model=self.model)
+        response = convert_interaction_to_response(interaction, fallback_model=self.model)
         # A stopped step remains complete even when the overall interaction fails.
         for item in response.output[: len(self.text_steps)]:
             if isinstance(item, ResponseOutputMessage):

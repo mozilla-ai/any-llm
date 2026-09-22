@@ -488,6 +488,67 @@ async def test_convert_interaction_stream_orders_terminal_messages_by_output_ind
 
 
 @pytest.mark.asyncio
+async def test_convert_interaction_stream_skips_unknown_steps_like_the_one_shot_path(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    steps: list[Step] = [
+        UnknownStep(raw={"type": "future_output"}),
+        ModelOutputStep(content=[TextContent(text="kept")]),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        result = await _converted_events(
+            _created(),
+            StepStart(index=0, step=steps[0]),
+            StepStop(index=0),
+            StepStart(index=1, step=steps[1]),
+            StepStop(index=1),
+            _completed(),
+        )
+
+    assert "Skipping unknown Gemini Interactions step" in caplog.text
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    one_shot = convert_interaction_to_response(
+        InteractionSseEventInteraction(id="int-123", status="completed", steps=steps),
+        fallback_model="requested",
+    )
+    assert terminal.response.output_text == one_shot.output_text == "kept"
+    assert [item.id for item in terminal.response.output] == [item.id for item in one_shot.output]
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_terminal_snapshot_matches_streamed_item_ids() -> None:
+    result = await _converted_events(
+        _created(),
+        StepStart(index=7, step=ModelOutputStep()),
+        StepDelta(index=7, delta=TextDelta(text="seven")),
+        StepStop(index=7),
+        StepStart(index=2, step=ModelOutputStep()),
+        StepDelta(index=2, delta=TextDelta(text="two")),
+        StepStop(index=2),
+        # Google lists the terminal steps by its own index, not by arrival.
+        _completed(
+            steps=[
+                ModelOutputStep(content=[TextContent(text="two")]),
+                ModelOutputStep(content=[TextContent(text="seven")]),
+            ]
+        ),
+    )
+
+    streamed = {event.item_id: event.text for event in result if isinstance(event, ResponseTextDoneEvent)}
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    snapshot = {
+        item.id: "".join(part.text for part in item.content if isinstance(part, ResponseOutputText))
+        for item in terminal.response.output
+        if isinstance(item, ResponseOutputMessage)
+    }
+    assert streamed == {"msg-int-123-0": "seven", "msg-int-123-1": "two"}
+    assert snapshot == streamed
+
+
+@pytest.mark.asyncio
 async def test_convert_interaction_stream_uses_terminal_steps_when_present() -> None:
     result = await _converted_events(
         _created(),
@@ -634,7 +695,6 @@ async def test_convert_interaction_stream_ignores_non_model_step_deltas() -> Non
     [
         ModelOutputStep(content=[ImageContent(data="aW1hZ2U=", mime_type="image/png")]),
         ModelOutputStep(content=[TextContent(text="partial"), ImageContent(data="aW1hZ2U=", mime_type="image/png")]),
-        UnknownStep(raw={"type": "future_output"}),
     ],
 )
 async def test_convert_interaction_stream_rejects_unsupported_output_and_closes_source(step: Step) -> None:
