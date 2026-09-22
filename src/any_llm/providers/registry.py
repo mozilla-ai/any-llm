@@ -72,6 +72,15 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         provider_documentation_url="https://www.atlascloud.ai/docs",
         supports_completion_reasoning=True,
     ),
+    "cascadia": OpenAICompatibleProviderConfig(
+        name="cascadia",
+        api_base="http://localhost:9090/v1",
+        env_api_key_name="CASCADIA_API_KEY",
+        env_api_base_name="CASCADIA_API_BASE",
+        provider_documentation_url="https://cascadia.to",
+        supports_completion_reasoning=True,
+        api_key_optional=True,
+    ),
     "dashscope": OpenAICompatibleProviderConfig(
         name="dashscope",
         api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -111,6 +120,18 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         env_api_base_name="KENARI_API_BASE",
         provider_documentation_url="https://kenari.id/docs",
         supports_completion_reasoning=True,
+    ),
+    "llamacpp": OpenAICompatibleProviderConfig(
+        name="llamacpp",
+        api_base="http://127.0.0.1:8080/v1",
+        env_api_key_name="LLAMACPP_API_KEY",
+        env_api_base_name="LLAMACPP_API_BASE",
+        provider_documentation_url="https://github.com/ggml-org/llama.cpp",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+        api_key_optional=True,
     ),
     "moonshot": OpenAICompatibleProviderConfig(
         name="moonshot",
@@ -195,6 +216,18 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_reasoning=True,
         supports_completion_image=True,
         supports_moderation=True,
+    ),
+    "vllm": OpenAICompatibleProviderConfig(
+        name="vllm",
+        api_base="http://localhost:8000/v1",
+        env_api_key_name="VLLM_API_KEY",
+        env_api_base_name="VLLM_API_BASE",
+        provider_documentation_url="https://docs.vllm.ai/",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+        api_key_optional=True,
     ),
 }
 

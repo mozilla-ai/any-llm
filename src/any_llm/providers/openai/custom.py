@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
 from any_llm.constants import ProviderTier
-from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.registry import _OptionalApiKeyProvider
 
 if TYPE_CHECKING:
     from any_llm.types.provider import ProviderMetadata
 
 
-class OpenAICompatibleProvider(BaseOpenAIProvider):
+class OpenAICompatibleProvider(_OptionalApiKeyProvider):
     """Point any-llm at an arbitrary OpenAI-compatible endpoint under its own name.
 
     Unlike the built-in providers, this one is configured entirely at construction
@@ -55,10 +54,3 @@ class OpenAICompatibleProvider(BaseOpenAIProvider):
         # Without this, create_openai_compatible(name="openai", api_base=<anything>)
         # would report the verified tier, because the tier is derived from the name.
         return super().get_provider_metadata().model_copy(update={"tier": ProviderTier.COMMUNITY})
-
-    @override
-    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
-        # Custom endpoints may be keyless (local servers) or keyed (hosted gateways).
-        # Fall back to the env var when set, then to a placeholder so the OpenAI client
-        # accepts the value; never raise, so nobody is blocked from using their endpoint.
-        return api_key or os.getenv(self.ENV_API_KEY_NAME) or "no-key-required"

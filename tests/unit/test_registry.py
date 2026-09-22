@@ -204,6 +204,24 @@ def test_import_shim_returns_registry_class() -> None:
     assert AtlascloudProvider is get_registry_provider_class("atlascloud")
     assert DeepAtlascloudProvider is AtlascloudProvider
 
+    from any_llm.providers.cascadia import CascadiaProvider
+    from any_llm.providers.cascadia.cascadia import CascadiaProvider as DeepCascadiaProvider
+
+    assert CascadiaProvider is get_registry_provider_class("cascadia")
+    assert DeepCascadiaProvider is CascadiaProvider
+
+    from any_llm.providers.llamacpp import LlamacppProvider
+    from any_llm.providers.llamacpp.llamacpp import LlamacppProvider as DeepLlamacppProvider
+
+    assert LlamacppProvider is get_registry_provider_class("llamacpp")
+    assert DeepLlamacppProvider is LlamacppProvider
+
+    from any_llm.providers.vllm import VllmProvider
+    from any_llm.providers.vllm.vllm import VllmProvider as DeepVllmProvider
+
+    assert VllmProvider is get_registry_provider_class("vllm")
+    assert DeepVllmProvider is VllmProvider
+
 
 def test_registry_only_name_is_listed_as_supported(community_row: OpenAICompatibleProviderConfig) -> None:
     assert "testgateway" in AnyLLM.get_supported_providers()
