@@ -1,6 +1,7 @@
 """Tests for messages()/amessages() SDK API."""
 
 import json
+import sys
 import threading
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1524,6 +1525,49 @@ def test_supports_messages_flag() -> None:
     from any_llm.any_llm import AnyLLM
 
     assert AnyLLM.SUPPORTS_MESSAGES is True
+
+
+def test_supports_messages_native_flags() -> None:
+    """Test that SUPPORTS_MESSAGES_NATIVE distinguishes native from bridged providers."""
+    from any_llm.providers.anthropic.base import BaseAnthropicProvider
+    from any_llm.providers.meta.meta import MetaProvider
+    from any_llm.providers.openai.base import BaseOpenAIProvider
+    from any_llm.providers.otari.otari import OtariProvider
+
+    assert AnyLLM.SUPPORTS_MESSAGES_NATIVE is False
+    assert BaseOpenAIProvider.SUPPORTS_MESSAGES_NATIVE is False
+    assert BaseAnthropicProvider.SUPPORTS_MESSAGES_NATIVE is True
+    assert MetaProvider.SUPPORTS_MESSAGES_NATIVE is True
+    assert OtariProvider.SUPPORTS_MESSAGES_NATIVE is True
+
+
+def test_supports_messages_native_matches_amessages_override() -> None:
+    """SUPPORTS_MESSAGES_NATIVE agrees with whether the provider overrides `_amessages`."""
+    for provider_name in AnyLLM.get_supported_providers():
+        if sys.version_info >= (3, 14) and provider_name in {"voyage", "watsonx"}:
+            continue
+        provider_class = AnyLLM.get_provider_class(provider_name)
+        overrides = provider_class._amessages is not AnyLLM._amessages
+        assert provider_class.SUPPORTS_MESSAGES_NATIVE is overrides, provider_name
+
+
+def test_provider_metadata_messages_native() -> None:
+    """Test that ProviderMetadata reports messages_native correctly."""
+    anthropic_meta = AnyLLM.get_provider_class("anthropic").get_provider_metadata()
+    assert anthropic_meta.messages is True
+    assert anthropic_meta.messages_native is True
+
+    meta_meta = AnyLLM.get_provider_class("meta").get_provider_metadata()
+    assert meta_meta.messages is True
+    assert meta_meta.messages_native is True
+
+    otari_meta = AnyLLM.get_provider_class("otari").get_provider_metadata()
+    assert otari_meta.messages is True
+    assert otari_meta.messages_native is True
+
+    openai_meta = AnyLLM.get_provider_class("openai").get_provider_metadata()
+    assert openai_meta.messages is True
+    assert openai_meta.messages_native is False
 
 
 def test_sync_messages_returns_message_response() -> None:

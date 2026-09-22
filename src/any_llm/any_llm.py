@@ -134,6 +134,10 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
 
+    SUPPORTS_MESSAGES_NATIVE: bool = False
+    """Whether the provider implements `_amessages` against a real Anthropic Messages
+    endpoint, rather than inheriting the Messages-to-Completions bridge."""
+
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
     """Whether Messages structured output can be streamed by this provider."""
 
@@ -557,6 +561,7 @@ class AnyLLM(FilesMixin, ABC):
             files=bool(cls.SUPPORTED_FILE_OPERATIONS),
             file_operations=tuple(sorted(cls.SUPPORTED_FILE_OPERATIONS)),
             messages=cls.SUPPORTS_MESSAGES,
+            messages_native=cls.SUPPORTS_MESSAGES_NATIVE,
             class_name=cls.__name__,
         )
 
