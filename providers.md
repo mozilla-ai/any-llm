@@ -33,7 +33,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`deepseek`](https://platform.deepseek.com/) | ✅ Verified | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`edenai`](https://www.edenai.co/docs) | 🤝 Community | EDENAI_API_KEY | EDENAI_API_BASE | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | ✅ Verified | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| [`gemini`](https://ai.google.dev/gemini-api/docs) | ✅ Verified | GEMINI_API_KEY/GOOGLE_API_KEY | GOOGLE_GEMINI_BASE_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`gemini`](https://ai.google.dev/gemini-api/docs) | ✅ Verified | GEMINI_API_KEY/GOOGLE_API_KEY | GOOGLE_GEMINI_BASE_URL | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [`github`](https://docs.github.com/en/github-models) | 🤝 Community | GITHUB_TOKEN | GITHUB_MODELS_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | [`gmi`](https://docs.gmicloud.ai/inference-engine/api-reference/llm-api-reference) | 🤝 Community | GMI_API_KEY | GMI_API_BASE | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`groq`](https://groq.com/api) | ✅ Verified | GROQ_API_KEY | GROQ_BASE_URL | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
