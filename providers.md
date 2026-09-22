@@ -41,7 +41,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`inception`](https://inceptionlabs.ai/) | ✅ Verified | INCEPTION_API_KEY | INCEPTION_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | [`kenari`](https://kenari.id/docs) | 🤝 Community | KENARI_API_KEY | KENARI_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`llama`](https://www.llama.com/products/llama-api/) | 🤝 Community | LLAMA_API_KEY | LLAMA_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| [`llamacpp`](https://github.com/ggml-org/llama.cpp) | ✅ Verified | None | LLAMACPP_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`llamacpp`](https://github.com/ggml-org/llama.cpp) | ✅ Verified | LLAMACPP_API_KEY | LLAMACPP_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`llamafile`](https://github.com/Mozilla-Ocho/llamafile) | ✅ Verified | None | LLAMAFILE_API_BASE | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`lmstudio`](https://lmstudio.ai/docs/python) | ✅ Verified | LM_STUDIO_API_KEY | LM_STUDIO_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
 | [`meta`](https://dev.meta.ai/docs) | 🤝 Community | MODEL_API_KEY | META_API_BASE | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ |
