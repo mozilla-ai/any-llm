@@ -45,6 +45,9 @@ async def test_responses_async(
             pytest.skip("Local Model host is not set up, skipping")
         raise
     assert isinstance(result, (ResponseResource, Response))
+    # Both shapes carry `output`; only Response has the `output_text` helper. An empty
+    # list means the provider answered with nothing, which the isinstance check alone accepts.
+    assert result.output
 
 
 @pytest.mark.asyncio
