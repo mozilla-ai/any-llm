@@ -275,6 +275,17 @@ def convert_exception(
     return error
 
 
+def unified_exceptions_enabled(override: bool | None = None) -> bool:
+    """Whether unified exceptions are active, deferring to the environment when unset.
+
+    Resolved at raise time rather than at construction, so a process that flips the
+    environment variable after building a provider still sees the change.
+    """
+    if override is not None:
+        return override
+    return os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on")
+
+
 def _handle_exception(
     exception: Exception,
     provider_name: str,
@@ -308,12 +319,7 @@ def _handle_exception(
     if isinstance(exception, ValidationError):
         raise exception
 
-    # Resolved at raise time rather than at construction, so a process that flips the
-    # environment variable after building a provider still sees the change.
-    if unified_exceptions is None:
-        unified_exceptions = os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on")
-
-    if unified_exceptions:
+    if unified_exceptions_enabled(unified_exceptions):
         converted = convert_exception(exception, provider_name)
         if file_operation and converted.status_code == 404:
             converted = ProviderFileNotFoundError(

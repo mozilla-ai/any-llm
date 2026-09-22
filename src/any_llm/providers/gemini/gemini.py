@@ -1,16 +1,18 @@
 import os
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, ClassVar
 
 from google import genai
 from google.genai import types
 from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.types.files import FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
+from .files import delete_file, list_files, retrieve_file, upload_file
 
 
 class GeminiProvider(GoogleProvider):
@@ -21,6 +23,11 @@ class GeminiProvider(GoogleProvider):
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
     SUPPORTS_RESPONSES = True
+    # Downloads stay out: files.download buffers a whole file in memory and reports neither
+    # the response status nor its headers. Honoring the streamed-download contract would mean
+    # bypassing the SDK and requesting files/<id>:download?alt=media over raw HTTP, which is a
+    # larger commitment than this change makes.
+    SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset({"upload", "list", "retrieve", "delete"})
 
     _interactions_api_version: str | None
 
@@ -108,3 +115,30 @@ class GeminiProvider(GoogleProvider):
                 yield event
         finally:
             await aclose_quietly(converted_stream)
+
+    @override
+    async def _aupload_file(
+        self,
+        file: FileInput,
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        purpose: str | None = None,
+        expires_in: int | None = None,
+        **kwargs: Any,
+    ) -> FileMetadata:
+        return await upload_file(self.client, file, filename, mime_type, purpose, expires_in, kwargs)
+
+    @override
+    async def _alist_files(
+        self, *, limit: int | None = None, cursor: str | None = None, purpose: str | None = None, **kwargs: Any
+    ) -> FilePage:
+        return await list_files(self.client, limit, cursor, purpose, kwargs)
+
+    @override
+    async def _aretrieve_file(self, file_id: str, **kwargs: Any) -> FileMetadata:
+        return await retrieve_file(self.client, file_id, kwargs, self._unified_exceptions)
+
+    @override
+    async def _adelete_file(self, file_id: str, **kwargs: Any) -> FileDeleted:
+        return await delete_file(self.client, file_id, kwargs, self._unified_exceptions)

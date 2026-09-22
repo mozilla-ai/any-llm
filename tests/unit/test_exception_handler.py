@@ -16,6 +16,7 @@ from any_llm.exceptions import (
     InvalidRequestError,
     ModelNotFoundError,
     ProviderError,
+    ProviderFileNotFoundError,
     RateLimitError,
     UpstreamProviderError,
 )
@@ -25,6 +26,7 @@ from any_llm.utils.exception_handler import (
     _handle_exception,
     convert_exception,
     handle_exceptions,
+    unified_exceptions_enabled,
 )
 
 
@@ -736,3 +738,25 @@ async def test_close_before_read_does_not_initialize_iterator() -> None:
         await anext(wrapped)
     source.__aiter__.assert_not_called()
     source.close.assert_awaited_once()
+
+
+def test_file_operation_404_is_a_missing_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    original = _StatusError(404, "No such File object: file-123")
+
+    with pytest.raises(ProviderFileNotFoundError) as raised:
+        _handle_exception(original, "openai", file_operation=True)
+
+    assert raised.value.status_code == 404
+
+
+def test_unified_exceptions_enabled_prefers_an_explicit_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    assert unified_exceptions_enabled(False) is False
+    assert unified_exceptions_enabled(True) is True
+    assert unified_exceptions_enabled() is True
+
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "off")
+    assert unified_exceptions_enabled() is False
+    monkeypatch.delenv("ANY_LLM_UNIFIED_EXCEPTIONS")
+    assert unified_exceptions_enabled() is False
