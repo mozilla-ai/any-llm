@@ -13,8 +13,8 @@ do not automatically inherit Files support.
 | Provider | Upload | List | Retrieve | Download | Delete |
 | --- | --- | --- | --- | --- | --- |
 | Anthropic | Yes | Yes | Yes | Generated files | Yes |
-| OpenAI | Yes, requires `purpose` | Yes | Yes | Depends on file purpose | Yes |
-| Azure OpenAI (v1) | Yes, requires `purpose` | Yes | Yes | Depends on file purpose | Yes |
+| OpenAI | Yes, requires `purpose` | Yes | Yes | Depends on file purpose; container files with `container_id` | Yes |
+| Azure OpenAI (v1) | Yes, requires `purpose` | Yes | Yes | Depends on file purpose; container files with `container_id` | Yes |
 
 Check `get_provider_metadata().file_operations` before using Files on a provider.
 
@@ -198,7 +198,41 @@ their metadata succeeds. Other purposes have their own restrictions; consult
 [OpenAI's Files reference](https://platform.openai.com/docs/api-reference/files)
 before assuming a file can be downloaded.
 
-For a downloadable file ID, use `openai_provider.download_file(file_id)` or
+Files produced by OpenAI's `code_interpreter` live in a container, not the Files
+API. Pass the annotation's `container_id` to `retrieve_file` and `download_file`
+to read them from `/v1/containers/{container_id}/files/{file_id}`. Omitting
+`container_id` keeps the existing Files routes. Upload, list, and delete reject
+`container_id`. Anthropic generated files already use `download_file(file_id)`
+without a container id.
+
+```python
+from any_llm import AnyLLM
+
+openai_provider = AnyLLM.create("openai")
+response = openai_provider.responses(
+    model="gpt-4.1",
+    tools=[{"type": "code_interpreter", "container": {"type": "auto"}}],
+    input="Write a three-row CSV to /mnt/data/out.csv and tell me the filename.",
+)
+for item in response.output:
+    if getattr(item, "type", None) != "message":
+        continue
+    for content in item.content:
+        for annotation in getattr(content, "annotations", []) or []:
+            if getattr(annotation, "type", None) != "container_file_citation":
+                continue
+            metadata = openai_provider.retrieve_file(
+                annotation.file_id, container_id=annotation.container_id
+            )
+            with openai_provider.download_file(
+                annotation.file_id, container_id=annotation.container_id
+            ) as chunks:
+                with open(metadata.filename or "result.bin", "wb") as destination:
+                    for chunk in chunks:
+                        destination.write(chunk)
+```
+
+For a downloadable Files-API file ID, use `openai_provider.download_file(file_id)` or
 `openai_provider.adownload_file(file_id)` with the context-manager patterns below.
 OpenAI's deletion acknowledgement preserves its native `deleted` flag and
 provider-specific fields such as `object`.
@@ -209,6 +243,9 @@ Azure downloads use `/openai/v1/files/{file_id}/content` with the same streaming
 context managers. Download eligibility is determined by Azure, not by the OpenAI
 purpose restrictions above. A failure on context entry is propagated through the
 normal error mapping; it is not treated as an empty download.
+
+`code_interpreter` output uses the same `container_id` option as OpenAI, routed
+to `/openai/v1/containers/{container_id}/files/{file_id}` and `/content`.
 
 ### Anthropic
 
@@ -316,7 +353,9 @@ and should not be logged indiscriminately.
 All OpenAI and Azure OpenAI Files methods accept `timeout`, `max_retries`, and
 `extra_headers`. Upload requires the shared `purpose` parameter and accepts
 `expires_in`. Listing accepts `purpose` and the provider-specific `order` option.
-Anthropic's `betas` and `ids` options are not accepted by either provider.
+Retrieve and download accept `container_id` for files produced by
+`code_interpreter`; the Files API id alone is not enough. Anthropic's `betas`
+and `ids` options are not accepted by either provider.
 
 All Anthropic Files methods accept `timeout`, `max_retries`, `betas`, and
 `extra_headers` (for example, `{"anthropic-version": "2023-06-01"}`). Upload also

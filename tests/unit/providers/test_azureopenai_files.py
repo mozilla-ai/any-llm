@@ -281,3 +281,41 @@ async def test_azure_file_download_is_lazy_and_closes(consumption: str) -> None:
                 elif consumption == "full":
                     assert b"".join([chunk async for chunk in download]) == b"datadatadata"
         assert stream.closed
+
+
+@pytest.mark.asyncio
+async def test_azure_container_files_use_v1_container_routes() -> None:
+    requests: list[httpx.Request] = []
+    payload = {
+        "id": "cfile-azure",
+        "object": "container.file",
+        "bytes": 8,
+        "container_id": "cntr_azure",
+        "created_at": 1700000000,
+        "path": "/mnt/data/out.txt",
+        "source": "assistant",
+    }
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/content"):
+            return httpx.Response(200, content=b"produced")
+        return httpx.Response(200, json=payload)
+
+    provider = AzureopenaiProvider(
+        api_base="https://resource.openai.azure.com",
+        api_key="azure-secret",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+    )
+    async with provider.client:
+        metadata = await provider.aretrieve_file("cfile-azure", container_id="cntr_azure")
+        async with provider.adownload_file("cfile-azure", container_id="cntr_azure") as download:
+            body = b"".join([chunk async for chunk in download])
+    assert [request.url.path for request in requests] == [
+        "/openai/v1/containers/cntr_azure/files/cfile-azure",
+        "/openai/v1/containers/cntr_azure/files/cfile-azure/content",
+    ]
+    assert metadata.filename == "out.txt"
+    assert metadata.size_bytes == 8
+    assert metadata.downloadable is True
+    assert body == b"produced"
