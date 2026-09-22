@@ -167,6 +167,31 @@ def test_any_llm_error_metadata_defaults_to_none() -> None:
     assert error.error_type is None
 
 
+def test_convert_exception_carries_integer_code_as_http_status() -> None:
+    """google-genai's APIError stores the HTTP status on ``code``, not ``status_code``."""
+
+    class _CodeError(Exception):
+        def __init__(self) -> None:
+            super().__init__("File not found")
+            self.code = 404
+
+    result = convert_exception(_CodeError(), "gemini")
+    assert result.status_code == 404
+    assert isinstance(result, ModelNotFoundError)
+
+
+def test_convert_exception_ignores_non_http_integer_code() -> None:
+    """A small integer such as a gRPC code is not treated as an HTTP status."""
+
+    class _GrpcCodeError(Exception):
+        def __init__(self) -> None:
+            super().__init__("cancelled")
+            self.code = 1
+
+    result = convert_exception(_GrpcCodeError(), "gemini")
+    assert result.status_code is None
+
+
 def test_convert_exception_carries_status_code_from_attribute() -> None:
     result = convert_exception(_StatusError(400, "Invalid request"), "openai")
     assert isinstance(result, InvalidRequestError)

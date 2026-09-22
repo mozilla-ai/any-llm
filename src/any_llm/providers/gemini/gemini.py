@@ -1,19 +1,21 @@
 import os
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, ClassVar
 
 from google import genai
 from google.genai import types
 from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.types.files import FileOperation
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
+from .files import GeminiFileMethods
 
 
-class GeminiProvider(GoogleProvider):
+class GeminiProvider(GeminiFileMethods, GoogleProvider):
     """Gemini Provider using the Google GenAI Developer API."""
 
     PROVIDER_NAME = "gemini"
@@ -21,6 +23,9 @@ class GeminiProvider(GoogleProvider):
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
     SUPPORTS_RESPONSES = True
+    SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset(
+        {"upload", "list", "retrieve", "download", "delete"}
+    )
 
     _interactions_api_version: str | None
 

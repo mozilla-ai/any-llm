@@ -140,7 +140,7 @@ class _ErrorMetadata(NamedTuple):
 def _extract_status_code(exception: Exception) -> int | None:
     """Read the HTTP status off the exception, or off its attached response."""
     status_code = getattr(exception, "status_code", None)
-    if isinstance(status_code, int):
+    if isinstance(status_code, int) and not isinstance(status_code, bool):
         return status_code
 
     response = getattr(exception, "response", None)
@@ -148,8 +148,15 @@ def _extract_status_code(exception: Exception) -> int | None:
         # httpx and requests spell it status_code; aiohttp spells it status
         for name in ("status_code", "status"):
             response_status = getattr(response, name, None)
-            if isinstance(response_status, int):
+            if isinstance(response_status, int) and not isinstance(response_status, bool):
                 return response_status
+
+    # google-genai's APIError stores the HTTP status on ``code`` (int), not ``status_code``.
+    # Ignore values outside the HTTP range so a string provider code or gRPC code is not
+    # mistaken for a status. String ``code`` values stay in the structured ``code`` field.
+    code = getattr(exception, "code", None)
+    if isinstance(code, int) and not isinstance(code, bool) and 100 <= code < 600:
+        return code
 
     return None
 
