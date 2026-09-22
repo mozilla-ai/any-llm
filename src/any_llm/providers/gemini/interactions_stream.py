@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from inspect import isawaitable
 from typing import TYPE_CHECKING, Never, NoReturn
 
 from google.genai.interactions import (
@@ -40,6 +39,7 @@ from openai.types.responses import (
 
 from any_llm.exceptions import ProviderError
 from any_llm.logging import logger
+from any_llm.utils.aio import aclose_quietly
 
 from .interactions import convert_interaction_to_response
 
@@ -341,7 +341,6 @@ async def convert_interaction_stream(
 ) -> AsyncGenerator[ResponseStreamEvent]:
     """Normalize a create stream into the OpenAI text event lifecycle."""
     state = _TextStreamState(model)
-    primary_error: BaseException | None = None
     try:
         async for event in stream:
             events, terminal = state.convert(event)
@@ -350,19 +349,5 @@ async def convert_interaction_stream(
             if terminal:
                 return
         state.incomplete()
-    except BaseException as error:
-        if not isinstance(error, GeneratorExit):
-            primary_error = error
-        raise
     finally:
-        try:
-            close = getattr(stream, "close", None)
-            if callable(close) and isawaitable(close_result := close()):
-                await close_result
-        except BaseException as close_error:
-            if primary_error is None:
-                raise
-            logger.warning(
-                "Failed to close Gemini Interactions stream while handling another error",
-                exc_info=close_error,
-            )
+        await aclose_quietly(stream)

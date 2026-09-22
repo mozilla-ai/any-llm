@@ -108,6 +108,13 @@ async def _events(*events: InteractionSSEEvent) -> AsyncIterator[InteractionSSEE
         yield event
 
 
+def _sdk_stream() -> AsyncMock:
+    """Stand in for google.genai's AsyncStream, which exposes close() and no aclose()."""
+    stream = AsyncMock()
+    del stream.aclose
+    return stream
+
+
 def _created(*, model: str | None = None) -> InteractionCreatedEvent:
     return InteractionCreatedEvent(
         interaction=InteractionSseEventInteraction(
@@ -761,7 +768,7 @@ async def test_convert_interaction_stream_ignores_non_model_step_deltas() -> Non
     ],
 )
 async def test_convert_interaction_stream_rejects_unsupported_output_and_closes_source(step: Step) -> None:
-    stream = AsyncMock()
+    stream = _sdk_stream()
     stream.close = AsyncMock()
     stream.__aiter__.return_value = [_created(), StepStart(index=0, step=step)]
 
@@ -876,7 +883,7 @@ async def test_convert_interaction_stream_rejects_malformed_order(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("synchronous_close", [False, True], ids=["async-close", "sync-close"])
 async def test_convert_interaction_stream_closes_source_when_consumer_stops(*, synchronous_close: bool) -> None:
-    stream = AsyncMock()
+    stream = _sdk_stream()
     stream.close = Mock(return_value=None) if synchronous_close else AsyncMock()
     stream.__aiter__.return_value = [_created()]
 
@@ -890,20 +897,20 @@ async def test_convert_interaction_stream_closes_source_when_consumer_stops(*, s
 
 
 @pytest.mark.asyncio
-async def test_convert_interaction_stream_propagates_close_error_after_success() -> None:
-    stream = AsyncMock()
+async def test_convert_interaction_stream_suppresses_close_error_after_success() -> None:
+    stream = _sdk_stream()
     stream.close = AsyncMock(side_effect=RuntimeError("close failed"))
     stream.__aiter__.return_value = [_created(), _completed()]
 
-    with pytest.raises(RuntimeError, match="close failed"):
-        _ = [event async for event in convert_interaction_stream(stream, model="requested")]
+    result = [event async for event in convert_interaction_stream(stream, model="requested")]
+
+    assert isinstance(result[-1], ResponseCompletedEvent)
+    stream.close.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
-async def test_convert_interaction_stream_preserves_primary_error_when_close_fails(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    stream = AsyncMock()
+async def test_convert_interaction_stream_preserves_primary_error_when_close_fails() -> None:
+    stream = _sdk_stream()
     stream.close = AsyncMock(side_effect=RuntimeError("close failed"))
     stream.__aiter__.return_value = [
         ErrorEvent.model_validate(
@@ -911,18 +918,15 @@ async def test_convert_interaction_stream_preserves_primary_error_when_close_fai
         )
     ]
 
-    with (
-        caplog.at_level(logging.WARNING, logger="any_llm"),
-        pytest.raises(ProviderError, match="request failed"),
-    ):
+    with pytest.raises(ProviderError, match="request failed"):
         _ = [event async for event in convert_interaction_stream(stream, model="requested")]
 
-    assert "Failed to close Gemini Interactions stream" in caplog.text
+    stream.close.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
 async def test_convert_interaction_stream_preserves_unsupported_output_error_when_close_fails() -> None:
-    stream = AsyncMock()
+    stream = _sdk_stream()
     stream.close = AsyncMock(side_effect=RuntimeError("close failed"))
     stream.__aiter__.return_value = [
         _created(),
@@ -935,7 +939,7 @@ async def test_convert_interaction_stream_preserves_unsupported_output_error_whe
 
 @pytest.mark.asyncio
 async def test_convert_interaction_stream_propagates_cancellation_and_closes_source() -> None:
-    stream = AsyncMock()
+    stream = _sdk_stream()
     stream.close = AsyncMock()
 
     async def blocked_events() -> AsyncIterator[InteractionSSEEvent]:

@@ -8,6 +8,7 @@ from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
 
@@ -106,4 +107,4 @@ class GeminiProvider(GoogleProvider):
             async for event in converted_stream:
                 yield event
         finally:
-            await converted_stream.aclose()
+            await aclose_quietly(converted_stream)
