@@ -314,6 +314,18 @@ def _extract_google_thought_signature(container: dict[str, Any], provider_name: 
     return signature
 
 
+def _pending_function_response_parts(contents: list[types.Content]) -> list[types.Part] | None:
+    """Return the parts of a trailing user turn made only of function responses, else None."""
+    if not contents:
+        return None
+    last = contents[-1]
+    if last.role != "user" or not last.parts:
+        return None
+    if any(part.function_response is None for part in last.parts):
+        return None
+    return last.parts
+
+
 def _convert_messages(
     messages: list[dict[str, Any]], provider_name: str = "gemini"
 ) -> tuple[list[types.Content], str | None]:
@@ -400,9 +412,13 @@ def _convert_messages(
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
             part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
-            # Gemini carries function results in a `user` turn; "function" is an undocumented legacy
-            # role that Gemini 3 flash models reject with 400 INVALID_ARGUMENT.
-            formatted_messages.append(types.Content(role="user", parts=[part]))
+            # The API documents only "user" and "model" as Content roles. "function" is tolerated by
+            # older models and rejected with 400 INVALID_ARGUMENT by gemini-3.5-flash-lite, 3.7-flash
+            # and 3.8-flash. Results of parallel calls share one user turn, as google-genai emits them.
+            if (pending := _pending_function_response_parts(formatted_messages)) is not None:
+                pending.append(part)
+            else:
+                formatted_messages.append(types.Content(role="user", parts=[part]))
 
     return formatted_messages, system_instruction
 
