@@ -1105,7 +1105,7 @@ async def test_real_sdk_stream_keeps_interleaved_text_after_thought_metadata(
     assert terminal.response.usage.output_tokens == 335
     assert terminal.response.usage.output_tokens_details.reasoning_tokens == 245
     assert terminal.response.usage.total_tokens == (346 if total is None else total)
-    assert str(requests[0].url) == "https://example.test/v1/interactions"
+    assert str(requests[0].url) == "https://example.test/v1beta/interactions"
     assert json.loads(requests[0].content)["stream"] is True
 
 
