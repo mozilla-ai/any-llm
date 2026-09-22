@@ -268,6 +268,15 @@ def test_convert_responses_params_maps_only_reviewed_text_subset() -> None:
     }
 
 
+def test_convert_responses_params_omits_api_version_when_client_sets_none() -> None:
+    params = ResponsesParams(model="gemini-3.8-flash", input="Hello")
+
+    assert convert_responses_params(params, "gemini", api_version=None) == {
+        "model": "gemini-3.8-flash",
+        "input": "Hello",
+    }
+
+
 def test_convert_responses_params_rejects_non_string_input() -> None:
     params = ResponsesParams(model="gemini-3.8-flash", input=[{"type": "input_text", "text": "Hello"}])
 
@@ -312,7 +321,7 @@ async def test_aresponses_forwards_request_timeout() -> None:
 
 
 @pytest.mark.asyncio
-async def test_aresponses_preserves_explicit_v1beta_client_configuration() -> None:
+async def test_aresponses_preserves_explicit_client_api_version() -> None:
     requests: list[httpx.Request] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -332,14 +341,14 @@ async def test_aresponses_preserves_explicit_v1beta_client_configuration() -> No
         provider = GeminiProvider(
             api_key="test-key",
             api_base="https://example.test",
-            http_options=types.HttpOptions(api_version="v1beta", httpx_async_client=http_client),
+            http_options=types.HttpOptions(api_version="v1", httpx_async_client=http_client),
         )
         response = await provider.aresponses("gemini-3.8-flash", "Hello")
     finally:
         await http_client.aclose()
 
     assert isinstance(response, Response)
-    assert str(requests[0].url) == "https://example.test/v1beta/interactions"
+    assert str(requests[0].url) == "https://example.test/v1/interactions"
 
 
 @pytest.mark.asyncio
@@ -470,7 +479,7 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(
     assert response.usage.output_tokens_details.reasoning_tokens == 245
     assert response.usage.total_tokens == (346 if total is None else total)
     assert len(requests) == 1
-    assert str(requests[0].url) == "https://example.test/v1/interactions?trace=enabled"
+    assert str(requests[0].url) == "https://example.test/v1beta/interactions?trace=enabled"
     assert requests[0].headers["x-request-id"] == "request-123"
     assert requests[0].headers["x-goog-api-key"] == "test-key"
     assert json.loads(requests[0].content) == {

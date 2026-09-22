@@ -174,7 +174,7 @@ def convert_responses_params(
     params: ResponsesParams,
     provider_name: str,
     *,
-    api_version: str,
+    api_version: str | None,
 ) -> dict[str, Any]:
     """Translate the supported Responses subset into Interactions arguments."""
     if not isinstance(params.input, str):
@@ -196,10 +196,11 @@ def convert_responses_params(
     # fields must be absent rather than None. Any stays at this generated SDK
     # boundary because object values cannot satisfy either unpacked overload.
     create_kwargs: dict[str, Any] = {
-        "api_version": api_version,
         "model": params.model,
         "input": params.input,
     }
+    if api_version is not None:
+        create_kwargs["api_version"] = api_version
     if params.instructions is not None:
         create_kwargs["system_instruction"] = params.instructions
     if params.max_output_tokens is not None:

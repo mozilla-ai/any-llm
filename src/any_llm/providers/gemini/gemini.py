@@ -21,7 +21,7 @@ class GeminiProvider(GoogleProvider):
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
     SUPPORTS_RESPONSES = True
 
-    _interactions_api_version: str
+    _interactions_api_version: str | None
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
@@ -41,10 +41,11 @@ class GeminiProvider(GoogleProvider):
             configured_api_version = http_options.api_version
         else:
             configured_api_version = None
-        # Interactions is GA in v1, while the SDK defaults the shared Gemini
-        # Developer API client to v1beta for generateContent preview features.
+        # Follow the client's configured version, leaving None to the SDK default of
+        # v1beta. Interactions is served on both v1 and v1beta, but v1 does not carry
+        # preview models, so pinning it here would reject models completion() accepts.
         # https://ai.google.dev/gemini-api/docs/api-versions
-        self._interactions_api_version = configured_api_version or "v1"
+        self._interactions_api_version = configured_api_version
 
         if api_base:
             http_options = kwargs.pop("http_options", None)
