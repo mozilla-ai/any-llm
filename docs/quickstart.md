@@ -159,7 +159,24 @@ print(response.choices[0].message.content)
 
 Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
 
-## Gemini Interactions
+## Responses
+
+For the [providers that support it](providers.md), `responses` and `aresponses` expose the OpenAI-style Responses API:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("openai")
+response = llm.responses(
+    model="gpt-5-nano",
+    input_data="Explain why the sky is blue.",
+)
+print(response.output_text)
+```
+
+Coverage varies by provider. Check the Responses column in [providers](providers.md), and the notes below for parameters a provider rejects.
+
+### Gemini
 
 Gemini maps text-only `responses()` calls to Google's [Interactions API](https://ai.google.dev/gemini-api/docs/interactions). The existing `completion()` method continues to use `generateContent`.
 
