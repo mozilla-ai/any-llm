@@ -13,8 +13,10 @@ from google.genai.interactions import (
     StepDelta,
     StepStart,
     StepStop,
+    TextAnnotationDelta,
     TextContent,
     TextDelta,
+    ThoughtSignatureDelta,
     ThoughtStep,
     UnknownInteractionSSEEvent,
     UnknownStep,
@@ -229,6 +231,11 @@ class _TextStreamState:
             return []
         if isinstance(event.delta, UnknownStepDeltaData):
             logger.warning("Skipping unknown Gemini Interactions delta: %s", _wire_type(event.delta.raw, "type"))
+            return []
+        if isinstance(event.delta, TextAnnotationDelta | ThoughtSignatureDelta):
+            # Metadata about text this adapter already carries; convert_interaction_to_response
+            # drops the equivalent fields, so failing here would reject a payload the
+            # non-streaming call accepts.
             return []
         if not isinstance(event.delta, TextDelta):
             _raise_stream_error("Gemini interaction stream returned non-text model output delta")

@@ -23,10 +23,13 @@ from google.genai.interactions import (
     ModelOutputStep,
     Step,
     StepDelta,
+    StepDeltaData,
     StepStart,
     StepStop,
+    TextAnnotationDelta,
     TextContent,
     TextDelta,
+    ThoughtSignatureDelta,
     ThoughtStep,
     UnknownInteractionSSEEvent,
     UnknownStep,
@@ -703,6 +706,27 @@ async def test_convert_interaction_stream_logs_and_skips_unknown_delta(
     assert isinstance(actual[-1], ResponseCompletedEvent)
     assert actual[-1].response.output_text == "AZ"
     assert "Skipping unknown Gemini Interactions delta" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "delta",
+    [TextAnnotationDelta(annotations=[]), ThoughtSignatureDelta(signature="opaque")],
+    ids=["annotation", "thought-signature"],
+)
+async def test_convert_interaction_stream_skips_text_metadata_deltas(delta: StepDeltaData) -> None:
+    prefix: list[InteractionSSEEvent] = [
+        _created(),
+        StepStart(index=0, step=ModelOutputStep(content=[TextContent(text="A")])),
+    ]
+    suffix: list[InteractionSSEEvent] = [StepDelta(index=0, delta=TextDelta(text="B")), StepStop(index=0), _completed()]
+    expected = await _converted_events(*prefix, *suffix)
+
+    actual = await _converted_events(*prefix, StepDelta(index=0, delta=delta), *suffix)
+
+    assert [event.model_dump() for event in actual] == [event.model_dump() for event in expected]
+    assert isinstance(actual[-1], ResponseCompletedEvent)
+    assert actual[-1].response.output_text == "AB"
 
 
 @pytest.mark.asyncio
