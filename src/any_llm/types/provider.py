@@ -23,6 +23,7 @@ class ProviderMetadata(BaseModel):
     class_name: str
     list_models: bool
     messages: bool
+    messages_native: bool = False
     batch_completion: bool
     image_generation: bool = False
     audio_transcription: bool = False

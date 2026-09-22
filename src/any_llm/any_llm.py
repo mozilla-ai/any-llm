@@ -134,6 +134,12 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
 
+    SUPPORTS_MESSAGES_NATIVE: bool = False
+    """Whether the provider serves the Anthropic Messages API natively (without conversion)."""
+
+    MESSAGES_NATIVE: bool = False
+    """Alias for SUPPORTS_MESSAGES_NATIVE."""
+
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
     """Whether Messages structured output can be streamed by this provider."""
 
@@ -557,6 +563,7 @@ class AnyLLM(FilesMixin, ABC):
             files=bool(cls.SUPPORTED_FILE_OPERATIONS),
             file_operations=tuple(sorted(cls.SUPPORTED_FILE_OPERATIONS)),
             messages=cls.SUPPORTS_MESSAGES,
+            messages_native=cls.SUPPORTS_MESSAGES_NATIVE,
             class_name=cls.__name__,
         )
 
@@ -1073,12 +1080,13 @@ class AnyLLM(FilesMixin, ABC):
         Providers with native Messages API support (e.g., Anthropic) override this
         for direct pass-through.
         """
-        if params.container is not None:
-            msg = "container requires a provider with a native Anthropic Messages API"
-            raise NotImplementedError(msg)
-        if params.context_management is not None or params.betas:
-            msg = "context_management and betas require a provider with a native Anthropic Messages API"
-            raise NotImplementedError(msg)
+        if getattr(self, "SUPPORTS_MESSAGES_NATIVE", False) is not True:
+            if params.container is not None:
+                msg = "container requires a provider with a native Anthropic Messages API"
+                raise NotImplementedError(msg)
+            if params.context_management is not None or params.betas:
+                msg = "context_management and betas require a provider with a native Anthropic Messages API"
+                raise NotImplementedError(msg)
 
         from any_llm.types.completion import CompletionParams
         from any_llm.utils.messages_compat import (

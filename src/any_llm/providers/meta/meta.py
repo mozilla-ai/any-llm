@@ -94,6 +94,8 @@ class MetaProvider(BaseOpenAIProvider):
     SUPPORTS_BATCH = False
     SUPPORTS_IMAGE_GENERATION = False
     SUPPORTS_RERANK = False
+    SUPPORTS_MESSAGES_NATIVE = True
+    MESSAGES_NATIVE = True
 
     client: AsyncOpenAI
     _anthropic_client: AsyncAnthropic

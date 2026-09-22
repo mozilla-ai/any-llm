@@ -237,6 +237,8 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
+    SUPPORTS_MESSAGES_NATIVE = True
+    MESSAGES_NATIVE = True
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING = True
 
     # The Anthropic SDK accepts a per-request `timeout` on messages.create, so it forwards unchanged.

@@ -1526,6 +1526,51 @@ def test_supports_messages_flag() -> None:
     assert AnyLLM.SUPPORTS_MESSAGES is True
 
 
+def test_supports_messages_native_flags() -> None:
+    """Test that SUPPORTS_MESSAGES_NATIVE and MESSAGES_NATIVE distinguish native from bridged providers."""
+    from any_llm.any_llm import AnyLLM
+    from any_llm.providers.anthropic.base import BaseAnthropicProvider
+    from any_llm.providers.meta.meta import MetaProvider
+    from any_llm.providers.openai.base import BaseOpenAIProvider
+    from any_llm.providers.otari.otari import OtariProvider
+
+    assert AnyLLM.SUPPORTS_MESSAGES_NATIVE is False
+    assert AnyLLM.MESSAGES_NATIVE is False
+
+    assert BaseOpenAIProvider.SUPPORTS_MESSAGES_NATIVE is False
+    assert BaseOpenAIProvider.MESSAGES_NATIVE is False
+
+    assert BaseAnthropicProvider.SUPPORTS_MESSAGES_NATIVE is True
+    assert BaseAnthropicProvider.MESSAGES_NATIVE is True
+
+    assert MetaProvider.SUPPORTS_MESSAGES_NATIVE is True
+    assert MetaProvider.MESSAGES_NATIVE is True
+
+    assert OtariProvider.SUPPORTS_MESSAGES_NATIVE is True
+    assert OtariProvider.MESSAGES_NATIVE is True
+
+
+def test_provider_metadata_messages_native() -> None:
+    """Test that ProviderMetadata reports messages_native correctly."""
+    from any_llm.any_llm import AnyLLM
+
+    anthropic_meta = AnyLLM.get_provider_class("anthropic").get_provider_metadata()
+    assert anthropic_meta.messages is True
+    assert anthropic_meta.messages_native is True
+
+    meta_meta = AnyLLM.get_provider_class("meta").get_provider_metadata()
+    assert meta_meta.messages is True
+    assert meta_meta.messages_native is True
+
+    otari_meta = AnyLLM.get_provider_class("otari").get_provider_metadata()
+    assert otari_meta.messages is True
+    assert otari_meta.messages_native is True
+
+    openai_meta = AnyLLM.get_provider_class("openai").get_provider_metadata()
+    assert openai_meta.messages is True
+    assert openai_meta.messages_native is False
+
+
 def test_sync_messages_returns_message_response() -> None:
     """Test that the sync messages() wrapper returns MessageResponse for non-streaming."""
     from any_llm.types.messages import MessageUsage, TextBlock
