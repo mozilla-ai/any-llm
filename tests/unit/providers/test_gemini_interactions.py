@@ -1,21 +1,56 @@
+import asyncio
 import json
+import logging
 import time
-from unittest.mock import AsyncMock, patch
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
 from google.genai import types
-from google.genai._gaos.types.interactions import Interaction
 from google.genai.interactions import (
+    ArgumentsDelta,
     Error,
+    ErrorEvent,
     ImageContent,
+    InteractionCompletedEvent,
+    InteractionCreatedEvent,
+    InteractionSSEEvent,
+    InteractionSseEventInteraction,
+    InteractionSseEventInteractionStatus,
+    InteractionStatusUpdate,
     ModelOutputStep,
+    Step,
+    StepDelta,
+    StepDeltaData,
+    StepStart,
+    StepStop,
+    TextAnnotationDelta,
     TextContent,
+    TextDelta,
+    ThoughtSignatureDelta,
     ThoughtStep,
+    UnknownInteractionSSEEvent,
+    UnknownStep,
+    UnknownStepDeltaData,
     Usage,
+    UserInputStep,
 )
 from openai.types.responses import (
+    ResponseCompletedEvent,
+    ResponseContentPartAddedEvent,
+    ResponseContentPartDoneEvent,
+    ResponseCreatedEvent,
+    ResponseFailedEvent,
+    ResponseIncompleteEvent,
+    ResponseInProgressEvent,
+    ResponseOutputItemAddedEvent,
+    ResponseOutputItemDoneEvent,
     ResponseOutputMessage,
+    ResponseOutputText,
+    ResponseTextDeltaEvent,
+    ResponseTextDoneEvent,
 )
 
 from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
@@ -25,8 +60,15 @@ from any_llm.providers.gemini.interactions import (
     convert_interaction_to_response,
     convert_responses_params,
 )
+from any_llm.providers.gemini.interactions_stream import convert_interaction_stream
 from any_llm.providers.vertexai import VertexaiProvider
-from any_llm.types.responses import Response, ResponsesParams
+from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.exception_handler import _ExceptionHandlingAsyncIterator
+
+if TYPE_CHECKING:
+    from google.genai._gaos.types.interactions import Interaction
+else:
+    from google.genai.interactions import Interaction
 
 
 def _interaction(
@@ -59,6 +101,48 @@ def _interaction(
             "usage": usage,
         }
     )
+
+
+async def _events(*events: InteractionSSEEvent) -> AsyncIterator[InteractionSSEEvent]:
+    for event in events:
+        yield event
+
+
+def _sdk_stream() -> AsyncMock:
+    """Stand in for google.genai's AsyncStream, which exposes close() and no aclose()."""
+    stream = AsyncMock()
+    del stream.aclose
+    return stream
+
+
+def _created(*, model: str | None = None) -> InteractionCreatedEvent:
+    return InteractionCreatedEvent(
+        interaction=InteractionSseEventInteraction(
+            id="int-123",
+            status="in_progress",
+            model=model,
+        )
+    )
+
+
+def _completed(
+    status: InteractionSseEventInteractionStatus = "completed",
+    *,
+    model: str | None = None,
+    steps: list[Step] | None = None,
+) -> InteractionCompletedEvent:
+    return InteractionCompletedEvent(
+        interaction=InteractionSseEventInteraction(
+            id="int-123",
+            status=status,
+            model=model,
+            steps=steps,
+        )
+    )
+
+
+async def _converted_events(*events: InteractionSSEEvent, model: str = "requested") -> list[ResponseStreamEvent]:
+    return [event async for event in convert_interaction_stream(_events(*events), model=model)]
 
 
 def test_gemini_enables_responses_without_changing_shared_google_provider() -> None:
@@ -305,6 +389,578 @@ def test_convert_responses_params_rejects_unimplemented_surface(parameter: str, 
 
 
 @pytest.mark.asyncio
+async def test_convert_interaction_stream_maps_text_and_terminal_snapshot() -> None:
+    started = StepStart(index=0, step=ModelOutputStep(content=[TextContent(text="Hello")]))
+    delta = StepDelta(index=0, delta=TextDelta(text=" world"))
+    status = InteractionStatusUpdate(interaction_id="int-123", status="in_progress")
+    stopped = StepStop(index=0)
+
+    result = await _converted_events(
+        _created(model="gemini-3.8-flash"),
+        status,
+        started,
+        delta,
+        stopped,
+        _completed(model="gemini-3.8-flash"),
+        model="gemini-3.8-flash",
+    )
+
+    assert [event.type for event in result] == [
+        "response.created",
+        "response.in_progress",
+        "response.output_item.added",
+        "response.content_part.added",
+        "response.output_text.delta",
+        "response.output_text.delta",
+        "response.output_text.done",
+        "response.content_part.done",
+        "response.output_item.done",
+        "response.completed",
+    ]
+    assert [event.sequence_number for event in result] == list(range(10))
+    assert isinstance(result[0], ResponseCreatedEvent)
+    assert result[0].response.model == "gemini-3.8-flash"
+    assert isinstance(result[1], ResponseInProgressEvent)
+    assert isinstance(result[2], ResponseOutputItemAddedEvent)
+    assert isinstance(result[2].item, ResponseOutputMessage)
+    assert result[2].item.content == []
+    assert isinstance(result[3], ResponseContentPartAddedEvent)
+    assert isinstance(result[3].part, ResponseOutputText)
+    assert result[3].part.text == ""
+    assert isinstance(result[4], ResponseTextDeltaEvent)
+    assert result[4].delta == "Hello"
+    assert isinstance(result[5], ResponseTextDeltaEvent)
+    assert result[5].delta == " world"
+    assert isinstance(result[6], ResponseTextDoneEvent)
+    assert result[6].text == "Hello world"
+    assert isinstance(result[7], ResponseContentPartDoneEvent)
+    assert isinstance(result[7].part, ResponseOutputText)
+    assert result[7].part.text == "Hello world"
+    assert isinstance(result[8], ResponseOutputItemDoneEvent)
+    assert isinstance(result[8].item, ResponseOutputMessage)
+    assert isinstance(result[8].item.content[0], ResponseOutputText)
+    assert result[8].item.content[0].text == "Hello world"
+    terminal = result[9]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert terminal.response.output_text == "Hello world"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_keeps_output_indices_contiguous() -> None:
+    user_started = StepStart(index=0, step=UserInputStep())
+    model_started = StepStart(index=1, step=ModelOutputStep())
+
+    result = await _converted_events(
+        _created(),
+        user_started,
+        StepStop(index=0),
+        model_started,
+        StepDelta(index=1, delta=TextDelta(text="Hello")),
+        StepStop(index=1),
+        _completed(),
+    )
+
+    added = next(event for event in result if isinstance(event, ResponseOutputItemAddedEvent))
+    assert added.output_index == 0
+    assert added.item.id == "msg-int-123-0"
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert terminal.response.output[0].id == "msg-int-123-0"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_requires_non_model_steps_to_stop() -> None:
+    with pytest.raises(ProviderError, match=r"before step\.stop for step 0"):
+        await _converted_events(
+            _created(),
+            StepStart(index=0, step=UserInputStep()),
+            _completed(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_orders_terminal_messages_by_output_index() -> None:
+    result = await _converted_events(
+        _created(),
+        StepStart(index=7, step=ModelOutputStep()),
+        StepStart(index=2, step=ModelOutputStep()),
+        StepDelta(index=2, delta=TextDelta(text="second")),
+        StepStop(index=2),
+        StepDelta(index=7, delta=TextDelta(text="first")),
+        StepStop(index=7),
+        _completed(),
+    )
+
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert [message.id for message in terminal.response.output] == ["msg-int-123-0", "msg-int-123-1"]
+    assert terminal.response.output_text == "firstsecond"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_skips_unknown_steps_like_the_one_shot_path(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    steps: list[Step] = [
+        UnknownStep(raw={"type": "future_output"}),
+        ModelOutputStep(content=[TextContent(text="kept")]),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        result = await _converted_events(
+            _created(),
+            StepStart(index=0, step=steps[0]),
+            StepStop(index=0),
+            StepStart(index=1, step=steps[1]),
+            StepStop(index=1),
+            _completed(),
+        )
+
+    assert "Skipping unknown Gemini Interactions step: future_output" in caplog.text
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    one_shot = convert_interaction_to_response(
+        InteractionSseEventInteraction(id="int-123", status="completed", steps=steps),
+        fallback_model="requested",
+    )
+    assert terminal.response.output_text == one_shot.output_text == "kept"
+    assert [item.id for item in terminal.response.output] == [item.id for item in one_shot.output]
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_terminal_snapshot_matches_streamed_item_ids() -> None:
+    result = await _converted_events(
+        _created(),
+        StepStart(index=7, step=ModelOutputStep()),
+        StepDelta(index=7, delta=TextDelta(text="seven")),
+        StepStop(index=7),
+        StepStart(index=2, step=ModelOutputStep()),
+        StepDelta(index=2, delta=TextDelta(text="two")),
+        StepStop(index=2),
+        # Google lists the terminal steps by its own index, not by arrival.
+        _completed(
+            steps=[
+                ModelOutputStep(content=[TextContent(text="two")]),
+                ModelOutputStep(content=[TextContent(text="seven")]),
+            ]
+        ),
+    )
+
+    streamed = {event.item_id: event.text for event in result if isinstance(event, ResponseTextDoneEvent)}
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    snapshot = {
+        item.id: "".join(part.text for part in item.content if isinstance(part, ResponseOutputText))
+        for item in terminal.response.output
+        if isinstance(item, ResponseOutputMessage)
+    }
+    assert streamed == {"msg-int-123-0": "seven", "msg-int-123-1": "two"}
+    assert snapshot == streamed
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_names_unknown_payloads_without_a_wire_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        await _converted_events(
+            _created(),
+            UnknownInteractionSSEEvent(raw=None),
+            StepStart(index=0, step=UnknownStep(raw={})),
+            StepStop(index=0),
+            StepStart(index=1, step=ModelOutputStep()),
+            StepDelta(index=1, delta=UnknownStepDeltaData(raw=[])),
+            StepStop(index=1),
+            _completed(),
+        )
+
+    assert "Skipping unknown Gemini Interactions event: UNKNOWN" in caplog.text
+    assert "Skipping unknown Gemini Interactions step: UNKNOWN" in caplog.text
+    assert "Skipping unknown Gemini Interactions delta: UNKNOWN" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_skips_an_sdk_event_variant_it_does_not_model(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FutureSSEEvent:
+        """Stands in for a concrete variant a later google-genai could add."""
+
+    with caplog.at_level(logging.WARNING):
+        result = await _converted_events(
+            _created(),
+            FutureSSEEvent(),  # type: ignore[arg-type]
+            _completed(),
+        )
+
+    assert "Skipping unhandled Gemini Interactions event: FutureSSEEvent" in caplog.text
+    assert [event.type for event in result] == ["response.created", "response.in_progress", "response.completed"]
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_uses_terminal_steps_when_present() -> None:
+    result = await _converted_events(
+        _created(),
+        _completed(steps=[ModelOutputStep(content=[TextContent(text="terminal")])]),
+    )
+
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert terminal.response.model == "requested"
+    assert terminal.response.output_text == "terminal"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "incomplete", "failed", "cancelled"])
+@pytest.mark.parametrize("terminal_id", ["int-123", None])
+async def test_convert_interaction_stream_normalizes_equivalent_terminal_snapshots(
+    status: InteractionSseEventInteractionStatus,
+    terminal_id: str | None,
+) -> None:
+    streamed_steps: list[InteractionSSEEvent] = [
+        StepStart(index=7, step=ModelOutputStep(content=[TextContent(text="first")])),
+        StepDelta(index=7, delta=TextDelta(text=" step")),
+        StepStop(index=7),
+        StepStart(index=2, step=ModelOutputStep(content=[TextContent(text="")])),
+        StepStop(index=2),
+        StepStart(index=9, step=ModelOutputStep()),
+        StepDelta(index=9, delta=TextDelta(text="third")),
+        StepStop(index=9),
+    ]
+    terminal_steps: list[Step] = [
+        ModelOutputStep(content=[TextContent(text="first step")]),
+        ModelOutputStep(content=[TextContent(text="")]),
+        ModelOutputStep(content=[TextContent(text="third")]),
+    ]
+
+    terminal_event = _completed(status)
+    terminal_event.interaction = terminal_event.interaction.model_copy(update={"id": terminal_id})
+    without_snapshot = await _converted_events(_created(), *streamed_steps, terminal_event)
+    with_snapshot = await _converted_events(_created(), *streamed_steps, _completed(status, steps=terminal_steps))
+
+    assert without_snapshot[-1].model_dump(mode="json") == with_snapshot[-1].model_dump(mode="json")
+    terminal = without_snapshot[-1]
+    assert isinstance(terminal, ResponseCompletedEvent | ResponseFailedEvent | ResponseIncompleteEvent)
+    assert terminal.response.id == "int-123"
+    assert terminal.response.status == status
+    done_items = [event.item for event in without_snapshot if isinstance(event, ResponseOutputItemDoneEvent)]
+    assert terminal.response.output == done_items
+    for item in done_items:
+        assert isinstance(item, ResponseOutputMessage)
+        assert item.status == "completed"
+    assert [item.id for item in done_items] == ["msg-int-123-0", "msg-int-123-1", "msg-int-123-2"]
+    for event in without_snapshot:
+        if isinstance(event, ResponseTextDeltaEvent):
+            assert event.item_id == done_items[event.output_index].id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "event_type", "message_status"),
+    [
+        ("failed", "response.failed", "incomplete"),
+        ("incomplete", "response.incomplete", "incomplete"),
+    ],
+)
+async def test_convert_interaction_stream_maps_non_success_terminal_status(
+    status: InteractionSseEventInteractionStatus,
+    event_type: str,
+    message_status: str,
+) -> None:
+    result = await _converted_events(
+        _created(),
+        _completed(status, steps=[ModelOutputStep(content=[TextContent(text="partial")])]),
+    )
+
+    terminal = result[-1]
+    assert isinstance(terminal, ResponseFailedEvent | ResponseIncompleteEvent)
+    assert terminal.type == event_type
+    assert isinstance(terminal.response.output[0], ResponseOutputMessage)
+    assert terminal.response.output[0].status == message_status
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_logs_and_skips_unknown_event(caplog: pytest.LogCaptureFixture) -> None:
+    unknown = UnknownInteractionSSEEvent(raw={"event_type": "future.event", "value": 1})
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        result = await _converted_events(_created(), unknown, _completed())
+
+    assert [event.type for event in result] == [
+        "response.created",
+        "response.in_progress",
+        "response.completed",
+    ]
+    assert "Skipping unknown Gemini Interactions event" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_logs_and_skips_unknown_delta(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    prefix: list[InteractionSSEEvent] = [
+        _created(),
+        StepStart(index=7, step=ModelOutputStep(content=[TextContent(text="A")])),
+    ]
+    suffix: list[InteractionSSEEvent] = [StepDelta(index=7, delta=TextDelta(text="Z")), StepStop(index=7), _completed()]
+    unknown = StepDelta(index=7, delta=UnknownStepDeltaData(raw={"type": "future_delta", "value": 1}))
+    expected = await _converted_events(*prefix, *suffix)
+
+    with caplog.at_level(logging.WARNING, logger="any_llm"):
+        actual = await _converted_events(*prefix, unknown, *suffix)
+
+    assert [event.model_dump() for event in actual] == [event.model_dump() for event in expected]
+    assert isinstance(actual[-1], ResponseCompletedEvent)
+    assert actual[-1].response.output_text == "AZ"
+    assert "Skipping unknown Gemini Interactions delta" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "delta",
+    [TextAnnotationDelta(annotations=[]), ThoughtSignatureDelta(signature="opaque")],
+    ids=["annotation", "thought-signature"],
+)
+async def test_convert_interaction_stream_skips_text_metadata_deltas(delta: StepDeltaData) -> None:
+    prefix: list[InteractionSSEEvent] = [
+        _created(),
+        StepStart(index=0, step=ModelOutputStep(content=[TextContent(text="A")])),
+    ]
+    suffix: list[InteractionSSEEvent] = [StepDelta(index=0, delta=TextDelta(text="B")), StepStop(index=0), _completed()]
+    expected = await _converted_events(*prefix, *suffix)
+
+    actual = await _converted_events(*prefix, StepDelta(index=0, delta=delta), *suffix)
+
+    assert [event.model_dump() for event in actual] == [event.model_dump() for event in expected]
+    assert isinstance(actual[-1], ResponseCompletedEvent)
+    assert actual[-1].response.output_text == "AB"
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_rejects_unsupported_model_delta() -> None:
+    with pytest.raises(ProviderError, match="non-text model output delta"):
+        await _converted_events(
+            _created(),
+            StepStart(index=0, step=ModelOutputStep()),
+            StepDelta(index=0, delta=ArgumentsDelta(arguments="{}")),
+        )
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_ignores_non_model_step_deltas() -> None:
+    result = await _converted_events(
+        _created(),
+        StepStart(index=0, step=UserInputStep()),
+        StepDelta(index=0, delta=ArgumentsDelta(arguments="{}")),
+        StepStop(index=0),
+        _completed(),
+    )
+
+    assert [event.type for event in result] == ["response.created", "response.in_progress", "response.completed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "step",
+    [
+        ModelOutputStep(content=[ImageContent(data="aW1hZ2U=", mime_type="image/png")]),
+        ModelOutputStep(content=[TextContent(text="partial"), ImageContent(data="aW1hZ2U=", mime_type="image/png")]),
+    ],
+)
+async def test_convert_interaction_stream_rejects_unsupported_output_and_closes_source(step: Step) -> None:
+    stream = _sdk_stream()
+    stream.close = AsyncMock()
+    stream.__aiter__.return_value = [_created(), StepStart(index=0, step=step)]
+
+    with pytest.raises(ProviderError, match="model output"):
+        _ = [event async for event in convert_interaction_stream(stream, model="requested")]
+
+    stream.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_raises_error_event() -> None:
+    error = ErrorEvent.model_validate(
+        {"event_type": "error", "error": {"code": "gateway_timeout", "message": "deadline expired"}}
+    )
+
+    with pytest.raises(ProviderError, match="deadline expired") as raised:
+        _ = [event async for event in convert_interaction_stream(_events(error), model="requested")]
+
+    assert raised.value.code == "gateway_timeout"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_code"),
+    [(None, None), (Error(code="gateway_timeout", message=""), "gateway_timeout")],
+    ids=["absent-error", "empty-message"],
+)
+async def test_convert_interaction_stream_uses_fallback_error_message(
+    error: Error | None, expected_code: str | None
+) -> None:
+    event = ErrorEvent(error=error)
+
+    with pytest.raises(ProviderError, match="Gemini interaction failed") as raised:
+        _ = [item async for item in convert_interaction_stream(_events(event), model="requested")]
+
+    assert raised.value.code == expected_code
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_rejects_missing_terminal_event() -> None:
+    with pytest.raises(ProviderError, match=r"before interaction\.completed"):
+        await _converted_events(_created())
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_rejects_terminal_before_created() -> None:
+    with pytest.raises(ProviderError, match=r"before interaction\.created"):
+        await _converted_events(_completed("failed"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("events", "message"),
+    [
+        (
+            [StepStart(index=0, step=ModelOutputStep())],
+            "step.start before interaction.created",
+        ),
+        (
+            [InteractionStatusUpdate(interaction_id="int-123", status="in_progress")],
+            "status update before interaction.created",
+        ),
+        (
+            [StepDelta(index=0, delta=TextDelta(text="unexpected"))],
+            "step.delta before interaction.created",
+        ),
+        (
+            [StepStop(index=0)],
+            "step.stop before interaction.created",
+        ),
+        (
+            [_created(), _created()],
+            "interaction.created more than once",
+        ),
+        (
+            [
+                _created(),
+                StepStart(index=0, step=ModelOutputStep()),
+                StepStart(index=0, step=ModelOutputStep()),
+            ],
+            "started step 0 more than once",
+        ),
+        (
+            [
+                _created(),
+                StepDelta(index=0, delta=TextDelta(text="unexpected")),
+            ],
+            "delta before step.start",
+        ),
+        (
+            [_created(), StepStop(index=0)],
+            "stopped unknown step",
+        ),
+        (
+            [
+                _created(),
+                StepStart(index=0, step=ModelOutputStep()),
+                _completed(),
+            ],
+            "before step.stop",
+        ),
+    ],
+)
+async def test_convert_interaction_stream_rejects_malformed_order(
+    events: list[InteractionSSEEvent],
+    message: str,
+) -> None:
+    with pytest.raises(ProviderError, match=message):
+        await _converted_events(*events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("synchronous_close", [False, True], ids=["async-close", "sync-close"])
+async def test_convert_interaction_stream_closes_source_when_consumer_stops(*, synchronous_close: bool) -> None:
+    stream = _sdk_stream()
+    stream.close = Mock(return_value=None) if synchronous_close else AsyncMock()
+    stream.__aiter__.return_value = [_created()]
+
+    converted = convert_interaction_stream(stream, model="requested")
+    await anext(converted)
+    await converted.aclose()
+
+    stream.close.assert_called_once_with()
+    if not synchronous_close:
+        stream.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_suppresses_close_error_after_success() -> None:
+    stream = _sdk_stream()
+    stream.close = AsyncMock(side_effect=RuntimeError("close failed"))
+    stream.__aiter__.return_value = [_created(), _completed()]
+
+    result = [event async for event in convert_interaction_stream(stream, model="requested")]
+
+    assert isinstance(result[-1], ResponseCompletedEvent)
+    stream.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_preserves_primary_error_when_close_fails() -> None:
+    stream = _sdk_stream()
+    stream.close = AsyncMock(side_effect=RuntimeError("close failed"))
+    stream.__aiter__.return_value = [
+        ErrorEvent.model_validate(
+            {"event_type": "error", "error": {"code": "gateway_timeout", "message": "request failed"}}
+        )
+    ]
+
+    with pytest.raises(ProviderError, match="request failed"):
+        _ = [event async for event in convert_interaction_stream(stream, model="requested")]
+
+    stream.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_preserves_unsupported_output_error_when_close_fails() -> None:
+    stream = _sdk_stream()
+    stream.close = AsyncMock(side_effect=RuntimeError("close failed"))
+    stream.__aiter__.return_value = [
+        _created(),
+        StepStart(index=0, step=ModelOutputStep(content=[ImageContent(data="aW1hZ2U=", mime_type="image/png")])),
+    ]
+
+    with pytest.raises(ProviderError, match="non-text model output"):
+        _ = [event async for event in convert_interaction_stream(stream, model="requested")]
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_propagates_cancellation_and_closes_source() -> None:
+    stream = _sdk_stream()
+    stream.close = AsyncMock()
+
+    async def blocked_events() -> AsyncIterator[InteractionSSEEvent]:
+        yield _created()
+        await asyncio.Event().wait()
+
+    stream.__aiter__.side_effect = blocked_events
+    converted = convert_interaction_stream(stream, model="requested")
+    await anext(converted)
+    await anext(converted)
+    pending = asyncio.create_task(anext(converted))
+    await asyncio.sleep(0)
+    pending.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    stream.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
 async def test_aresponses_forwards_request_timeout() -> None:
     with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
         client = client_class.return_value
@@ -364,17 +1020,6 @@ async def test_aresponses_rejects_openai_extra_body() -> None:
 
 
 @pytest.mark.asyncio
-async def test_aresponses_rejects_streaming_before_io() -> None:
-    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
-        provider = GeminiProvider(api_key="test-key")
-
-        with pytest.raises(UnsupportedParameterError, match="stream"):
-            await provider.aresponses("gemini-3.8-flash", "Hello", stream=True)
-
-    client_class.return_value.aio.interactions.create.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_aresponses_forwards_sdk_transport_parameters() -> None:
     with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
         client = client_class.return_value
@@ -421,6 +1066,20 @@ async def test_aresponses_ignores_none_transport_parameters() -> None:
     assert "extra_headers" not in client.aio.interactions.create.await_args.kwargs
     assert "extra_query" not in client.aio.interactions.create.await_args.kwargs
     assert "future_transport" not in client.aio.interactions.create.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_public_stream_close_before_iteration_does_not_acquire_source() -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as client_class:
+        client = client_class.return_value
+        provider = GeminiProvider(api_key="test-key")
+        response = await provider.aresponses("gemini-3.8-flash", "Hello", stream=True)
+        # The public stream is the exception-handling wrapper from handle_exceptions, which
+        # implements the async-iterator protocol but is not an AsyncGenerator.
+        assert isinstance(response, _ExceptionHandlingAsyncIterator)
+        await response.aclose()
+
+    client.aio.interactions.create.assert_not_called()
 
 
 @pytest.mark.parametrize("total", [None, 0, 346])
@@ -488,6 +1147,93 @@ async def test_real_sdk_serializes_stable_interactions_path_and_body(
         "generation_config": {"max_output_tokens": 0},
         "system_instruction": "",
     }
+
+
+@pytest.mark.parametrize("total", [None, 0])
+@pytest.mark.parametrize("unknown_delta", [False, True])
+@pytest.mark.asyncio
+async def test_real_sdk_stream_keeps_interleaved_text_after_thought_metadata(
+    total: int | None, unknown_delta: bool
+) -> None:
+    requests: list[httpx.Request] = []
+    event_payloads = [
+        {
+            "event_type": "interaction.created",
+            "interaction": {"id": "int-123", "status": "in_progress"},
+        },
+        {
+            "event_type": "step.start",
+            "index": 0,
+            "step": {"type": "thought"},
+        },
+        {
+            "event_type": "step.delta",
+            "index": 0,
+            "delta": {"type": "thought_signature", "signature": "opaque"},
+        },
+        {"event_type": "step.stop", "index": 0},
+        {
+            "event_type": "step.start",
+            "index": 7,
+            "step": {"type": "model_output", "content": [{"type": "text", "text": "A"}]},
+        },
+        {
+            "event_type": "step.start",
+            "index": 2,
+            "step": {"type": "model_output"},
+        },
+        {"event_type": "step.delta", "index": 2, "delta": {"type": "text", "text": "bb"}},
+        {"event_type": "step.stop", "index": 2},
+        {"event_type": "step.delta", "index": 7, "delta": {"type": "text", "text": "C"}},
+        {"event_type": "step.stop", "index": 7},
+        {
+            "event_type": "interaction.completed",
+            "interaction": {
+                "id": "int-123",
+                "status": "completed",
+                "usage": {
+                    "total_input_tokens": 11,
+                    "total_output_tokens": 90,
+                    "total_thought_tokens": 245,
+                    "total_tokens": total,
+                },
+            },
+        },
+    ]
+    if unknown_delta:
+        event_payloads.insert(5, {"event_type": "step.delta", "index": 7, "delta": {"type": "future_metadata"}})
+    body = "".join(f"data: {json.dumps(payload)}\n\n" for payload in event_payloads) + "data: [DONE]\n\n"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = GeminiProvider(
+            api_key="test-key",
+            api_base="https://example.test",
+            http_options=types.HttpOptions(httpx_async_client=http_client),
+        )
+        response = await provider.aresponses("gemini-3.8-flash", "Hello", stream=True)
+        assert isinstance(response, AsyncIterator)
+        events = [event async for event in response]
+    finally:
+        await http_client.aclose()
+
+    assert [event.sequence_number for event in events] == list(range(len(events)))
+    added = [event for event in events if isinstance(event, ResponseOutputItemAddedEvent)]
+    assert [event.output_index for event in added] == [0, 1]
+    terminal = events[-1]
+    assert isinstance(terminal, ResponseCompletedEvent)
+    assert [item.id for item in terminal.response.output] == ["msg-int-123-0", "msg-int-123-1"]
+    assert terminal.response.output_text == "ACbb"
+    assert terminal.response.usage is not None
+    assert terminal.response.usage.output_tokens == 335
+    assert terminal.response.usage.output_tokens_details.reasoning_tokens == 245
+    assert terminal.response.usage.total_tokens == (346 if total is None else total)
+    assert str(requests[0].url) == "https://example.test/v1beta/interactions"
+    assert json.loads(requests[0].content)["stream"] is True
 
 
 @pytest.mark.asyncio

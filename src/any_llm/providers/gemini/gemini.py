@@ -8,6 +8,7 @@ from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
 
@@ -67,9 +68,6 @@ class GeminiProvider(GoogleProvider):
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
     ) -> Response | AsyncIterator[ResponseStreamEvent]:
-        if params.stream:
-            parameter_name = "stream"
-            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
         if kwargs.pop("extra_body", None) is not None:
             parameter_name = "extra_body"
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
@@ -93,5 +91,20 @@ class GeminiProvider(GoogleProvider):
         )
         if timeout is not None:
             create_kwargs["timeout"] = timeout
+        if params.stream:
+            return self._create_interaction_stream(create_kwargs, model=params.model)
         interaction = await self.client.aio.interactions.create(**create_kwargs)
         return convert_interaction_to_response(interaction, fallback_model=params.model)
+
+    async def _create_interaction_stream(
+        self, create_kwargs: dict[str, Any], *, model: str
+    ) -> AsyncIterator[ResponseStreamEvent]:
+        from .interactions_stream import convert_interaction_stream
+
+        stream = await self.client.aio.interactions.create(**create_kwargs)
+        converted_stream = convert_interaction_stream(stream, model=model)
+        try:
+            async for event in converted_stream:
+                yield event
+        finally:
+            await aclose_quietly(converted_stream)
