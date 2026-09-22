@@ -400,7 +400,9 @@ def _convert_messages(
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
             part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
-            formatted_messages.append(types.Content(role="function", parts=[part]))
+            # Gemini carries function results in a `user` turn; "function" is an undocumented legacy
+            # role that Gemini 3 flash models reject with 400 INVALID_ARGUMENT.
+            formatted_messages.append(types.Content(role="user", parts=[part]))
 
     return formatted_messages, system_instruction
 

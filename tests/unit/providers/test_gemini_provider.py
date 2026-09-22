@@ -815,7 +815,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         assert len(contents) == 3
         assert contents[0].role == "user"
         assert contents[1].role == "model"
-        assert contents[2].role == "function"
+        assert contents[2].role == "user"
 
 
 @pytest.mark.parametrize(
@@ -2409,10 +2409,9 @@ def test_convert_messages_with_thought_signature_in_extra_content() -> None:
 def _function_response_names(contents: list[types.Content]) -> list[str | None]:
     names = []
     for content in contents:
-        if content.role == "function":
-            assert content.parts is not None
-            assert content.parts[0].function_response is not None
-            names.append(content.parts[0].function_response.name)
+        if content.role != "user" or content.parts is None or content.parts[0].function_response is None:
+            continue
+        names.append(content.parts[0].function_response.name)
     return names
 
 
@@ -2848,7 +2847,7 @@ def test_convert_messages_tool_response_accepts_json_or_parsed_content(
     formatted_messages, _ = _convert_messages(messages)
 
     tool_message = formatted_messages[2]
-    assert tool_message.role == "function"
+    assert tool_message.role == "user"
     assert tool_message.parts is not None
     assert len(tool_message.parts) == 1
     function_response = tool_message.parts[0].function_response
