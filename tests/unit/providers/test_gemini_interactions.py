@@ -112,6 +112,21 @@ def test_convert_interaction_preserves_empty_text_output() -> None:
     assert response.output_text == ""
 
 
+def test_convert_interaction_skips_model_output_without_text() -> None:
+    interaction = _interaction(
+        steps=[
+            ModelOutputStep(content=[]),
+            ModelOutputStep(content=[TextContent(text="kept")]),
+        ]
+    )
+
+    response = convert_interaction_to_response(interaction)
+
+    assert len(response.output) == 1
+    assert response.output_text == "kept"
+    assert response.output[0].id == "msg-int-123-0"
+
+
 def test_convert_interaction_ignores_non_output_steps() -> None:
     interaction = _interaction(
         steps=[
