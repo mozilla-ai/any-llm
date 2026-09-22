@@ -506,7 +506,7 @@ async def test_convert_interaction_stream_skips_unknown_steps_like_the_one_shot_
             _completed(),
         )
 
-    assert "Skipping unknown Gemini Interactions step" in caplog.text
+    assert "Skipping unknown Gemini Interactions step: future_output" in caplog.text
     terminal = result[-1]
     assert isinstance(terminal, ResponseCompletedEvent)
     one_shot = convert_interaction_to_response(
@@ -546,6 +546,45 @@ async def test_convert_interaction_stream_terminal_snapshot_matches_streamed_ite
     }
     assert streamed == {"msg-int-123-0": "seven", "msg-int-123-1": "two"}
     assert snapshot == streamed
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_names_unknown_payloads_without_a_wire_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        await _converted_events(
+            _created(),
+            UnknownInteractionSSEEvent(raw=None),
+            StepStart(index=0, step=UnknownStep(raw={})),
+            StepStop(index=0),
+            StepStart(index=1, step=ModelOutputStep()),
+            StepDelta(index=1, delta=UnknownStepDeltaData(raw=[])),
+            StepStop(index=1),
+            _completed(),
+        )
+
+    assert "Skipping unknown Gemini Interactions event: UNKNOWN" in caplog.text
+    assert "Skipping unknown Gemini Interactions step: UNKNOWN" in caplog.text
+    assert "Skipping unknown Gemini Interactions delta: UNKNOWN" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_convert_interaction_stream_skips_an_sdk_event_variant_it_does_not_model(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FutureSSEEvent:
+        """Stands in for a concrete variant a later google-genai could add."""
+
+    with caplog.at_level(logging.WARNING):
+        result = await _converted_events(
+            _created(),
+            FutureSSEEvent(),  # type: ignore[arg-type]
+            _completed(),
+        )
+
+    assert "Skipping unhandled Gemini Interactions event: FutureSSEEvent" in caplog.text
+    assert [event.type for event in result] == ["response.created", "response.in_progress", "response.completed"]
 
 
 @pytest.mark.asyncio

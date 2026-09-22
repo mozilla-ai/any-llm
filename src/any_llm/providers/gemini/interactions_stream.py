@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from inspect import isawaitable
-from typing import TYPE_CHECKING, NoReturn, assert_never
+from typing import TYPE_CHECKING, Never, NoReturn
 
 from google.genai.interactions import (
     ErrorEvent,
@@ -73,6 +73,31 @@ def _raise_stream_error(message: str, *, code: str | None = None) -> NoReturn:
     raise ProviderError(message, provider_name="gemini", code=code)
 
 
+def _wire_type(raw: object, key: str) -> str:
+    """Recover the wire discriminator the SDK folded into an Unknown* model.
+
+    Those models pin their own discriminator to the literal "UNKNOWN", so the
+    name Google actually sent survives only in the untyped payload.
+    """
+    if isinstance(raw, dict):
+        value = raw.get(key)
+        if isinstance(value, str):
+            return value
+    return "UNKNOWN"
+
+
+def _unhandled_event(event: Never) -> list[ResponseStreamEvent]:
+    """Skip an SDK event variant this adapter does not model.
+
+    The Never annotation keeps mypy's exhaustiveness check over
+    InteractionSSEEvent, while at runtime a variant added by a future
+    google-genai is skipped like any other unrecognized event rather than
+    raising past the ProviderError contract.
+    """
+    logger.warning("Skipping unhandled Gemini Interactions event: %s", type(event).__name__)
+    return []
+
+
 class _TextStreamState:
     """Track Gemini steps while emitting the OpenAI text event lifecycle.
 
@@ -107,14 +132,14 @@ class _TextStreamState:
         elif isinstance(event, ErrorEvent):
             self._error(event)
         elif isinstance(event, UnknownInteractionSSEEvent):
-            logger.warning("Skipping unknown Gemini Interactions event: %s", event.event_type)
+            logger.warning("Skipping unknown Gemini Interactions event: %s", _wire_type(event.raw, "event_type"))
             converted = []
         elif isinstance(event, InteractionStatusUpdate):
             if not self.started:
                 _raise_stream_error("Gemini interaction stream emitted a status update before interaction.created")
             converted = []
         else:
-            assert_never(event)
+            converted = _unhandled_event(event)
         return converted, terminal
 
     def incomplete(self) -> NoReturn:
@@ -157,7 +182,7 @@ class _TextStreamState:
         if isinstance(event.step, UnknownStep):
             # convert_interaction_to_response skips step kinds it does not model, so streaming
             # does the same; otherwise a new Google step type fails only the calls that stream.
-            logger.warning("Skipping unknown Gemini Interactions step")
+            logger.warning("Skipping unknown Gemini Interactions step: %s", _wire_type(event.step.raw, "type"))
             return []
         if not isinstance(event.step, ModelOutputStep):
             return []
@@ -203,7 +228,7 @@ class _TextStreamState:
         if event.index not in self.text_steps:
             return []
         if isinstance(event.delta, UnknownStepDeltaData):
-            logger.warning("Skipping unknown Gemini Interactions delta")
+            logger.warning("Skipping unknown Gemini Interactions delta: %s", _wire_type(event.delta.raw, "type"))
             return []
         if not isinstance(event.delta, TextDelta):
             _raise_stream_error("Gemini interaction stream returned non-text model output delta")
