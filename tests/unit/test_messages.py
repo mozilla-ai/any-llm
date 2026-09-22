@@ -1,6 +1,7 @@
 """Tests for messages()/amessages() SDK API."""
 
 import json
+import sys
 import threading
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1527,33 +1528,31 @@ def test_supports_messages_flag() -> None:
 
 
 def test_supports_messages_native_flags() -> None:
-    """Test that SUPPORTS_MESSAGES_NATIVE and MESSAGES_NATIVE distinguish native from bridged providers."""
-    from any_llm.any_llm import AnyLLM
+    """Test that SUPPORTS_MESSAGES_NATIVE distinguishes native from bridged providers."""
     from any_llm.providers.anthropic.base import BaseAnthropicProvider
     from any_llm.providers.meta.meta import MetaProvider
     from any_llm.providers.openai.base import BaseOpenAIProvider
     from any_llm.providers.otari.otari import OtariProvider
 
     assert AnyLLM.SUPPORTS_MESSAGES_NATIVE is False
-    assert AnyLLM.MESSAGES_NATIVE is False
-
     assert BaseOpenAIProvider.SUPPORTS_MESSAGES_NATIVE is False
-    assert BaseOpenAIProvider.MESSAGES_NATIVE is False
-
     assert BaseAnthropicProvider.SUPPORTS_MESSAGES_NATIVE is True
-    assert BaseAnthropicProvider.MESSAGES_NATIVE is True
-
     assert MetaProvider.SUPPORTS_MESSAGES_NATIVE is True
-    assert MetaProvider.MESSAGES_NATIVE is True
-
     assert OtariProvider.SUPPORTS_MESSAGES_NATIVE is True
-    assert OtariProvider.MESSAGES_NATIVE is True
+
+
+def test_supports_messages_native_matches_amessages_override() -> None:
+    """SUPPORTS_MESSAGES_NATIVE agrees with whether the provider overrides `_amessages`."""
+    for provider_name in AnyLLM.get_supported_providers():
+        if sys.version_info >= (3, 14) and provider_name in {"voyage", "watsonx"}:
+            continue
+        provider_class = AnyLLM.get_provider_class(provider_name)
+        overrides = provider_class._amessages is not AnyLLM._amessages
+        assert provider_class.SUPPORTS_MESSAGES_NATIVE is overrides, provider_name
 
 
 def test_provider_metadata_messages_native() -> None:
     """Test that ProviderMetadata reports messages_native correctly."""
-    from any_llm.any_llm import AnyLLM
-
     anthropic_meta = AnyLLM.get_provider_class("anthropic").get_provider_metadata()
     assert anthropic_meta.messages is True
     assert anthropic_meta.messages_native is True

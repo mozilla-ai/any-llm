@@ -183,7 +183,6 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_RERANK = True
     SUPPORTS_MESSAGES_NATIVE = True
-    MESSAGES_NATIVE = True
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING = True
 
     otari_client: Any
