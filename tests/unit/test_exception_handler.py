@@ -736,3 +736,17 @@ async def test_close_before_read_does_not_initialize_iterator() -> None:
         await anext(wrapped)
     source.__aiter__.assert_not_called()
     source.close.assert_awaited_once()
+
+
+def test_convert_exception_ignores_a_boolean_status_code() -> None:
+    """bool subclasses int, so True must not be read as HTTP status 1."""
+    original = _StatusError(True, "Invalid request")
+    result = convert_exception(original, "gateway")
+    assert result.status_code is None
+
+
+def test_convert_exception_ignores_a_boolean_response_status() -> None:
+    original = Exception("Invalid request")
+    original.response = type("Response", (), {"status_code": True, "status": False})()  # type: ignore[attr-defined]
+    result = convert_exception(original, "gateway")
+    assert result.status_code is None

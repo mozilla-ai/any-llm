@@ -6,15 +6,17 @@ description: Manage provider-hosted files through an AnyLLM instance
 # Files
 
 The Files API exposes upload, listing, metadata retrieval, streamed download, and
-deletion on an `AnyLLM` instance. Anthropic, OpenAI, and Azure OpenAI support all
-five operations. Other providers, including custom OpenAI-compatible endpoints,
-do not automatically inherit Files support.
+deletion on an `AnyLLM` instance. Anthropic, OpenAI, Azure OpenAI, and Gemini
+(Developer API only) support Files. Vertex AI and custom OpenAI-compatible
+endpoints do not automatically inherit Files support.
 
 | Provider | Upload | List | Retrieve | Download | Delete |
 | --- | --- | --- | --- | --- | --- |
 | Anthropic | Yes | Yes | Yes | Generated files | Yes |
 | OpenAI | Yes, requires `purpose` | Yes | Yes | Depends on file purpose | Yes |
 | Azure OpenAI (v1) | Yes, requires `purpose` | Yes | Yes | Depends on file purpose | Yes |
+| Gemini (Developer API) | Yes | Yes | Yes | No | Yes |
+| Vertex AI | No | No | No | No | No |
 
 Check `get_provider_metadata().file_operations` before using Files on a provider.
 
@@ -139,6 +141,69 @@ Azure shares the `cursor`/`next_cursor` pagination contract and supports the
 `purpose` filter and `order` option. File IDs remain scoped to their originating
 Azure resource and account; do not pass OpenAI file IDs to Azure or vice versa.
 
+## Gemini Files
+
+Gemini Files is available on the Gemini Developer API (`AnyLLM.create("gemini")`),
+not Vertex AI. Uploads, listing, metadata, and deletion use `google-genai`'s
+`client.aio.files`. Generated-file download is not a supported operation.
+File IDs are Gemini resource names such as `files/abc-123`; passing the bare
+suffix `abc-123` is accepted and canonicalized.
+
+```python
+import time
+from pathlib import Path
+from any_llm import AnyLLM
+
+provider = AnyLLM.create("gemini")  # GEMINI_API_KEY or GOOGLE_API_KEY
+uploaded = provider.upload_file(
+    Path("report.pdf"),
+    mime_type="application/pdf",
+)
+try:
+    while uploaded.status == "PROCESSING":
+        time.sleep(1)
+        uploaded = provider.retrieve_file(uploaded.id)
+    if uploaded.status == "FAILED":
+        raise RuntimeError(uploaded.error)
+    response = provider.completion(
+        model="gemini-3-flash-preview",
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": uploaded.uri,
+                        "filename": uploaded.filename,
+                    },
+                },
+                {"type": "text", "text": "Summarize this report."},
+            ],
+        }],
+    )
+    print(response.choices[0].message.content)
+finally:
+    provider.delete_file(uploaded.id)
+```
+
+`filename` maps to Gemini's `display_name`. An explicit `mime_type` is always
+forwarded. Without one, a path upload takes its MIME type from the file extension,
+and bytes, binary handles, and paths with an unrecognized extension default to
+`application/octet-stream`. any-llm opens a path upload itself and closes it after
+the request, so only a failure to open the path is reported as an unreadable path;
+caller-owned handles remain open. Gemini requires seekable binary streams.
+Because google-genai's async upload reads the stream on the event loop, any-llm
+runs the upload on the synchronous google-genai client in a worker thread. Uploads
+therefore use `http_options.client_args`, not `async_client_args`; configure a
+custom transport or proxy in both if uploads must go through it. The shared `purpose` and `expires_in` parameters are rejected: Gemini
+does not classify uploads by purpose, and uploaded files expire after 48 hours.
+
+Upload may return `status="PROCESSING"`. Wait until `ACTIVE` before referencing
+the file URI in a model request, and pause between polls. `FAILED` includes
+provider error details in `error`. Pass `filename` with the file URI. Gemini
+file URIs have no extension. Native fields such as `uri`, `download_uri`,
+`source`, `sha256_hash`, and `error` are preserved on `FileMetadata` extras.
+
 ## Methods
 
 | Synchronous | Asynchronous | Result |
@@ -187,6 +252,11 @@ For a known set of IDs, Anthropic accepts the provider-specific `ids=[...]`
 option. The server validates its limits and combinations with other parameters.
 Missing or inaccessible IDs are omitted.
 
+Gemini maps `limit`/`cursor` to `page_size`/`page_token` and reads `next_cursor`
+from the current pager page's `next_page_token`. Listing does not iterate the
+SDK pager, so subsequent pages are never fetched automatically. Native
+`page_size` and `page_token` keywords are not accepted.
+
 ## Downloads and provider restrictions
 
 ### OpenAI
@@ -209,6 +279,13 @@ Azure downloads use `/openai/v1/files/{file_id}/content` with the same streaming
 context managers. Download eligibility is determined by Azure, not by the OpenAI
 purpose restrictions above. A failure on context entry is propagated through the
 normal error mapping; it is not treated as an empty download.
+
+### Gemini
+
+User uploads are not downloadable (`source="UPLOADED"`, no `download_uri`).
+`download` is omitted from Gemini `file_operations` until a live generated-file
+download has been checked. `download_file` on an upload raises
+`InvalidRequestError` before opening a content stream.
 
 ### Anthropic
 
@@ -294,7 +371,7 @@ correct error status before committing its downstream response.
 
 The public `FileDownload` and `AsyncFileDownload` types expose `status_code` and
 `headers` as soon as the context is entered. Response header lookup is
-case-insensitive for Anthropic, OpenAI, and Azure OpenAI. Both objects remain directly
+case-insensitive for Anthropic, OpenAI, Azure OpenAI, and Gemini. Both objects remain directly
 iterable over bytes, so existing
 `for chunk in download` and `async for chunk in download` loops keep working.
 They are exported from `any_llm` and `any_llm.types.files`.
@@ -327,6 +404,24 @@ Anthropic rejects non-`None` values. Provider-specific options remain in `**kwar
 Beta values from configured headers, request headers, and `betas` are merged.
 Anthropic SDK 0.124.0 or newer is required.
 
+Gemini Files methods accept `timeout`, `max_retries`, and `extra_headers`.
+`timeout` must be a positive number of seconds; it is converted to google-genai's
+millisecond `http_options.timeout`, rounded up so that a sub-millisecond value
+never becomes zero. `max_retries` maps to `HttpRetryOptions.attempts` (attempts
+include the original request, so `max_retries=0` is one attempt). It applies to
+metadata requests and to the request that creates an upload session. A download
+body is sent directly through the SDK HTTP client and is not retried. Uploads
+default to zero automatic retries of that creation request. The resumable byte
+transfer that follows runs its own retry loop inside google-genai, up to three
+attempts per chunk, which `max_retries` does not reach; those retries resume the
+same upload session and cannot create a second file. `extra_headers` is merged into
+retrieve, list, delete, and download requests. google-genai's resumable upload
+rebuilds session headers, so
+`extra_headers` is not applied to the upload transfer itself. The shared
+`purpose` and `expires_in` parameters are rejected. Deletion acknowledgements
+return the canonical file ID and do not invent a `deleted` flag; Gemini's
+delete response has no such field.
+
 Unsupported options raise `UnsupportedParameterError`. Nonpositive `limit`,
 invalid `expires_in`, nonpositive `chunk_size`, invalid file IDs, and upload
 paths that cannot be opened raise `InvalidRequestError`. Local file-opening
@@ -344,6 +439,10 @@ Errors follow the provider's `unified_exceptions` option, falling back to the
 `ANY_LLM_UNIFIED_EXCEPTIONS` environment variable when it is not set. When enabled,
 a retrieve, download, or delete HTTP 404 becomes `ProviderFileNotFoundError`, authentication errors
 remain `AuthenticationError`, and `RateLimitError` retains `retry_after`.
+A missing Gemini file is HTTP 403 whose message says the file may not exist;
+that response is `ProviderFileNotFoundError` with `status_code=403`. A 403
+without that phrase stays `AuthenticationError`. An invalid Gemini API key is
+HTTP 400 and is not treated as a missing file.
 Upload and list 404s retain the existing general error mapping.
 Streaming failures are converted during iteration. Without unified errors,
 SDK exceptions retain their existing behavior.

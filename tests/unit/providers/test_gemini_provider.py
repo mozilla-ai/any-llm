@@ -3660,3 +3660,52 @@ async def test_service_tier_omitted_when_not_requested() -> None:
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         assert call_kwargs["config"].service_tier is None
+
+
+def test_convert_messages_file_uri_takes_its_mime_type_from_the_filename() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+                        "filename": "report.pdf",
+                    },
+                },
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert parts[0].file_data is not None
+    assert parts[0].file_data.file_uri == "https://generativelanguage.googleapis.com/v1beta/files/abc123"
+    assert parts[0].file_data.mime_type == "application/pdf"
+
+
+def test_convert_messages_file_uri_without_a_usable_filename_falls_back_to_octet_stream() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+                        "filename": "report",
+                    },
+                },
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert parts[0].file_data is not None
+    assert parts[0].file_data.mime_type == "application/octet-stream"

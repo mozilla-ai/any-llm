@@ -270,7 +270,12 @@ def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Pa
         mime_type, raw_data = _parse_data_uri(file_data, "file.file_data", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
-    guessed_type, _ = mimetypes.guess_type(file_data)
+    # A provider-hosted file URI carries no extension, so the block's filename is the only
+    # MIME hint available for a file referenced by URI, including one uploaded through the Files API.
+    filename = block.get("file", {}).get("filename")
+    guessed_type = mimetypes.guess_type(filename)[0] if isinstance(filename, str) and filename else None
+    if guessed_type is None:
+        guessed_type, _ = mimetypes.guess_type(file_data)
     return types.Part.from_uri(file_uri=file_data, mime_type=guessed_type or "application/octet-stream")
 
 
