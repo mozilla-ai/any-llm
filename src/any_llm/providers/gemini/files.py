@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import json
+import math
+import mimetypes
 from collections.abc import AsyncIterator, Iterable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from io import BytesIO, IOBase
-from os import PathLike, fspath
+from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 from urllib.parse import urlencode
@@ -101,10 +102,12 @@ def file_http_options(kwargs: dict[str, Any], *, upload: bool = False) -> types.
             raise InvalidRequestError(message, provider_name=PROVIDER_NAME)
         fields["retry_options"] = types.HttpRetryOptions(attempts=max_retries + 1)
     if timeout is not None:
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0:
-            message = "timeout must be a non-negative number of seconds"
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+            message = "timeout must be a positive number of seconds"
             raise InvalidRequestError(message, provider_name=PROVIDER_NAME)
-        fields["timeout"] = int(timeout * 1000)
+        # google-genai takes whole milliseconds; truncating would turn a sub-millisecond
+        # timeout into 0.
+        fields["timeout"] = max(1, math.ceil(timeout * 1000))
     if not fields:
         return None
     return types.HttpOptions(**fields)
@@ -141,13 +144,29 @@ def convert_metadata(result: types.File) -> FileMetadata:
     )
 
 
-def _upload_source(file: FileInput, filename: str | None) -> tuple[str | IOBase, str, Path | None]:
+def _open_upload_source(
+    stack: ExitStack, file: FileInput, filename: str | None, mime_type: str | None
+) -> tuple[IOBase, str, str]:
+    """Return the handle, display name, and MIME type for an upload.
+
+    Paths are opened here rather than by the SDK, so that only this open is reported as
+    an unreadable path; an ``OSError`` from the transport (aiohttp's ``ClientOSError``
+    is one) must propagate as a provider failure. Handles this function opens are closed
+    by ``stack``; caller-owned handles are left open.
+    """
     if isinstance(file, (str, PathLike)):
         path = Path(file)
-        return fspath(file), filename or path.name, path
+        try:
+            handle = stack.enter_context(path.open("rb"))
+        except OSError as exc:
+            message = f"Cannot open upload path {str(path)!r}: {exc.strerror or exc}"
+            raise InvalidRequestError(message, original_exception=exc, provider_name=PROVIDER_NAME) from exc
+        # The SDK requires a MIME type for a handle, so guess it the way it would for a path.
+        guessed = mime_type or mimetypes.guess_type(path.name)[0]
+        return cast("IOBase", handle), filename or path.name, guessed or "application/octet-stream"
     if isinstance(file, bytes):
-        return BytesIO(file), filename or "upload", None
-    return cast("IOBase", file), filename or "upload", None
+        return stack.enter_context(BytesIO(file)), filename or "upload", mime_type or "application/octet-stream"
+    return cast("IOBase", file), filename or "upload", mime_type or "application/octet-stream"
 
 
 async def upload_file(
@@ -169,21 +188,14 @@ async def upload_file(
         )
     http_options = file_http_options(kwargs, upload=True)
     reject_unsupported(kwargs)
-    upload_input, display_name, source_path = _upload_source(file, filename)
-    config = types.UploadFileConfig(
-        mime_type=mime_type or "application/octet-stream",
-        display_name=display_name,
-        http_options=http_options,
-    )
-    try:
-        result = await client.aio.files.upload(file=cast("str | PathLike[str] | IOBase", upload_input), config=config)
-    except OSError as exc:
-        path_label = str(source_path) if source_path is not None else display_name
-        message = f"Cannot open upload path {path_label!r}: {exc.strerror or exc}"
-        raise InvalidRequestError(message, original_exception=exc, provider_name=PROVIDER_NAME) from exc
-    finally:
-        if isinstance(upload_input, BytesIO) and isinstance(file, bytes):
-            upload_input.close()
+    with ExitStack() as stack:
+        handle, display_name, resolved_mime_type = _open_upload_source(stack, file, filename, mime_type)
+        config = types.UploadFileConfig(
+            mime_type=resolved_mime_type,
+            display_name=display_name,
+            http_options=http_options,
+        )
+        result = await client.aio.files.upload(file=handle, config=config)
     return convert_metadata(result)
 
 
@@ -243,16 +255,9 @@ async def stream_download(
     if httpx_client is None:
         message = "Gemini file downloads require the google-genai async HTTP client"
         raise ProviderError(message, provider_name=PROVIDER_NAME)
-    content: bytes | None = None
-    if http_request.data:
-        if isinstance(http_request.data, bytes):
-            content = http_request.data
-        else:
-            content = json.dumps(http_request.data).encode("utf-8")
     request = httpx_client.build_request(
         method=http_request.method,
         url=http_request.url,
-        content=content,
         headers=http_request.headers,
         timeout=http_request.timeout,
     )
@@ -335,7 +340,11 @@ class GeminiFileMethods(FilesMixin):
         http_options = file_http_options(kwargs)
         reject_unsupported(kwargs)
         get_config = types.GetFileConfig(http_options=http_options) if http_options is not None else None
-        metadata = await self.client.aio.files.get(name=file_id, config=get_config)
+        try:
+            metadata = await self.client.aio.files.get(name=file_id, config=get_config)
+        except APIError as exc:
+            _raise_if_missing_file(exc)
+            raise
         if not metadata.download_uri:
             message = "Gemini user-uploaded files cannot be downloaded; only generated files with a download_uri can"
             raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)

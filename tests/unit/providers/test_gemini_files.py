@@ -122,7 +122,9 @@ async def test_upload_maps_inputs_and_metadata(source: str, tmp_path: Path, mock
     assert config.http_options.retry_options is not None
     assert config.http_options.retry_options.attempts == 1
     if source in {"path", "string"}:
-        assert file_arg == str(path)
+        # Paths are opened locally and handed over as a handle, which is closed afterwards.
+        assert Path(file_arg.name) == path
+        assert file_arg.closed
         assert config.display_name == "input.csv"
     else:
         assert config.display_name == "upload"
@@ -305,11 +307,18 @@ async def test_unknown_file_403_is_a_missing_file(operation: str, monkeypatch: p
 
 
 @pytest.mark.asyncio
-async def test_download_unknown_file_403_is_a_missing_file(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("failing_request", ["metadata", "content"])
+async def test_download_unknown_file_403_is_a_missing_file(
+    failing_request: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unknown ID normally fails the metadata lookup; content covers a file deleted in between."""
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    requests: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
-        if ":download" in request.url.path:
+        requests.append(request)
+        is_content = ":download" in request.url.path
+        if is_content == (failing_request == "content"):
             return httpx.Response(403, json=MISSING_FILE_403)
         return httpx.Response(200, json=GENERATED)
 
@@ -319,6 +328,8 @@ async def test_download_unknown_file_403_is_a_missing_file(monkeypatch: pytest.M
             async with provider.adownload_file("files/gen-1"):
                 pytest.fail("Missing generated file entered the consumer context")
         assert error.value.status_code == 403
+        if failing_request == "metadata":
+            assert all(":download" not in request.url.path for request in requests)
     finally:
         await close_provider(provider)
 
@@ -655,7 +666,7 @@ async def test_timeout_and_extra_headers_are_forwarded_on_retrieve() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("timeout_value", [-1, True, "1"])
+@pytest.mark.parametrize("timeout_value", [0, -1, True, "1"])
 async def test_invalid_timeout_fails_before_network(timeout_value: Any) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid timeout reached network"))
     try:
@@ -671,3 +682,149 @@ async def test_missing_name_is_a_provider_error(mock_client: Any) -> None:
     provider = GeminiProvider(api_key="test-key")
     with pytest.raises(ProviderError, match="resource name"):
         await provider.aretrieve_file("files/abc-123")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "mime_type", "expected"),
+    [
+        ("report.pdf", None, "application/pdf"),
+        ("report.pdf", "text/plain", "text/plain"),
+        ("no-extension", None, "application/octet-stream"),
+    ],
+)
+async def test_path_upload_guesses_mime_type_and_keeps_an_explicit_one(
+    name: str, mime_type: str | None, expected: str, tmp_path: Path, mock_client: Any
+) -> None:
+    path = tmp_path / name
+    path.write_bytes(b"%PDF-1.4")
+    captured: list[Any] = []
+
+    async def upload(*, file: Any, config: Any = None) -> types.File:
+        captured.append(config)
+        return uploaded_file()
+
+    mock_client.aio.files.upload = upload
+    provider = GeminiProvider(api_key="test-key")
+    await provider.aupload_file(path, mime_type=mime_type)
+    assert captured[0].mime_type == expected
+
+
+@pytest.mark.asyncio
+async def test_transport_oserror_is_not_reported_as_an_unreadable_path(
+    tmp_path: Path, mock_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the local open is a path error; aiohttp's ClientOSError is an OSError too."""
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    path = tmp_path / "input.csv"
+    path.write_bytes(b"a,b\n")
+
+    async def upload(*, file: Any, config: Any = None) -> types.File:
+        message = "Connection reset by peer"
+        raise ConnectionResetError(message)
+
+    mock_client.aio.files.upload = upload
+    provider = GeminiProvider(api_key="test-key")
+    with pytest.raises(AnyLLMError) as error:
+        await provider.aupload_file(path)
+    assert "Cannot open upload path" not in str(error.value)
+    assert isinstance(error.value.original_exception, ConnectionResetError)
+
+
+@pytest.mark.asyncio
+async def test_upload_closes_handles_it_opens_but_not_the_callers(tmp_path: Path, mock_client: Any) -> None:
+    path = tmp_path / "input.csv"
+    path.write_bytes(b"a,b\n")
+    seen: list[Any] = []
+
+    async def upload(*, file: Any, config: Any = None) -> types.File:
+        seen.append(file)
+        return uploaded_file()
+
+    mock_client.aio.files.upload = upload
+    provider = GeminiProvider(api_key="test-key")
+    caller_handle = BytesIO(b"a,b\n")
+    await provider.aupload_file(path)
+    await provider.aupload_file(b"a,b\n")
+    await provider.aupload_file(caller_handle)
+    assert seen[0].closed
+    assert seen[1].closed
+    assert not caller_handle.closed
+    caller_handle.close()
+
+
+def test_sub_millisecond_timeout_rounds_up_to_one_millisecond() -> None:
+    from any_llm.providers.gemini.files import file_http_options
+
+    options = file_http_options({"timeout": 0.0004})
+    assert options is not None
+    assert options.timeout == 1
+
+    options = file_http_options({"timeout": 1.0001})
+    assert options is not None
+    assert options.timeout == 1001
+
+
+@pytest.mark.asyncio
+async def test_delete_error_other_than_a_missing_file_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    provider = provider_for(
+        lambda _: httpx.Response(429, json={"error": {"code": 429, "message": "Quota", "status": "RESOURCE_EXHAUSTED"}})
+    )
+    try:
+        with pytest.raises(RateLimitError):
+            await provider.adelete_file("files/abc-123")
+    finally:
+        await close_provider(provider)
+
+
+def test_http_status_is_unknown_without_a_usable_response() -> None:
+    from any_llm.providers.gemini.files import _http_status
+
+    assert _http_status(ClientError(403, {"error": {"message": "x"}})) is None
+    no_status = ClientError(403, {"error": {"message": "x"}}, response=httpx.Response(403))
+    no_status.response = type("Response", (), {"status_code": True})()
+    assert _http_status(no_status) is None
+
+
+@pytest.mark.asyncio
+async def test_download_without_an_httpx_client_is_a_provider_error() -> None:
+    provider = provider_for(lambda _: pytest.fail("Download reached the network without an HTTP client"))
+    generated = types.File.model_validate(GENERATED)
+    try:
+        with (
+            patch.object(provider.client.aio.files, "get", AsyncMock(return_value=generated)),
+            patch.object(provider.client._api_client, "_async_httpx_client", None),
+        ):
+            with pytest.raises(ProviderError, match="async HTTP client"):
+                async with provider.adownload_file("files/gen-1"):
+                    pytest.fail("Download opened without an HTTP client")
+    finally:
+        await close_provider(provider)
+
+
+def test_default_client_keeps_an_httpx_client_for_downloads_beside_aiohttp() -> None:
+    """In a default install metadata goes over aiohttp while downloads use the SDK's httpx client.
+
+    Every other unit test injects an httpx transport, which opts the SDK out of aiohttp, so
+    this pins the one assumption the download path makes about the default configuration.
+    """
+    pytest.importorskip("aiohttp")
+    provider = GeminiProvider(api_key="test-key")
+    api_client = provider.client._api_client
+    assert api_client._use_aiohttp()
+    assert api_client._async_httpx_client is not None
+
+
+@pytest.mark.asyncio
+async def test_download_metadata_error_other_than_a_missing_file_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    provider = provider_for(
+        lambda _: httpx.Response(429, json={"error": {"code": 429, "message": "Quota", "status": "RESOURCE_EXHAUSTED"}})
+    )
+    try:
+        with pytest.raises(RateLimitError):
+            async with provider.adownload_file("files/gen-1"):
+                pytest.fail("A failed metadata lookup entered the consumer context")
+    finally:
+        await close_provider(provider)

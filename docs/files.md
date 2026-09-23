@@ -186,10 +186,12 @@ finally:
     provider.delete_file(uploaded.id)
 ```
 
-`filename` maps to Gemini's `display_name`. `mime_type` is forwarded; bytes and
-binary handles default to `application/octet-stream`. Path uploads let the SDK
-open the file; caller-owned handles remain open. Gemini requires seekable binary
-streams. The shared `purpose` and `expires_in` parameters are rejected: Gemini
+`filename` maps to Gemini's `display_name`. An explicit `mime_type` is always
+forwarded. Without one, a path upload takes its MIME type from the file extension,
+and bytes, binary handles, and paths with an unrecognized extension default to
+`application/octet-stream`. any-llm opens a path upload itself and closes it after
+the request, so only a failure to open the path is reported as an unreadable path;
+caller-owned handles remain open. Gemini requires seekable binary streams. The shared `purpose` and `expires_in` parameters are rejected: Gemini
 does not classify uploads by purpose, and uploaded files expire after 48 hours.
 
 Upload may return `status="PROCESSING"`. Wait until `ACTIVE` before referencing
@@ -399,11 +401,16 @@ Beta values from configured headers, request headers, and `betas` are merged.
 Anthropic SDK 0.124.0 or newer is required.
 
 Gemini Files methods accept `timeout`, `max_retries`, and `extra_headers`.
-`timeout` is converted to google-genai's millisecond `http_options.timeout`.
-`max_retries` maps to `HttpRetryOptions.attempts` (attempts include the original
-request, so `max_retries=0` is one attempt). It applies to metadata requests.
-A download body is sent directly through the SDK HTTP client and is not retried.
-Uploads default to zero automatic retries. `extra_headers` is merged into
+`timeout` must be a positive number of seconds; it is converted to google-genai's
+millisecond `http_options.timeout`, rounded up so that a sub-millisecond value
+never becomes zero. `max_retries` maps to `HttpRetryOptions.attempts` (attempts
+include the original request, so `max_retries=0` is one attempt). It applies to
+metadata requests and to the request that creates an upload session. A download
+body is sent directly through the SDK HTTP client and is not retried. Uploads
+default to zero automatic retries of that creation request. The resumable byte
+transfer that follows runs its own retry loop inside google-genai, up to three
+attempts per chunk, which `max_retries` does not reach; those retries resume the
+same upload session and cannot create a second file. `extra_headers` is merged into
 retrieve, list, delete, and download requests. google-genai's resumable upload
 rebuilds session headers, so
 `extra_headers` is not applied to the upload transfer itself. The shared
