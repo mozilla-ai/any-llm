@@ -219,7 +219,7 @@ it the part is sent as `application/octet-stream`, which Gemini usually rejects.
 ```python
 def ask_about_file(provider, metadata, question):
     return provider.completion(
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         messages=[{
             "role": "user",
             "content": [
@@ -453,9 +453,12 @@ Provider-specific numeric limits and option combinations are validated by the se
 updates do not require copying server limits into any-llm.
 
 Uploads default to **zero automatic retries** on every provider that supports
-Files, even if the provider instance has retries enabled. Gemini's resumable byte
-transfer is the one exception noted above, and it resumes rather than restarts. A caller can explicitly override `max_retries`, but a lost
-response can follow successful creation: retrying can create another file.
+Files, even if the provider instance has retries enabled. A caller can explicitly
+override `max_retries`, but a lost response can follow successful creation:
+retrying the request that creates the file can create another one. On Gemini that
+request is the one that opens the upload session. Gemini's resumable byte transfer,
+noted above, retries separately and resumes the same session, so it cannot create
+a duplicate.
 Other operations inherit the configured SDK retry policy unless overridden.
 Timeouts do not prove that an upload failed before creation.
 

@@ -105,7 +105,7 @@ async def test_gemini_uploaded_file_is_usable_in_a_completion() -> None:
         assert isinstance(uri, str)
 
         response = await provider.acompletion(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             messages=[
                 {
                     "role": "user",
