@@ -108,3 +108,7 @@ def test_run_generator_invokes_subprocess(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 def test_files_guide_is_in_navigation() -> None:
     assert "* [Files](files.md)" in convert_to_gitbook.build_summary()
+
+
+def test_caching_guide_is_in_navigation() -> None:
+    assert "* [Context Caching](caching.md)" in convert_to_gitbook.build_summary()

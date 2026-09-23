@@ -45,6 +45,7 @@ from any_llm.exceptions import (
     LengthFinishReasonError,
     MissingApiKeyError,
     ModelNotFoundError,
+    ProviderCacheNotFoundError,
     ProviderError,
     ProviderFileNotFoundError,
     RateLimitError,
@@ -53,6 +54,7 @@ from any_llm.exceptions import (
 )
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription, TranscriptionVerbose
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
+from any_llm.types.caches import CachedContent, CacheDeleted, CacheOperation, CachePage, CacheUsage
 from any_llm.types.completion import ParsedChatCompletion, ParsedChatCompletionMessage, ParsedChoice
 from any_llm.types.files import (
     AsyncFileDownload,
@@ -84,6 +86,11 @@ __all__ = [
     "BatchResult",
     "BatchResultError",
     "BatchResultItem",
+    "CacheDeleted",
+    "CacheOperation",
+    "CachePage",
+    "CacheUsage",
+    "CachedContent",
     "ContentFilterError",
     "ContentFilterFinishReasonError",
     "ContextLengthExceededError",
@@ -102,6 +109,7 @@ __all__ = [
     "ParsedChatCompletionMessage",
     "ParsedChoice",
     "ParsedResponse",
+    "ProviderCacheNotFoundError",
     "ProviderError",
     "ProviderFileNotFoundError",
     "RateLimitError",

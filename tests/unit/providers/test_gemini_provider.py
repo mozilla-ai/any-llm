@@ -3709,3 +3709,16 @@ def test_convert_messages_file_uri_without_a_usable_filename_falls_back_to_octet
     assert parts is not None
     assert parts[0].file_data is not None
     assert parts[0].file_data.mime_type == "application/octet-stream"
+
+
+def test_convert_messages_folds_developer_and_list_system_messages_into_the_instruction() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": "Be brief."},
+        {"role": "developer", "content": [{"type": "text", "text": "Answer in "}, {"type": "text", "text": "French."}]},
+        {"role": "user", "content": "Hi"},
+    ]
+
+    contents, system_instruction = _convert_messages(messages)
+
+    assert system_instruction == "Be brief.\nAnswer in French."
+    assert [content.role for content in contents] == ["user"]

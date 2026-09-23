@@ -3,6 +3,8 @@ import binascii
 import json
 import mimetypes
 from contextlib import suppress
+from dataclasses import dataclass
+from enum import Enum
 from time import time
 from typing import Any, Literal, cast
 
@@ -319,6 +321,111 @@ def _extract_google_thought_signature(container: dict[str, Any], provider_name: 
     return signature
 
 
+_SYNTHETIC_CODE_EXECUTION_ID_PREFIX = "code_exec_"
+
+
+@dataclass
+class CodeExecutionState:
+    """Pairs code execution results and outputs with their code across the parts of one response or stream."""
+
+    executable_code_count: int = 0
+    last_executable_code_id: str | None = None
+    # The code or result that the next inline output (a chart, a file) was produced by.
+    last_output_owner_id: str | None = None
+
+    def next_id(self) -> str:
+        return f"{_SYNTHETIC_CODE_EXECUTION_ID_PREFIX}{self.executable_code_count}"
+
+
+def _enum_value(value: Any, default: str) -> str:
+    if value is None:
+        return default
+    return str(value.value) if isinstance(value, Enum) else str(value)
+
+
+def _code_execution_item(part: types.Part, state: CodeExecutionState) -> dict[str, Any] | None:
+    """Map a code execution part, or inline data produced after code ran, to its extra_content item."""
+    if isinstance(executable_code := part.executable_code, types.ExecutableCode):
+        code_id = executable_code.id or state.next_id()
+        state.executable_code_count += 1
+        state.last_executable_code_id = code_id
+        state.last_output_owner_id = code_id
+        return {
+            "type": "executable_code",
+            "id": code_id,
+            "language": _enum_value(executable_code.language, "LANGUAGE_UNSPECIFIED"),
+            "code": executable_code.code or "",
+        }
+    if isinstance(result := part.code_execution_result, types.CodeExecutionResult):
+        result_id = result.id or state.last_executable_code_id or state.next_id()
+        if state.executable_code_count:
+            state.last_output_owner_id = result_id
+        return {
+            "type": "code_execution_result",
+            "id": result_id,
+            "outcome": _enum_value(result.outcome, "OUTCOME_UNSPECIFIED"),
+            "output": result.output or "",
+        }
+    blob = part.inline_data
+    if state.last_output_owner_id is not None and isinstance(blob, types.Blob) and isinstance(blob.data, bytes):
+        return {
+            "type": "code_execution_output",
+            "id": state.last_output_owner_id,
+            "mime_type": blob.mime_type or "",
+            "data": base64.b64encode(blob.data).decode("ascii"),
+        }
+    return None
+
+
+def _merge_code_execution(
+    extra_content: dict[str, Any] | None, code_execution: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Add code execution items under extra_content["google"], beside any thought_signature."""
+    if not code_execution:
+        return extra_content
+    merged = dict(extra_content or {})
+    merged["google"] = {**merged.get("google", {}), "code_execution": code_execution}
+    return merged
+
+
+def _code_execution_parts(message: dict[str, Any]) -> list[types.Part]:
+    """Rebuild the code execution parts an assistant message carries in extra_content, skipping malformed items."""
+    extra_content = message.get("extra_content")
+    if not isinstance(extra_content, dict) or not isinstance(google_extra := extra_content.get("google"), dict):
+        return []
+    items = google_extra.get("code_execution")
+    if not isinstance(items, list):
+        return []
+    parts: list[types.Part] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("id")
+        # A synthesized id was never issued by Gemini, so it is not sent back.
+        if not isinstance(item_id, str) or item_id.startswith(_SYNTHETIC_CODE_EXECUTION_ID_PREFIX):
+            item_id = None
+        try:
+            if item.get("type") == "executable_code":
+                parts.append(
+                    types.Part(
+                        executable_code=types.ExecutableCode(
+                            code=item.get("code"), language=item.get("language"), id=item_id
+                        )
+                    )
+                )
+            elif item.get("type") == "code_execution_result":
+                parts.append(
+                    types.Part(
+                        code_execution_result=types.CodeExecutionResult(
+                            outcome=item.get("outcome"), output=item.get("output"), id=item_id
+                        )
+                    )
+                )
+        except ValidationError:
+            logger.debug("Skipping malformed Gemini code execution item: %r", item)
+    return parts
+
+
 def _pending_function_response_parts(contents: list[types.Content]) -> list[types.Part] | None:
     """Return the parts of a trailing user turn made only of function responses, else None."""
     if not contents:
@@ -331,6 +438,15 @@ def _pending_function_response_parts(contents: list[types.Content]) -> list[type
     return last.parts
 
 
+def _system_text(content: Any) -> str:
+    """The text of a system message, whose content may be a string or a list of text parts."""
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return str(content or "")
+
+
 def _convert_messages(
     messages: list[dict[str, Any]], provider_name: str = "gemini"
 ) -> tuple[list[types.Content], str | None]:
@@ -340,11 +456,10 @@ def _convert_messages(
     tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
 
     for message in messages:
-        if message["role"] == "system":
-            if system_instruction is None:
-                system_instruction = message["content"]
-            else:
-                system_instruction += f"\n{message['content']}"
+        if message["role"] in ("system", "developer"):
+            # Gemini has a single system_instruction; OpenAI's developer role is the same instruction channel.
+            text = _system_text(message["content"])
+            system_instruction = text if system_instruction is None else f"{system_instruction}\n{text}"
         elif message["role"] == "user":
             if isinstance(message["content"], str):
                 parts = [types.Part.from_text(text=message["content"])]
@@ -363,7 +478,7 @@ def _convert_messages(
                         logger.debug("Skipping unsupported Gemini content block type: %s", content.get("type"))
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
-            parts = []
+            parts = _code_execution_parts(message)
             # The model's own text belongs in its turn, ahead of any function calls it made.
             content = message.get("content")
             has_text = isinstance(content, str) and content
@@ -622,6 +737,8 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
         # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
         # the same spelling Google's OpenAI-compatible endpoint uses.
         message_extra_content = None
+        code_execution: list[dict[str, Any]] = []
+        code_execution_state = CodeExecutionState()
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
@@ -652,16 +769,26 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                     images.append(image)
                 if audio_blob := _inline_audio_blob(part):
                     audio_blobs.append(audio_blob)
+                if code_execution_item := _code_execution_item(part, code_execution_state):
+                    code_execution.append(code_execution_item)
                 if part.text:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
+        message_extra_content = _merge_code_execution(message_extra_content, code_execution)
         audio = _inline_data_audio(audio_blobs, text_content or "", playable=True)
 
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
         # reasoning, so callers see the terminal reason instead of an empty choices list.
-        if tool_calls_list or text_content or images or audio or mapped_finish_reason in ("length", "content_filter"):
+        if (
+            tool_calls_list
+            or text_content
+            or images
+            or audio
+            or code_execution
+            or mapped_finish_reason in ("length", "content_filter")
+        ):
             choices.append(
                 {
                     "message": {
@@ -727,6 +854,7 @@ def _create_openai_embedding_response_from_google(
 def _create_openai_chunk_from_google_chunk(
     response: types.GenerateContentResponse,
     tool_call_counter: list[int] | None = None,
+    code_execution_state: CodeExecutionState | None = None,
 ) -> ChatCompletionChunk:
     """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk.
 
@@ -737,17 +865,22 @@ def _create_openai_chunk_from_google_chunk(
             once per stream and passed in by the caller so that ``index`` (and the
             generated tool call ``id``) stay stable and unique across chunks, rather
             than restarting at 0 for every chunk.
+        code_execution_state: Optional per-stream state, like ``tool_call_counter``, so a
+            code execution result in a later chunk pairs with the code emitted before it.
     """
 
     candidate = response.candidates[0] if response.candidates else None
 
     if tool_call_counter is None:
         tool_call_counter = [0]
+    if code_execution_state is None:
+        code_execution_state = CodeExecutionState()
 
     content = ""
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
     message_extra_content = None
+    code_execution: list[dict[str, Any]] = []
     images: list[dict[str, Any]] = []
     audio_blobs: list[types.Blob] = []
 
@@ -788,8 +921,12 @@ def _create_openai_chunk_from_google_chunk(
                 images.append(image)
             if audio_blob := _inline_audio_blob(part):
                 audio_blobs.append(audio_blob)
+            if code_execution_item := _code_execution_item(part, code_execution_state):
+                code_execution.append(code_execution_item)
             content += part.text or ""  # the signed final part may carry empty text
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
+
+    message_extra_content = _merge_code_execution(message_extra_content, code_execution)
 
     audio = None
     if converted_audio := _inline_data_audio(audio_blobs, content, playable=False):

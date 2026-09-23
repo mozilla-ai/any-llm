@@ -12,10 +12,11 @@ from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEve
 from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
+from .caches import GeminiCacheMethods
 from .files import GeminiFileMethods
 
 
-class GeminiProvider(GeminiFileMethods, GoogleProvider):
+class GeminiProvider(GeminiFileMethods, GeminiCacheMethods, GoogleProvider):
     """Gemini Provider using the Google GenAI Developer API."""
 
     PROVIDER_NAME = "gemini"

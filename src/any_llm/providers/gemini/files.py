@@ -25,11 +25,13 @@ if TYPE_CHECKING:
 PROVIDER_NAME = "gemini"
 
 
-def reject_unsupported(names: Iterable[str], additional_message: str | None = None) -> None:
+def reject_unsupported(
+    names: Iterable[str], additional_message: str | None = None, *, provider_name: str = PROVIDER_NAME
+) -> None:
     """Reject unsupported options without converting caller mistakes into provider faults."""
     unsupported = sorted(names)
     if unsupported:
-        raise UnsupportedParameterError(", ".join(unsupported), PROVIDER_NAME, additional_message)
+        raise UnsupportedParameterError(", ".join(unsupported), provider_name, additional_message)
 
 
 def _http_status(exc: APIError) -> int | None:
@@ -84,7 +86,9 @@ def validate_file_id(file_id: str) -> str:
     return file_id if file_id.startswith("files/") else f"files/{file_id}"
 
 
-def file_http_options(kwargs: dict[str, Any], *, upload: bool = False) -> types.HttpOptions | None:
+def file_http_options(
+    kwargs: dict[str, Any], *, upload: bool = False, provider_name: str = PROVIDER_NAME
+) -> types.HttpOptions | None:
     """Map shared timeout/header/retry kwargs onto google-genai HttpOptions."""
     if upload:
         kwargs.setdefault("max_retries", 0)
@@ -95,17 +99,17 @@ def file_http_options(kwargs: dict[str, Any], *, upload: bool = False) -> types.
     if extra_headers is not None:
         if not isinstance(extra_headers, Mapping):
             message = "extra_headers must be a mapping"
-            raise InvalidRequestError(message, provider_name=PROVIDER_NAME)
+            raise InvalidRequestError(message, provider_name=provider_name)
         fields["headers"] = dict(extra_headers)
     if max_retries is not None:
         if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
             message = "max_retries must be a non-negative integer"
-            raise InvalidRequestError(message, provider_name=PROVIDER_NAME)
+            raise InvalidRequestError(message, provider_name=provider_name)
         fields["retry_options"] = types.HttpRetryOptions(attempts=max_retries + 1)
     if timeout is not None:
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
             message = "timeout must be a positive number of seconds"
-            raise InvalidRequestError(message, provider_name=PROVIDER_NAME)
+            raise InvalidRequestError(message, provider_name=provider_name)
         # google-genai takes whole milliseconds; truncating would turn a sub-millisecond
         # timeout into 0.
         fields["timeout"] = max(1, math.ceil(timeout * 1000))

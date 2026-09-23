@@ -17,6 +17,7 @@ from any_llm.exceptions import (
     InsufficientFundsError,
     InvalidRequestError,
     ModelNotFoundError,
+    ProviderCacheNotFoundError,
     ProviderError,
     ProviderFileNotFoundError,
     RateLimitError,
@@ -280,6 +281,7 @@ def _handle_exception(
     provider_name: str,
     *,
     file_operation: bool = False,
+    cache_operation: bool = False,
     unified_exceptions: bool | None = None,
 ) -> None:
     """Handle an exception based on the unified exceptions flag.
@@ -288,6 +290,7 @@ def _handle_exception(
         exception: The original exception
         provider_name: Name of the provider for error context
         file_operation: Whether a missing resource refers to a file.
+        cache_operation: Whether a missing resource refers to a context cache.
         unified_exceptions: Per-instance override; None defers to the environment variable.
 
     Raises:
@@ -315,8 +318,13 @@ def _handle_exception(
 
     if unified_exceptions:
         converted = convert_exception(exception, provider_name)
-        if file_operation and converted.status_code == 404:
-            converted = ProviderFileNotFoundError(
+        not_found_error: type[AnyLLMError] | None = None
+        if file_operation:
+            not_found_error = ProviderFileNotFoundError
+        elif cache_operation:
+            not_found_error = ProviderCacheNotFoundError
+        if not_found_error is not None and converted.status_code == 404:
+            converted = not_found_error(
                 message=converted.message,
                 original_exception=exception,
                 provider_name=provider_name,
@@ -381,7 +389,9 @@ class _ExceptionHandlingAsyncIterator:
             await aclose_quietly(self._async_iter)
 
 
-def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = False) -> Callable[[F], F]:
+def handle_exceptions(
+    *, wrap_streaming: bool = False, file_operation: bool = False, cache_operation: bool = False
+) -> Callable[[F], F]:
     """Handle exceptions in async methods.
 
     This decorator wraps async methods to catch provider-specific exceptions
@@ -391,6 +401,7 @@ def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = Fa
 
     Args:
         file_operation: Classify a missing resource as a file rather than a model.
+        cache_operation: Classify a missing resource as a context cache rather than a model.
         wrap_streaming: If True, the result will be wrapped with an async iterator
             wrapper if it's an async iterator. This is useful for streaming responses
             where exceptions may occur during iteration.
@@ -411,7 +422,11 @@ def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = Fa
                     result = await func(self, *args, **kwargs)
                 except Exception as e:
                     _handle_exception(
-                        e, provider_name, file_operation=file_operation, unified_exceptions=unified_exceptions
+                        e,
+                        provider_name,
+                        file_operation=file_operation,
+                        cache_operation=cache_operation,
+                        unified_exceptions=unified_exceptions,
                     )
                     return None  # unreachable, but helps type checkers
 
@@ -435,6 +450,7 @@ def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = Fa
                     e,
                     provider_name,
                     file_operation=file_operation,
+                    cache_operation=cache_operation,
                     unified_exceptions=getattr(self, "_unified_exceptions", None),
                 )
 

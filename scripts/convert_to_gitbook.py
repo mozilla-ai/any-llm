@@ -59,6 +59,7 @@ def build_summary() -> str:
 * [Quickstart](quickstart.md)
 * [Providers](providers.md)
 * [Files](files.md)
+* [Context Caching](caching.md)
 
 ## Cookbooks
 

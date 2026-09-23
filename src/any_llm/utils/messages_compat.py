@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
-from anthropic.types import CacheCreation
+from anthropic.types import CacheCreation, CodeExecutionToolResultBlock, ServerToolUseBlock
 
 from any_llm.exceptions import InvalidRequestError
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -199,33 +200,54 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
 
     ``redacted_thinking`` blocks are dropped. They carry encrypted payloads with no text to
     join and nothing on the OpenAI wire to carry them, so preserving them needs a side-channel
-    schema of its own and is left out of this change.
+    schema of its own.
+
+    Gemini state rides the ``extra_content["google"]`` side-channel that ``gemini`` reads, the
+    inverse of what ``chat_completion_to_message_response`` puts on the blocks. A ``tool_use``
+    block's ``extra_content`` (the function call's ``thought_signature``) becomes its tool call's
+    ``extra_content`` verbatim. A ``text`` block's ``extra_content["google"]`` merges into the
+    message's, beside the ``anthropic`` signature rather than in place of it. ``server_tool_use``
+    blocks named ``code_execution`` and ``code_execution_tool_result`` blocks become
+    ``extra_content["google"]["code_execution"]`` items in block order, without the files the code
+    produced (``inline_outputs``, or ``file_id`` blocks in the result's ``content``): those are
+    output, not something to replay. Any other server tool block has no chat completions
+    representation and is dropped.
     """
     text_parts: list[str] = []
     thinking_parts: list[str] = []
     signature: str | None = None
     tool_calls: list[dict[str, Any]] = []
+    google: dict[str, Any] = {}
+    code_execution: list[dict[str, Any]] = []
 
     for block in blocks:
         block_type = block.get("type", "")
         if block_type == "text":
             text_parts.append(block.get("text", ""))
+            block_extra = block.get("extra_content")
+            if isinstance(block_extra, dict) and isinstance(block_extra.get("google"), dict):
+                google.update({k: v for k, v in block_extra["google"].items() if k != "code_execution"})
         elif block_type == "thinking":
             thinking_parts.append(block.get("thinking", ""))
             block_signature = block.get("signature")
             if isinstance(block_signature, str) and block_signature:
                 signature = block_signature
         elif block_type == "tool_use":
-            tool_calls.append(
-                {
-                    "id": block.get("id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name", ""),
-                        "arguments": json.dumps(block.get("input", {})),
-                    },
-                }
-            )
+            tool_call: dict[str, Any] = {
+                "id": block.get("id", ""),
+                "type": "function",
+                "function": {
+                    "name": block.get("name", ""),
+                    "arguments": json.dumps(block.get("input", {})),
+                },
+            }
+            if isinstance(block.get("extra_content"), dict):
+                tool_call["extra_content"] = block["extra_content"]
+            tool_calls.append(tool_call)
+        elif block_type == "server_tool_use" and block.get("name") == "code_execution":
+            code_execution.append(_server_tool_use_to_executable_code(block))
+        elif block_type == "code_execution_tool_result":
+            code_execution.append(_code_execution_tool_result_to_item(block))
 
     result: dict[str, Any] = {"role": "assistant"}
     if text_parts:
@@ -237,9 +259,53 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
     reasoning_content = "".join(thinking_parts)
     if reasoning_content:
         result["reasoning_content"] = reasoning_content
+    extra_content: dict[str, Any] = {}
     if signature is not None and len(thinking_parts) == 1:
-        result["extra_content"] = {"anthropic": {"signature": signature}}
+        extra_content["anthropic"] = {"signature": signature}
+    if code_execution:
+        google["code_execution"] = code_execution
+    if google:
+        extra_content["google"] = google
+    if extra_content:
+        result["extra_content"] = extra_content
     return [result]
+
+
+def _server_tool_use_to_executable_code(block: dict[str, Any]) -> dict[str, Any]:
+    """Convert a ``code_execution`` ``server_tool_use`` block to a Gemini ``executable_code`` item."""
+    tool_input = block.get("input")
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+    return {
+        "type": "executable_code",
+        "id": block.get("id", ""),
+        "language": tool_input.get("language") or "PYTHON",
+        "code": tool_input.get("code", ""),
+    }
+
+
+def _code_execution_tool_result_to_item(block: dict[str, Any]) -> dict[str, Any]:
+    """Convert a ``code_execution_tool_result`` block to a Gemini ``code_execution_result`` item.
+
+    Gemini reports one ``output`` string and an outcome, so stdout and stderr are joined and a
+    nonzero return code, or an error result, reads as ``OUTCOME_FAILED``. An error result has no
+    output, so its ``error_code`` stands in for one.
+    """
+    content = block.get("content")
+    if not isinstance(content, dict):
+        content = {}
+    if content.get("type") == "code_execution_tool_result_error":
+        outcome = "OUTCOME_FAILED"
+        output = str(content.get("error_code", ""))
+    else:
+        outcome = "OUTCOME_OK" if content.get("return_code") == 0 else "OUTCOME_FAILED"
+        output = f"{content.get('stdout', '')}{content.get('stderr', '')}"
+    return {
+        "type": "code_execution_result",
+        "id": block.get("tool_use_id", ""),
+        "outcome": outcome,
+        "output": output,
+    }
 
 
 def _convert_image_block_to_openai(block: dict[str, Any]) -> dict[str, Any]:
@@ -434,9 +500,18 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
 
 
 def _convert_tools_to_openai(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert Anthropic tool format to OpenAI function tool format."""
+    """Convert Anthropic tool format to OpenAI function tool format.
+
+    A tool with none of ``name``, ``type`` and ``input_schema`` is not an Anthropic tool but a
+    provider-native one, such as Gemini's ``{"google_search": {}}`` or ``{"code_execution": {}}``,
+    and is forwarded as-is for the provider to read. Converting it would send a function with no
+    name and an empty schema.
+    """
     openai_tools = []
     for tool in tools:
+        if not {"name", "type", "input_schema"} & tool.keys():
+            openai_tools.append(tool)
+            continue
         openai_tools.append(
             {
                 "type": "function",
@@ -531,20 +606,124 @@ def _cache_creation_details_from_usage(usage: CompletionUsage) -> CacheCreation 
     )
 
 
+def _google_extra_content(extra_content: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the ``google`` namespace of an ``extra_content`` side-channel, or an empty dict."""
+    google = (extra_content or {}).get("google")
+    return google if isinstance(google, dict) else {}
+
+
+def _code_execution_items(extra_content: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Return the Gemini ``code_execution`` items of an ``extra_content`` side-channel, skipping malformed ones."""
+    items = _google_extra_content(extra_content).get("code_execution")
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def _executable_code_block(item: dict[str, Any]) -> ServerToolUseBlock:
+    """Map an ``executable_code`` item to a ``server_tool_use`` block named ``code_execution``."""
+    return ServerToolUseBlock(
+        type="server_tool_use",
+        id=item.get("id") or "",
+        name="code_execution",
+        input={"code": item.get("code") or "", "language": item.get("language") or "PYTHON"},
+    )
+
+
+def _code_execution_result_block(item: dict[str, Any], outputs: list[dict[str, Any]]) -> CodeExecutionToolResultBlock:
+    """Map a ``code_execution_result`` item, and the files its code produced, to a ``code_execution_tool_result`` block.
+
+    Gemini reports one ``output`` string, so it lands in stdout when the outcome is ``OUTCOME_OK``
+    and in stderr otherwise, with the return code standing in for the outcome. Produced files
+    ride an ``inline_outputs`` extra field as ``{"mime_type", "data"}`` entries: Anthropic names
+    them by ``file_id`` in ``content``, which only a file store can mint, so a layer that has one
+    swaps them in.
+    """
+    ok = item.get("outcome") == "OUTCOME_OK"
+    output = item.get("output") or ""
+    result: dict[str, Any] = {
+        "type": "code_execution_result",
+        "stdout": output if ok else "",
+        "stderr": "" if ok else output,
+        "return_code": 0 if ok else 1,
+        "content": [],
+    }
+    if outputs:
+        result["inline_outputs"] = outputs
+    return CodeExecutionToolResultBlock.model_validate(
+        {"type": "code_execution_tool_result", "tool_use_id": item.get("id") or "", "content": result}
+    )
+
+
+def _inline_output(item: dict[str, Any]) -> dict[str, Any]:
+    return {"mime_type": item.get("mime_type") or "", "data": item.get("data") or ""}
+
+
+def _code_execution_blocks(extra_content: dict[str, Any] | None) -> list[MessageContentBlock]:
+    """Map Gemini ``code_execution`` items to Anthropic code execution blocks.
+
+    An ``executable_code`` item becomes a ``server_tool_use`` block and a ``code_execution_result``
+    item a ``code_execution_tool_result`` block. A ``code_execution_output`` item (a file the code
+    produced) folds into the result with its id, or the last result when none matches, and is
+    dropped when there is no result at all.
+    """
+    items = _code_execution_items(extra_content)
+    outputs_by_id: dict[str, list[dict[str, Any]]] = {}
+    last_outputs: list[dict[str, Any]] | None = None
+    for item in items:
+        if item.get("type") == "code_execution_result":
+            last_outputs = outputs_by_id[item.get("id") or ""] = []
+    for item in items:
+        if item.get("type") == "code_execution_output":
+            target = outputs_by_id.get(item.get("id") or "", last_outputs)
+            if target is not None:
+                target.append(_inline_output(item))
+
+    blocks: list[MessageContentBlock] = []
+    for item in items:
+        if item.get("type") == "executable_code":
+            blocks.append(_executable_code_block(item))
+        elif item.get("type") == "code_execution_result":
+            blocks.append(_code_execution_result_block(item, outputs_by_id[item.get("id") or ""]))
+    return blocks
+
+
+def _text_block(text: str, thought_signature: Any) -> TextBlock:
+    """Build a text block, carrying a Gemini text-part ``thought_signature`` in ``extra_content``."""
+    if isinstance(thought_signature, str) and thought_signature:
+        return TextBlock.model_validate(
+            {"type": "text", "text": text, "extra_content": {"google": {"thought_signature": thought_signature}}}
+        )
+    return TextBlock(type="text", text=text)
+
+
 def chat_completion_to_message_response(completion: ChatCompletion) -> MessageResponse:
-    """Convert an OpenAI ChatCompletion to an Anthropic MessageResponse."""
+    """Convert an OpenAI ChatCompletion to an Anthropic MessageResponse.
+
+    Blocks come out in the order thinking, code execution, text, refusal, tool use. Gemini state
+    in the ``extra_content`` side-channel is kept on the blocks as an ``extra_content`` field,
+    which ``_convert_assistant_blocks_to_openai`` reads back when the turn is replayed: a tool
+    call's on its ``tool_use`` block, and the message-level ``thought_signature`` (Gemini signs
+    the last text part) on the text block. No text block is added to carry that signature alone,
+    except the empty one a response with no other content gets anyway. Code execution items
+    become ``server_tool_use`` and ``code_execution_tool_result`` blocks (see
+    ``_code_execution_blocks``).
+    """
     content_blocks: list[MessageContentBlock] = []
     stop_reason: StopReason = "end_turn"
+    text_signature: Any = None
 
     if completion.choices:
         choice = completion.choices[0]
         msg = choice.message
+        text_signature = _google_extra_content(msg.extra_content).get("thought_signature")
 
         if msg.reasoning:
             content_blocks.append(ThinkingBlock(type="thinking", thinking=msg.reasoning.content))
 
+        content_blocks.extend(_code_execution_blocks(msg.extra_content))
+
         if msg.content:
-            content_blocks.append(TextBlock(type="text", text=msg.content))
+            content_blocks.append(_text_block(msg.content, text_signature))
+            text_signature = None
 
         if msg.refusal:
             content_blocks.append(TextBlock(type="text", text=msg.refusal))
@@ -559,18 +738,18 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
                 except (json.JSONDecodeError, TypeError):
                     tool_input = {}
                 content_blocks.append(
-                    ToolUseBlock(
-                        type="tool_use",
-                        id=tc.id,
-                        name=fn.name,
-                        input=tool_input,
+                    _tool_use_block(
+                        tc.id,
+                        fn.name,
+                        tool_input,
+                        tc.extra_content if isinstance(tc, ChatCompletionMessageFunctionToolCall) else None,
                     )
                 )
 
         stop_reason = "refusal" if msg.refusal else _finish_reason_to_stop_reason(choice.finish_reason)
 
     if not content_blocks:
-        content_blocks.append(TextBlock(type="text", text=""))
+        content_blocks.append(_text_block("", text_signature))
 
     usage = MessageUsage(input_tokens=0, output_tokens=0)
     if completion.usage:
@@ -596,6 +775,17 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
         stop_reason=stop_reason,
         usage=usage,
     )
+
+
+def _tool_use_block(
+    tool_id: str, name: str, tool_input: dict[str, Any], extra_content: dict[str, Any] | None
+) -> ToolUseBlock:
+    """Build a tool_use block, carrying the tool call's ``extra_content`` when it has one."""
+    if extra_content:
+        return ToolUseBlock.model_validate(
+            {"type": "tool_use", "id": tool_id, "name": name, "input": tool_input, "extra_content": extra_content}
+        )
+    return ToolUseBlock(type="tool_use", id=tool_id, name=name, input=tool_input)
 
 
 def _finish_reason_to_stop_reason(finish_reason: str | None) -> StopReason:
@@ -629,6 +819,9 @@ class StreamingState:
         self.tool_call_name: str | None = None
         self.tool_block_indexes: dict[int, int] = {}
         """Content block index of each open tool_use block, keyed by OpenAI ``tool_calls[].index``."""
+        self.pending_code_result: tuple[dict[str, Any], list[dict[str, Any]]] | None = None
+        """Held-back ``code_execution_result`` item and the inline outputs folded into it so far."""
+        self.code_result_ids: set[str] = set()
 
 
 def chat_completion_chunk_to_message_stream_events(
@@ -639,6 +832,21 @@ def chat_completion_chunk_to_message_stream_events(
 
     This is stateful: it tracks the current content block index and type to emit
     the correct lifecycle events (start/delta/stop).
+
+    Gemini state follows the non-streaming conversion where the event stream has room for it. A
+    tool_use ``content_block_start`` carries the tool call's ``extra_content`` when the fragment
+    that opens the block has one. Code execution items each become a complete block, opened with
+    its full input or result on ``content_block_start`` and closed at once, with no
+    ``input_json_delta``: consumers that rebuild blocks from deltas typically do so for
+    ``tool_use`` only, and would otherwise re-serialize a ``server_tool_use`` with empty input.
+    A ``code_execution_tool_result`` is held back until something other than a
+    ``code_execution_output`` arrives (or the stream ends), because the files its code produced
+    can come in later chunks and have to be on its start event.
+
+    A message-level ``thought_signature`` is dropped. Gemini signs the last text part, and by the
+    time the signature arrives that text block has already started, so no Anthropic event can
+    attach it. Google makes text-part signatures optional; the mandatory function-call
+    signatures travel on the tool_use blocks.
     """
     events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent] = []
     state.model = chunk.model
@@ -709,6 +917,31 @@ def chat_completion_chunk_to_message_stream_events(
             )
         )
 
+    for item in _code_execution_items(delta.extra_content):
+        item_type = item.get("type")
+        item_id = item.get("id") or ""
+        if item_type == "code_execution_output":
+            pending = state.pending_code_result
+            # Like the non-streaming fold: the result with this id, else the last one, which is
+            # the held one unless the matching result has already been emitted.
+            if pending is not None and (item_id == pending[0].get("id") or item_id not in state.code_result_ids):
+                pending[1].append(_inline_output(item))
+        elif item_type == "executable_code":
+            _close_current_block(state, events)
+            state.current_block_index += 1
+            events.append(
+                ContentBlockStartEvent(
+                    type="content_block_start",
+                    index=state.current_block_index,
+                    content_block=_executable_code_block(item),
+                )
+            )
+            events.append(ContentBlockStopEvent(type="content_block_stop", index=state.current_block_index))
+        elif item_type == "code_execution_result":
+            _close_current_block(state, events)
+            state.pending_code_result = (item, [])
+            state.code_result_ids.add(item_id)
+
     if delta.content is not None:
         if state.current_block_type != "text":
             _close_current_block(state, events)
@@ -770,11 +1003,8 @@ def chat_completion_chunk_to_message_stream_events(
                     ContentBlockStartEvent(
                         type="content_block_start",
                         index=state.current_block_index,
-                        content_block=ToolUseBlock(
-                            type="tool_use",
-                            id=state.tool_call_id or "",
-                            name=state.tool_call_name or "",
-                            input={},
+                        content_block=_tool_use_block(
+                            state.tool_call_id or "", state.tool_call_name or "", {}, tc.extra_content
                         ),
                     )
                 )
@@ -798,23 +1028,123 @@ def chat_completion_chunk_to_message_stream_events(
     return events
 
 
-def close_open_blocks(state: StreamingState) -> list[ContentBlockStopEvent]:
+def close_open_blocks(state: StreamingState) -> list[ContentBlockStartEvent | ContentBlockStopEvent]:
     """Build a content_block_stop event for every block still open, in block order.
 
     A tool_use section can hold more than one open block, because each parallel tool call gets
-    its own block and stays open until the section ends.
+    its own block and stays open until the section ends. A held-back code execution result is
+    emitted after them, as a start and a stop, since nothing can be added to it any more.
     """
-    if state.current_block_type is None:
-        return []
-    open_indexes = sorted(state.tool_block_indexes.values()) or [state.current_block_index]
-    state.tool_block_indexes.clear()
-    state.current_block_type = None
-    return [ContentBlockStopEvent(type="content_block_stop", index=index) for index in open_indexes]
+    events: list[ContentBlockStartEvent | ContentBlockStopEvent] = []
+    if state.current_block_type is not None:
+        open_indexes = sorted(state.tool_block_indexes.values()) or [state.current_block_index]
+        state.tool_block_indexes.clear()
+        state.current_block_type = None
+        events.extend(ContentBlockStopEvent(type="content_block_stop", index=index) for index in open_indexes)
+    if state.pending_code_result is not None:
+        item, outputs = state.pending_code_result
+        state.pending_code_result = None
+        state.current_block_index += 1
+        events.append(
+            ContentBlockStartEvent(
+                type="content_block_start",
+                index=state.current_block_index,
+                content_block=_code_execution_result_block(item, outputs),
+            )
+        )
+        events.append(ContentBlockStopEvent(type="content_block_stop", index=state.current_block_index))
+    return events
 
 
 def _close_current_block(
     state: StreamingState,
     events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent],
 ) -> None:
-    """Emit content_block_stop events for any open blocks."""
+    """Emit content_block_stop events for any open blocks, and the held-back code execution result."""
     events.extend(close_open_blocks(state))
+
+
+_ANTHROPIC_SERVER_TOOL_ID_PREFIX = "srvtoolu_"
+
+
+def prepare_blocks_for_native_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return ``messages`` with the bridge's content blocks made acceptable to a native Anthropic Messages API.
+
+    Two things the Messages bridge puts in a conversation would be rejected there. The
+    ``extra_content`` field (any_llm's side-channel for provider state, see
+    ``chat_completion_to_message_response``) is an unknown block field, so it is removed. Code
+    execution blocks mapped from another provider's items carry ids Anthropic did not issue
+    (its own start with ``srvtoolu_``), so each ``server_tool_use`` named ``code_execution`` and
+    its ``code_execution_tool_result`` become one text block holding the code and its output,
+    which keeps the context for the model; a use or result without its other half becomes the
+    same text without the missing part. Anthropic's own code execution blocks pass untouched.
+
+    Messages and blocks that need no change are returned as the same objects; the others are
+    copied, so the caller's dicts are never mutated.
+    """
+    prepared: list[dict[str, Any]] = []
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            blocks = _prepare_blocks_for_native_messages(content)
+            if blocks is not None:
+                message = {**message, "content": blocks}
+        prepared.append(message)
+    return prepared
+
+
+def _is_foreign_code_execution(block: Any) -> bool:
+    if not isinstance(block, dict):
+        return False
+    if block.get("type") == "server_tool_use" and block.get("name") == "code_execution":
+        block_id = block.get("id")
+    elif block.get("type") == "code_execution_tool_result":
+        block_id = block.get("tool_use_id")
+    else:
+        return False
+    return not (isinstance(block_id, str) and block_id.startswith(_ANTHROPIC_SERVER_TOOL_ID_PREFIX))
+
+
+def _prepare_blocks_for_native_messages(blocks: list[Any]) -> list[Any] | None:
+    """Return the prepared blocks of one message, or ``None`` when none needs a change."""
+    if not any(isinstance(b, dict) and ("extra_content" in b or _is_foreign_code_execution(b)) for b in blocks):
+        return None
+    results = {
+        b.get("tool_use_id"): b
+        for b in blocks
+        if _is_foreign_code_execution(b) and b.get("type") == "code_execution_tool_result"
+    }
+    use_ids = {b.get("id") for b in blocks if _is_foreign_code_execution(b) and b.get("type") == "server_tool_use"}
+    prepared: list[Any] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            prepared.append(block)
+        elif _is_foreign_code_execution(block) and block.get("type") == "server_tool_use":
+            prepared.append({"type": "text", "text": _code_execution_as_text(block, results.get(block.get("id")))})
+        elif _is_foreign_code_execution(block):
+            if block.get("tool_use_id") not in use_ids:
+                prepared.append({"type": "text", "text": _code_execution_as_text(None, block)})
+        else:
+            prepared.append({k: v for k, v in block.items() if k != "extra_content"})
+    return prepared
+
+
+def _code_execution_as_text(use: dict[str, Any] | None, result: dict[str, Any] | None) -> str:
+    """Render a code execution use and its result, either of which may be missing, as text."""
+    parts: list[str] = []
+    if use is not None:
+        tool_input = use.get("input")
+        if not isinstance(tool_input, dict):
+            tool_input = {}
+        language = str(tool_input.get("language") or "python").lower()
+        parts.append(f"Code execution ({language}):\n```{language}\n{tool_input.get('code', '')}\n```")
+    if result is not None:
+        content = result.get("content")
+        if not isinstance(content, dict):
+            content = {}
+        if content.get("type") == "code_execution_tool_result_error":
+            output = f"Error: {content.get('error_code', '')}"
+        else:
+            output = f"{content.get('stdout', '')}{content.get('stderr', '')}"
+        parts.append(f"Output:\n{output}")
+    return "\n".join(parts)

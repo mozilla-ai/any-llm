@@ -29,6 +29,7 @@ try:
     from google.genai import types
 
     from .utils import (
+        CodeExecutionState,
         _convert_google_batch_job_to_openai_batch,
         _convert_google_batch_output_to_result,
         _convert_messages,
@@ -358,7 +359,8 @@ class GoogleProvider(AnyLLM):
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Google chunk response to OpenAI format."""
         tool_call_counter = kwargs.get("tool_call_counter")
-        return _create_openai_chunk_from_google_chunk(response, tool_call_counter)
+        code_execution_state = kwargs.get("code_execution_state")
+        return _create_openai_chunk_from_google_chunk(response, tool_call_counter, code_execution_state)
 
     @staticmethod
     @override
@@ -412,8 +414,11 @@ class GoogleProvider(AnyLLM):
 
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
                 tool_call_counter: list[int] = [0]
+                code_execution_state = CodeExecutionState()
                 async for chunk in response_stream:
-                    yield self._convert_completion_chunk_response(chunk, tool_call_counter=tool_call_counter)
+                    yield self._convert_completion_chunk_response(
+                        chunk, tool_call_counter=tool_call_counter, code_execution_state=code_execution_state
+                    )
 
             return _stream()
 

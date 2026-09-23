@@ -131,6 +131,12 @@ class ProviderFileNotFoundError(AnyLLMError):
     default_message = "File not found"
 
 
+class ProviderCacheNotFoundError(AnyLLMError):
+    """Raised when a provider-hosted context cache is missing, expired, or inaccessible."""
+
+    default_message = "Cache not found"
+
+
 class ModelNotFoundError(AnyLLMError):
     """Raised when the requested model is not found or not available."""
 
