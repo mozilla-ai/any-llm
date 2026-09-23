@@ -85,6 +85,7 @@ def uploaded_file(**overrides: Any) -> types.File:
 
 async def close_provider(provider: GeminiProvider) -> None:
     await provider.client.aio.aclose()
+    provider.client.close()
 
 
 @pytest.fixture

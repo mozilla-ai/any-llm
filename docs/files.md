@@ -191,7 +191,11 @@ forwarded. Without one, a path upload takes its MIME type from the file extensio
 and bytes, binary handles, and paths with an unrecognized extension default to
 `application/octet-stream`. any-llm opens a path upload itself and closes it after
 the request, so only a failure to open the path is reported as an unreadable path;
-caller-owned handles remain open. Gemini requires seekable binary streams. The shared `purpose` and `expires_in` parameters are rejected: Gemini
+caller-owned handles remain open. Gemini requires seekable binary streams.
+Because google-genai's async upload reads the stream on the event loop, any-llm
+runs the upload on the synchronous google-genai client in a worker thread. Uploads
+therefore use `http_options.client_args`, not `async_client_args`; configure a
+custom transport or proxy in both if uploads must go through it. The shared `purpose` and `expires_in` parameters are rejected: Gemini
 does not classify uploads by purpose, and uploaded files expire after 48 hours.
 
 Upload may return `status="PROCESSING"`. Wait until `ACTIVE` before referencing
