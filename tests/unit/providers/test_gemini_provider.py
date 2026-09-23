@@ -2439,7 +2439,7 @@ def _turn_shapes(contents: list[types.Content]) -> list[tuple[str, list[str]]]:
 
 
 def test_convert_messages_groups_parallel_tool_results_into_one_user_turn() -> None:
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": "weather and time?"},
         {"role": "assistant", "tool_calls": [_tool_call("c1", "get_weather"), _tool_call("c2", "get_time")]},
         _tool_result("c1", "get_weather"),
@@ -2455,7 +2455,7 @@ def test_convert_messages_groups_parallel_tool_results_into_one_user_turn() -> N
 
 
 def test_convert_messages_does_not_merge_a_tool_result_into_a_text_user_turn() -> None:
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "assistant", "tool_calls": [_tool_call("c1", "get_weather")]},
         {"role": "user", "content": "also, hurry up"},
         _tool_result("c1", "get_weather"),
@@ -2485,7 +2485,7 @@ def test_convert_messages_accepts_a_leading_tool_result() -> None:
 
 
 def test_convert_messages_keeps_tool_results_of_separate_rounds_in_separate_turns() -> None:
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": "go"},
         {"role": "assistant", "tool_calls": [_tool_call("c1", "get_weather")]},
         _tool_result("c1", "get_weather"),
