@@ -1,12 +1,13 @@
 # ruff: noqa: PT012
 import asyncio
+import threading
 import warnings
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -58,7 +59,10 @@ def provider_for(handler: Callable[[httpx.Request], httpx.Response]) -> GeminiPr
     return GeminiProvider(
         api_key="test-key",
         api_base="https://files.test",
-        http_options=types.HttpOptions(async_client_args={"transport": httpx.MockTransport(handler)}),
+        http_options=types.HttpOptions(
+            client_args={"transport": httpx.MockTransport(handler)},
+            async_client_args={"transport": httpx.MockTransport(handler)},
+        ),
     )
 
 
@@ -81,6 +85,7 @@ def uploaded_file(**overrides: Any) -> types.File:
 
 async def close_provider(provider: GeminiProvider) -> None:
     await provider.client.aio.aclose()
+    provider.client.close()
 
 
 @pytest.fixture
@@ -98,11 +103,11 @@ async def test_upload_maps_inputs_and_metadata(source: str, tmp_path: Path, mock
     inputs: dict[str, FileInput] = {"path": path, "string": str(path), "bytes": b"a,b\n", "handle": handle}
     captured: list[tuple[Any, Any]] = []
 
-    async def upload(*, file: Any, config: Any = None) -> types.File:
+    def upload(*, file: Any, config: Any = None) -> types.File:
         captured.append((file, config))
         return uploaded_file()
 
-    mock_client.aio.files.upload = upload
+    mock_client.files.upload = upload
     provider = GeminiProvider(api_key="test-key")
     result = await provider.aupload_file(inputs[source], mime_type="text/csv")
     assert result.id == "files/abc-123"
@@ -135,12 +140,12 @@ async def test_upload_maps_inputs_and_metadata(source: str, tmp_path: Path, mock
 
 @pytest.mark.asyncio
 async def test_upload_overrides_filename_as_display_name(mock_client: Any) -> None:
-    async def upload(*, file: Any, config: Any = None) -> types.File:
+    def upload(*, file: Any, config: Any = None) -> types.File:
         assert config.display_name == "report.txt"
         assert config.mime_type == "text/plain"
         return uploaded_file(display_name="report.txt", mime_type="text/plain")
 
-    mock_client.aio.files.upload = upload
+    mock_client.files.upload = upload
     provider = GeminiProvider(api_key="test-key")
     result = await provider.aupload_file(b"hello", filename="report.txt", mime_type="text/plain")
     assert result.filename == "report.txt"
@@ -246,11 +251,11 @@ def test_file_capabilities_are_gemini_only() -> None:
     [{"purpose": "batch"}, {"expires_in": 3600}, {"expires_in_seconds": 3600}, {"page_size": 1}],
 )
 async def test_invalid_upload_options_fail_before_sdk(kwargs: dict[str, Any], mock_client: Any) -> None:
-    mock_client.aio.files.upload = AsyncMock(side_effect=AssertionError("Invalid upload reached the SDK"))
+    mock_client.files.upload = Mock(side_effect=AssertionError("Invalid upload reached the SDK"))
     provider = GeminiProvider(api_key="test-key")
     with pytest.raises(UnsupportedParameterError):
         await provider.aupload_file(b"data", **kwargs)
-    mock_client.aio.files.upload.assert_not_called()
+    mock_client.files.upload.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -631,7 +636,7 @@ async def test_upload_does_not_retry_by_default(mock_client: Any, monkeypatch: p
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
     calls = 0
 
-    async def upload(*, file: Any, config: Any = None) -> types.File:
+    def upload(*, file: Any, config: Any = None) -> types.File:
         nonlocal calls
         calls += 1
         raise ClientError(
@@ -639,7 +644,7 @@ async def test_upload_does_not_retry_by_default(mock_client: Any, monkeypatch: p
             response_json={"error": {"message": "Rate limit exceeded", "status": "RESOURCE_EXHAUSTED"}},
         )
 
-    mock_client.aio.files.upload = upload
+    mock_client.files.upload = upload
     provider = GeminiProvider(api_key="test-key")
     with pytest.raises(RateLimitError):
         await provider.aupload_file(b"data")
@@ -700,11 +705,11 @@ async def test_path_upload_guesses_mime_type_and_keeps_an_explicit_one(
     path.write_bytes(b"%PDF-1.4")
     captured: list[Any] = []
 
-    async def upload(*, file: Any, config: Any = None) -> types.File:
+    def upload(*, file: Any, config: Any = None) -> types.File:
         captured.append(config)
         return uploaded_file()
 
-    mock_client.aio.files.upload = upload
+    mock_client.files.upload = upload
     provider = GeminiProvider(api_key="test-key")
     await provider.aupload_file(path, mime_type=mime_type)
     assert captured[0].mime_type == expected
@@ -714,16 +719,16 @@ async def test_path_upload_guesses_mime_type_and_keeps_an_explicit_one(
 async def test_transport_oserror_is_not_reported_as_an_unreadable_path(
     tmp_path: Path, mock_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Only the local open is a path error; aiohttp's ClientOSError is an OSError too."""
+    """Only the local open is a path error; a transport OSError is a provider failure."""
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
     path = tmp_path / "input.csv"
     path.write_bytes(b"a,b\n")
 
-    async def upload(*, file: Any, config: Any = None) -> types.File:
+    def upload(*, file: Any, config: Any = None) -> types.File:
         message = "Connection reset by peer"
         raise ConnectionResetError(message)
 
-    mock_client.aio.files.upload = upload
+    mock_client.files.upload = upload
     provider = GeminiProvider(api_key="test-key")
     with pytest.raises(AnyLLMError) as error:
         await provider.aupload_file(path)
@@ -737,11 +742,11 @@ async def test_upload_closes_handles_it_opens_but_not_the_callers(tmp_path: Path
     path.write_bytes(b"a,b\n")
     seen: list[Any] = []
 
-    async def upload(*, file: Any, config: Any = None) -> types.File:
+    def upload(*, file: Any, config: Any = None) -> types.File:
         seen.append(file)
         return uploaded_file()
 
-    mock_client.aio.files.upload = upload
+    mock_client.files.upload = upload
     provider = GeminiProvider(api_key="test-key")
     caller_handle = BytesIO(b"a,b\n")
     await provider.aupload_file(path)
@@ -751,6 +756,34 @@ async def test_upload_closes_handles_it_opens_but_not_the_callers(tmp_path: Path
     assert seen[1].closed
     assert not caller_handle.closed
     caller_handle.close()
+
+
+@pytest.mark.asyncio
+async def test_upload_opens_reads_and_closes_off_the_event_loop(
+    tmp_path: Path, mock_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "input.csv"
+    path.write_bytes(b"a,b\n")
+    loop_thread = threading.current_thread()
+    threads: dict[str, threading.Thread] = {}
+    original_open = Path.open
+
+    def tracking_open(self: Path, *args: Any, **kwargs: Any) -> Any:
+        threads["open"] = threading.current_thread()
+        return original_open(self, *args, **kwargs)
+
+    def upload(*, file: Any, config: Any = None) -> types.File:
+        threads["read"] = threading.current_thread()
+        file.read()
+        return uploaded_file()
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    mock_client.files.upload = upload
+    mock_client.aio.files.upload = AsyncMock(side_effect=AssertionError("Upload ran on the event loop"))
+    provider = GeminiProvider(api_key="test-key")
+    await provider.aupload_file(path)
+    assert threads["open"] is not loop_thread
+    assert threads["read"] is not loop_thread
 
 
 def test_sub_millisecond_timeout_rounds_up_to_one_millisecond() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import math
 import mimetypes
 from collections.abc import AsyncIterator, Iterable, Mapping
@@ -150,8 +151,8 @@ def _open_upload_source(
     """Return the handle, display name, and MIME type for an upload.
 
     Paths are opened here rather than by the SDK, so that only this open is reported as
-    an unreadable path; an ``OSError`` from the transport (aiohttp's ``ClientOSError``
-    is one) must propagate as a provider failure. Handles this function opens are closed
+    an unreadable path; an ``OSError`` from the transport must propagate as a provider
+    failure. Handles this function opens are closed
     by ``stack``; caller-owned handles are left open.
     """
     if isinstance(file, (str, PathLike)):
@@ -188,15 +189,21 @@ async def upload_file(
         )
     http_options = file_http_options(kwargs, upload=True)
     reject_unsupported(kwargs)
-    with ExitStack() as stack:
-        handle, display_name, resolved_mime_type = _open_upload_source(stack, file, filename, mime_type)
-        config = types.UploadFileConfig(
-            mime_type=resolved_mime_type,
-            display_name=display_name,
-            http_options=http_options,
-        )
-        result = await client.aio.files.upload(file=handle, config=config)
-    return convert_metadata(result)
+
+    # The async SDK reads IOBase chunks synchronously on the event loop, so the whole
+    # upload, including the local open and cleanup, runs on the sync client in a worker
+    # thread. It therefore uses ``http_options.client_args``, not ``async_client_args``.
+    def upload() -> types.File:
+        with ExitStack() as stack:
+            handle, display_name, resolved_mime_type = _open_upload_source(stack, file, filename, mime_type)
+            config = types.UploadFileConfig(
+                mime_type=resolved_mime_type,
+                display_name=display_name,
+                http_options=http_options,
+            )
+            return client.files.upload(file=handle, config=config)
+
+    return convert_metadata(await asyncio.to_thread(upload))
 
 
 async def list_files(

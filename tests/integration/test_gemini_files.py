@@ -25,6 +25,11 @@ async def cleanup_files(provider: GeminiProvider, file_ids: Iterable[str]) -> No
         await provider.client.aio.aclose()
     except Exception as exc:
         errors.append(exc)
+    # Uploads run on the sync client, which aio.aclose() does not close.
+    try:
+        provider.client.close()
+    except Exception as exc:
+        errors.append(exc)
     if errors:
         if primary_error is not None:
             for error in errors:
