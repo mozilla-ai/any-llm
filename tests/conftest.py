@@ -113,7 +113,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "Qwen/Qwen3.5-9B",
         LLMProvider.XAI: "grok-3-mini-latest",
-        LLMProvider.INCEPTION: "mercury",
+        LLMProvider.INCEPTION: "mercury-2.5",
         LLMProvider.NEOSANTARA: "gemini-3-flash-preview",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
         LLMProvider.OLLAMA: "llama3.2:1b",
