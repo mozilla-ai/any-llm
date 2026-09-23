@@ -151,13 +151,6 @@ def _extract_status_code(exception: Exception) -> int | None:
             if isinstance(response_status, int) and not isinstance(response_status, bool):
                 return response_status
 
-    # google-genai's APIError stores the HTTP status on ``code`` (int), not ``status_code``.
-    # Ignore values outside the HTTP range so a string provider code or gRPC code is not
-    # mistaken for a status. String ``code`` values stay in the structured ``code`` field.
-    code = getattr(exception, "code", None)
-    if isinstance(code, int) and not isinstance(code, bool) and 100 <= code < 600:
-        return code
-
     return None
 
 

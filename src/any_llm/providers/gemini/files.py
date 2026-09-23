@@ -14,7 +14,7 @@ from google.genai.errors import APIError
 from typing_extensions import override
 
 from any_llm._files import FilesMixin
-from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, ProviderError, ProviderFileNotFoundError, UnsupportedParameterError
 from any_llm.types.files import AsyncFileDownload, FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
 
 if TYPE_CHECKING:
@@ -30,12 +30,47 @@ def reject_unsupported(names: Iterable[str], additional_message: str | None = No
         raise UnsupportedParameterError(", ".join(unsupported), PROVIDER_NAME, additional_message)
 
 
+def _http_status(exc: APIError) -> int | None:
+    """Read an HTTP status from an SDK error response.
+
+    google-genai attaches either an httpx response (``status_code``) or an aiohttp
+    response (``status``). ``code`` is not consulted: a hand-built ``APIError`` can
+    store an HTTP-looking integer there without a response, and that shape is not
+    what the SDK raises.
+    """
+    response = exc.response
+    if response is None:
+        return None
+    for name in ("status_code", "status"):
+        status = getattr(response, name, None)
+        if isinstance(status, int) and not isinstance(status, bool):
+            return status
+    return None
+
+
+def _raise_if_missing_file(exc: APIError) -> None:
+    """Map Gemini's unknown-file 403 onto ``ProviderFileNotFoundError``.
+
+    ``files.get`` and ``files.delete`` answer an unknown ID with 403 and a message
+    that the file may not exist, instead of 404. A 403 without that phrase stays
+    an authentication error. Invalid API keys are 400, so this does not hide a
+    credential failure.
+    """
+    if _http_status(exc) == 403 and "may not exist" in str(exc).lower():
+        raise ProviderFileNotFoundError(
+            str(exc),
+            original_exception=exc,
+            provider_name=PROVIDER_NAME,
+            status_code=403,
+        ) from exc
+
+
 def validate_file_id(file_id: str) -> str:
     """Reject empty IDs, dot segments, traversal, and URL delimiters; allow a ``files/`` prefix."""
     if (
         not file_id
         or file_id in {".", ".."}
-        or any(character in file_id for character in "\\?#%")
+        or any(character in file_id for character in "\\?#%:")
         or any(character.isspace() for character in file_id)
     ):
         message = "A nonempty provider file ID without path separators, URL delimiters, or whitespace is required"
@@ -223,7 +258,11 @@ async def stream_download(
     )
     response = await httpx_client.send(request, stream=True)  # type: ignore[arg-type]
     try:
-        await APIError.raise_for_async_response(response)
+        try:
+            await APIError.raise_for_async_response(response)
+        except APIError as exc:
+            _raise_if_missing_file(exc)
+            raise
         yield AsyncFileDownload(
             status_code=response.status_code,
             headers=response.headers.copy(),
@@ -267,7 +306,11 @@ class GeminiFileMethods(FilesMixin):
         http_options = file_http_options(kwargs)
         reject_unsupported(kwargs)
         config = types.GetFileConfig(http_options=http_options) if http_options is not None else None
-        result = await self.client.aio.files.get(name=file_id, config=config)
+        try:
+            result = await self.client.aio.files.get(name=file_id, config=config)
+        except APIError as exc:
+            _raise_if_missing_file(exc)
+            raise
         return convert_metadata(result)
 
     @override
@@ -276,7 +319,11 @@ class GeminiFileMethods(FilesMixin):
         http_options = file_http_options(kwargs)
         reject_unsupported(kwargs)
         config = types.DeleteFileConfig(http_options=http_options) if http_options is not None else None
-        await self.client.aio.files.delete(name=file_id, config=config)
+        try:
+            await self.client.aio.files.delete(name=file_id, config=config)
+        except APIError as exc:
+            _raise_if_missing_file(exc)
+            raise
         return FileDeleted(id=file_id)
 
     @override

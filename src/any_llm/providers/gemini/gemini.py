@@ -23,9 +23,7 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
     SUPPORTS_RESPONSES = True
-    SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset(
-        {"upload", "list", "retrieve", "download", "delete"}
-    )
+    SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset({"upload", "list", "retrieve", "delete"})
 
     _interactions_api_version: str | None
 

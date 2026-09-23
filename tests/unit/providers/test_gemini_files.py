@@ -17,6 +17,7 @@ from typing_extensions import override
 from any_llm import AnyLLM, AsyncFileDownload, FileDownload
 from any_llm.exceptions import (
     AnyLLMError,
+    AuthenticationError,
     InvalidRequestError,
     ProviderError,
     ProviderFileNotFoundError,
@@ -159,6 +160,17 @@ async def test_retrieve_leaves_missing_metadata_unknown() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generated_file_metadata_is_downloadable() -> None:
+    provider = provider_for(lambda _: httpx.Response(200, json=GENERATED))
+    try:
+        result = await provider.aretrieve_file("files/gen-1")
+        assert result.downloadable is True
+        assert result.filename == "output.txt"
+    finally:
+        await close_provider(provider)
+
+
+@pytest.mark.asyncio
 async def test_retrieve_normalizes_timestamps_and_preserves_native_extras() -> None:
     payload = {**UPLOADED, "createTime": "2026-09-14T12:00:00.123456+02:00"}
     provider = provider_for(lambda _: httpx.Response(200, json=payload))
@@ -221,7 +233,7 @@ async def test_delete_acknowledges_with_requested_id_without_inventing_deleted()
 def test_file_capabilities_are_gemini_only() -> None:
     gemini = GeminiProvider.get_provider_metadata()
     assert gemini.files is True
-    assert set(gemini.file_operations) == {"upload", "list", "retrieve", "download", "delete"}
+    assert set(gemini.file_operations) == {"upload", "list", "retrieve", "delete"}
     assert VertexaiProvider.get_provider_metadata().files is False
     assert AnyLLM.get_provider_class("deepseek").get_provider_metadata().files is False
 
@@ -267,23 +279,85 @@ async def test_missing_file_has_file_specific_error(monkeypatch: pytest.MonkeyPa
         await close_provider(provider)
 
 
+MISSING_FILE_403 = {
+    "error": {
+        "code": 403,
+        "message": "You do not have permission to access the File doesnotexist123 or it may not exist.",
+        "status": "PERMISSION_DENIED",
+    }
+}
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["upload", "list"])
-async def test_collection_404_is_not_a_missing_file(
-    operation: str, monkeypatch: pytest.MonkeyPatch, mock_client: Any
+@pytest.mark.parametrize("operation", ["retrieve", "delete"])
+async def test_unknown_file_403_is_a_missing_file(operation: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    provider = provider_for(lambda _: httpx.Response(403, json=MISSING_FILE_403))
+    try:
+        with pytest.raises(ProviderFileNotFoundError, match="may not exist") as error:
+            if operation == "retrieve":
+                await provider.aretrieve_file("files/doesnotexist123")
+            else:
+                await provider.adelete_file("files/doesnotexist123")
+        assert error.value.status_code == 403
+    finally:
+        await close_provider(provider)
+
+
+@pytest.mark.asyncio
+async def test_download_unknown_file_403_is_a_missing_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if ":download" in request.url.path:
+            return httpx.Response(403, json=MISSING_FILE_403)
+        return httpx.Response(200, json=GENERATED)
+
+    provider = provider_for(handle)
+    try:
+        with pytest.raises(ProviderFileNotFoundError, match="may not exist") as error:
+            async with provider.adownload_file("files/gen-1"):
+                pytest.fail("Missing generated file entered the consumer context")
+        assert error.value.status_code == 403
+    finally:
+        await close_provider(provider)
+
+
+@pytest.mark.asyncio
+async def test_permission_403_without_missing_file_phrase_stays_authentication(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
-    error = ClientError(code=404, response_json={"error": {"message": "Wrong endpoint", "status": "NOT_FOUND"}})
-    mock_client.aio.files.upload = AsyncMock(side_effect=error)
-    mock_client.aio.files.list = AsyncMock(side_effect=error)
-    provider = GeminiProvider(api_key="test-key")
-    with pytest.raises(AnyLLMError) as raised:
-        if operation == "upload":
-            await provider.aupload_file(b"data")
-        else:
-            await provider.alist_files()
-    assert not isinstance(raised.value, ProviderFileNotFoundError)
-    assert raised.value.status_code == 404
+    provider = provider_for(
+        lambda _: httpx.Response(
+            403,
+            json={"error": {"code": 403, "message": "Permission denied", "status": "PERMISSION_DENIED"}},
+        )
+    )
+    try:
+        with pytest.raises(AuthenticationError):
+            await provider.aretrieve_file("files/abc-123")
+    finally:
+        await close_provider(provider)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["upload", "list"])
+async def test_collection_404_is_not_a_missing_file(operation: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    provider = provider_for(
+        lambda _: httpx.Response(404, json={"error": {"code": 404, "message": "Wrong endpoint", "status": "NOT_FOUND"}})
+    )
+    try:
+        with pytest.raises(AnyLLMError) as raised:
+            if operation == "upload":
+                await provider.aupload_file(b"data")
+            else:
+                await provider.alist_files()
+        assert not isinstance(raised.value, ProviderFileNotFoundError)
+        assert raised.value.status_code == 404
+    finally:
+        await close_provider(provider)
 
 
 @pytest.mark.asyncio
@@ -305,7 +379,39 @@ async def test_unreadable_upload_path_is_a_request_error(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("file_id", ["", ".", "..", "../models", "file/../../x", "file\\x", " file_abc", "file_abc\n"])
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"extra_headers": "no"}, "extra_headers"),
+        ({"max_retries": True}, "max_retries"),
+        ({"max_retries": -1}, "max_retries"),
+    ],
+)
+async def test_invalid_retrieve_options_fail_before_network(kwargs: dict[str, Any], match: str) -> None:
+    provider = provider_for(lambda _: pytest.fail("Invalid retrieve options reached the network"))
+    try:
+        with pytest.raises(InvalidRequestError, match=match):
+            await provider.aretrieve_file("files/abc-123", **kwargs)
+    finally:
+        await close_provider(provider)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "file_id",
+    [
+        "",
+        ".",
+        "..",
+        "../models",
+        "file/../../x",
+        "file\\x",
+        " file_abc",
+        "file_abc\n",
+        "abc:download",
+        "files/abc:download",
+    ],
+)
 async def test_invalid_file_ids_are_rejected(file_id: str) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid file ID reached network"))
     try:
@@ -524,10 +630,9 @@ async def test_upload_does_not_retry_by_default(mock_client: Any, monkeypatch: p
 
     mock_client.aio.files.upload = upload
     provider = GeminiProvider(api_key="test-key")
-    with pytest.raises(RateLimitError) as error:
+    with pytest.raises(RateLimitError):
         await provider.aupload_file(b"data")
     assert calls == 1
-    assert error.value.status_code == 429
 
 
 @pytest.mark.asyncio
