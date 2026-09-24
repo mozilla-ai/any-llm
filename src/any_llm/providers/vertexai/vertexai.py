@@ -5,10 +5,9 @@ from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.gemini.base import GoogleProvider
-from any_llm.providers.gemini.caches import GeminiCacheMethods
 
 
-class VertexaiProvider(GeminiCacheMethods, GoogleProvider):
+class VertexaiProvider(GoogleProvider):
     """Vertex AI Provider using Google Cloud Vertex AI."""
 
     PROVIDER_NAME = "vertexai"

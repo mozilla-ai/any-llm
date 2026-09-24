@@ -10,7 +10,6 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, ove
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
 
-from any_llm._caches import CachesMixin
 from any_llm._files import FilesMixin
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
@@ -73,7 +72,7 @@ if TYPE_CHECKING:
     from any_llm.types.rerank import RerankResponse
 
 
-class AnyLLM(FilesMixin, CachesMixin, ABC):
+class AnyLLM(FilesMixin, ABC):
     """Provider for the LLM."""
 
     # === Provider-specific configuration (to be overridden by subclasses) ===
@@ -561,8 +560,6 @@ class AnyLLM(FilesMixin, CachesMixin, ABC):
             rerank=cls.SUPPORTS_RERANK,
             files=bool(cls.SUPPORTED_FILE_OPERATIONS),
             file_operations=tuple(sorted(cls.SUPPORTED_FILE_OPERATIONS)),
-            caches=bool(cls.SUPPORTED_CACHE_OPERATIONS),
-            cache_operations=tuple(sorted(cls.SUPPORTED_CACHE_OPERATIONS)),
             messages=cls.SUPPORTS_MESSAGES,
             messages_native=cls.SUPPORTS_MESSAGES_NATIVE,
             class_name=cls.__name__,

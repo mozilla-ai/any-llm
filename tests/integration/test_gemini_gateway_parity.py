@@ -1,4 +1,3 @@
-import uuid
 from typing import Any
 
 import pytest
@@ -86,34 +85,3 @@ async def test_gemini_messages_thought_signature_survives_a_tool_round_trip() ->
     assert isinstance(second, MessageResponse)
     assert any(block.type == "text" for block in second.content)
 
-
-@pytest.mark.asyncio
-async def test_gemini_cache_lifecycle_and_use_in_a_completion() -> None:
-    provider = _provider()
-    # Explicit caches need a minimum prompt size, so the instruction is padded past it.
-    manual = " ".join(f"Rule {i}: the answer to question {i} is {i * 7}." for i in range(1500))
-    cache = await provider.acreate_cache(
-        MODEL,
-        messages=[{"role": "system", "content": f"Answer from this manual.\n{manual}"}],
-        ttl=300,
-        display_name=f"any-llm-test-{uuid.uuid4().hex}",
-    )
-    try:
-        assert cache.id.startswith("cachedContents/")
-        assert cache.usage is not None
-        assert cache.usage.total_tokens
-
-        retrieved = await provider.aretrieve_cache(cache.id)
-        assert retrieved.id == cache.id
-
-        result = await provider.acompletion(
-            model=MODEL,
-            messages=[{"role": "user", "content": "What is the answer to question 12?"}],
-            cached_content=cache.id,
-        )
-        assert isinstance(result, ChatCompletion)
-        assert result.usage is not None
-        assert result.usage.prompt_tokens_details is not None
-        assert result.usage.prompt_tokens_details.cached_tokens
-    finally:
-        await provider.adelete_cache(cache.id)

@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 
 from any_llm.constants import ProviderTier
-from any_llm.types.caches import CacheOperation
 from any_llm.types.files import FileOperation
 
 
@@ -33,6 +32,3 @@ class ProviderMetadata(BaseModel):
 
     files: bool = False
     file_operations: tuple[FileOperation, ...] = ()
-
-    caches: bool = False
-    cache_operations: tuple[CacheOperation, ...] = ()
