@@ -80,19 +80,58 @@ def _convert_system_to_openai(system: str | list[dict[str, Any]]) -> str:
     return "".join(b.get("text", "") for b in system if b.get("type") == "text")
 
 
-def messages_params_to_completion_params(params: MessagesParams) -> dict[str, Any]:
+def _merge_cache_control(existing: dict[str, Any] | None, marks: list[Any]) -> dict[str, Any] | None:
+    """Fold ``cache_control`` breakpoints into one, keeping the longest TTL any of them asked for."""
+    breakpoints = [mark for mark in marks if isinstance(mark, dict)]
+    if existing is not None:
+        breakpoints.append(existing)
+    if not breakpoints:
+        return None
+    merged: dict[str, Any] = {"type": "ephemeral"}
+    if any(mark.get("ttl") == "1h" for mark in breakpoints):
+        merged["ttl"] = "1h"
+    elif any(mark.get("ttl") == "5m" for mark in breakpoints):
+        merged["ttl"] = "5m"
+    return merged
+
+
+def _mark_cache_breakpoint(message: dict[str, Any], marks: list[Any]) -> None:
+    extra_content = message.get("extra_content")
+    existing = extra_content.get("cache_control") if isinstance(extra_content, dict) else None
+    if (merged := _merge_cache_control(existing, marks)) is not None:
+        message["extra_content"] = {**(extra_content or {}), "cache_control": merged}
+
+
+def _block_cache_controls(blocks: list[Any]) -> list[Any]:
+    return [block.get("cache_control") for block in blocks if isinstance(block, dict)]
+
+
+def messages_params_to_completion_params(params: MessagesParams, *, cache_breakpoints: bool = False) -> dict[str, Any]:
     """Convert MessagesParams (Anthropic format) to kwargs suitable for CompletionParams.
+
+    With ``cache_breakpoints``, Anthropic ``cache_control`` breakpoints travel in the
+    ``extra_content["cache_control"]`` side-channel of the message that holds the marked block (the
+    system message, a user or assistant message, or a tool result), and the top-level
+    ``cache_control`` (Anthropic's automatic caching) marks the last message. They never go into
+    the messages themselves, which OpenAI-compatible backends would reject. Only a provider that
+    reads the side-channel should ask for it, since some providers forward messages verbatim.
 
     Returns a dict that can be passed to CompletionParams(**result).
     """
     messages: list[dict[str, Any]] = []
 
     if params.system:
-        messages.append({"role": "system", "content": _convert_system_to_openai(params.system)})
+        system_message: dict[str, Any] = {"role": "system", "content": _convert_system_to_openai(params.system)}
+        if cache_breakpoints and isinstance(params.system, list):
+            _mark_cache_breakpoint(system_message, _block_cache_controls(params.system))
+        messages.append(system_message)
 
     for msg in params.messages:
-        converted = _convert_message_to_openai(msg)
+        converted = _convert_message_to_openai(msg, cache_breakpoints=cache_breakpoints)
         messages.extend(converted)
+
+    if cache_breakpoints and params.cache_control is not None and messages:
+        _mark_cache_breakpoint(messages[-1], [params.cache_control])
 
     result: dict[str, Any] = {
         "model_id": params.model,
@@ -151,7 +190,7 @@ def messages_params_to_completion_params(params: MessagesParams) -> dict[str, An
     return result
 
 
-def _convert_message_to_openai(msg: dict[str, Any]) -> list[dict[str, Any]]:
+def _convert_message_to_openai(msg: dict[str, Any], *, cache_breakpoints: bool = False) -> list[dict[str, Any]]:
     """Convert a single Anthropic-format message to one or more OpenAI-format messages."""
     role = msg.get("role", "user")
     content = msg.get("content")
@@ -163,10 +202,13 @@ def _convert_message_to_openai(msg: dict[str, Any]) -> list[dict[str, Any]]:
         return [{"role": role, "content": content}]
 
     if role == "assistant":
-        return _convert_assistant_blocks_to_openai(content)
+        converted = _convert_assistant_blocks_to_openai(content)
+        if cache_breakpoints:
+            _mark_cache_breakpoint(converted[0], _block_cache_controls(content))
+        return converted
 
     if role == "user":
-        return _convert_user_blocks_to_openai(content)
+        return _convert_user_blocks_to_openai(content, cache_breakpoints=cache_breakpoints)
 
     return [{"role": role, "content": content}]
 
@@ -438,7 +480,9 @@ def _render_tool_result_block_as_text(block: dict[str, Any]) -> str | None:
     return None
 
 
-def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _convert_user_blocks_to_openai(
+    blocks: list[dict[str, Any]], *, cache_breakpoints: bool = False
+) -> list[dict[str, Any]]:
     """Convert Anthropic user content blocks to OpenAI format.
 
     Handles tool_result blocks (→ role:tool messages) and content blocks (text, image).
@@ -463,6 +507,7 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
     """
     results: list[dict[str, Any]] = []
     content_blocks: list[dict[str, Any]] = []
+    content_marks: list[Any] = []
     held_parts: list[dict[str, Any]] = []
 
     for block in blocks:
@@ -471,7 +516,10 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
             # Flush any accumulated content blocks first
             if content_blocks:
                 results.append({"role": "user", "content": content_blocks})
+                if cache_breakpoints:
+                    _mark_cache_breakpoint(results[-1], content_marks)
                 content_blocks = []
+                content_marks = []
             tool_text, extra_parts = _convert_tool_result_content(block.get("content", ""))
             if block.get("is_error") is True:
                 if not tool_text:
@@ -485,16 +533,24 @@ def _convert_user_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[dict[st
                     "content": tool_text,
                 }
             )
+            if cache_breakpoints:
+                tool_content = block.get("content")
+                nested = _block_cache_controls(tool_content) if isinstance(tool_content, list) else []
+                _mark_cache_breakpoint(results[-1], [block.get("cache_control"), *nested])
             held_parts.extend(extra_parts)
-        elif block_type == "text":
+            continue
+        if block_type == "text":
             content_blocks.append({"type": "text", "text": block.get("text", "")})
         elif block_type == "image":
             content_blocks.append(_convert_image_block_to_openai(block))
         else:
             content_blocks.append(block)
+        content_marks.append(block.get("cache_control"))
 
     if held_parts or content_blocks:
         results.append({"role": "user", "content": held_parts + content_blocks})
+        if cache_breakpoints:
+            _mark_cache_breakpoint(results[-1], content_marks)
 
     return results
 

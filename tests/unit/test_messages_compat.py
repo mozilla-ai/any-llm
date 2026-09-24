@@ -3463,3 +3463,141 @@ def test_prepare_blocks_for_native_messages_keeps_anthropic_server_tool_blocks()
     }
 
     assert prepare_blocks_for_native_messages([message])[0] is message
+
+
+def _bridged_messages(**kwargs: Any) -> list[dict[str, Any]]:
+    params = MessagesParams(model="gemini-2.5-flash", max_tokens=64, **kwargs)
+    messages: list[dict[str, Any]] = messages_params_to_completion_params(params, cache_breakpoints=True)["messages"]
+    return messages
+
+
+def test_cache_breakpoints_on_system_blocks_ride_the_side_channel_of_a_flat_system_message() -> None:
+    messages = _bridged_messages(
+        system=[
+            {"type": "text", "text": "Part one. "},
+            {"type": "text", "text": "Part two.", "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+        ],
+        messages=[{"role": "user", "content": "Hi"}],
+    )
+
+    assert messages[0] == {
+        "role": "system",
+        "content": "Part one. Part two.",
+        "extra_content": {"cache_control": {"type": "ephemeral", "ttl": "1h"}},
+    }
+    assert "extra_content" not in messages[1]
+
+
+def test_cache_breakpoints_on_user_and_tool_result_blocks_mark_the_messages_holding_them() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "user", "content": [{"type": "text", "text": "Doc", "cache_control": {"type": "ephemeral"}}]},
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "f", "input": {}}]},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": "out",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": "Next"},
+                ],
+            },
+        ],
+    )
+
+    assert messages[0]["extra_content"] == {"cache_control": {"type": "ephemeral"}}
+    assert messages[0]["content"] == [{"type": "text", "text": "Doc"}]
+    assert "extra_content" not in messages[1]
+    assert messages[2]["role"] == "tool"
+    assert messages[2]["extra_content"] == {"cache_control": {"type": "ephemeral"}}
+    assert "extra_content" not in messages[3]
+
+
+def test_cache_breakpoint_nested_in_tool_result_content_marks_the_tool_message() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "f", "input": {}}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Before", "cache_control": {"type": "ephemeral", "ttl": "5m"}},
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": [{"type": "text", "text": "out", "cache_control": {"type": "ephemeral"}}],
+                    },
+                ],
+            },
+        ],
+    )
+
+    assert messages[1] == {
+        "role": "user",
+        "content": [{"type": "text", "text": "Before"}],
+        "extra_content": {"cache_control": {"type": "ephemeral", "ttl": "5m"}},
+    }
+    assert messages[2]["extra_content"] == {"cache_control": {"type": "ephemeral"}}
+
+
+def test_cache_breakpoint_on_an_assistant_block_sits_beside_its_google_state() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "user", "content": "Hi"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Hello",
+                        "extra_content": {"google": {"thought_signature": "sig"}},
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+        ],
+    )
+
+    assert messages[1]["extra_content"] == {
+        "google": {"thought_signature": "sig"},
+        "cache_control": {"type": "ephemeral"},
+    }
+
+
+def test_top_level_cache_control_marks_the_last_message_and_keeps_the_longest_ttl() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "user", "content": "First"},
+            {"role": "assistant", "content": "Reply"},
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "Last", "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
+            },
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+
+    assert "extra_content" not in messages[0]
+    assert "extra_content" not in messages[1]
+    assert messages[2]["extra_content"] == {"cache_control": {"type": "ephemeral", "ttl": "1h"}}
+
+
+def test_cache_breakpoints_stay_out_of_the_conversion_unless_asked_for() -> None:
+    params = MessagesParams(
+        model="gpt-5.6",
+        max_tokens=64,
+        system=[{"type": "text", "text": "Sys", "cache_control": {"type": "ephemeral"}}],
+        messages=[
+            {"role": "user", "content": [{"type": "text", "text": "Hi", "cache_control": {"type": "ephemeral"}}]}
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+
+    messages = messages_params_to_completion_params(params)["messages"]
+
+    assert messages == [
+        {"role": "system", "content": "Sys"},
+        {"role": "user", "content": [{"type": "text", "text": "Hi"}]},
+    ]

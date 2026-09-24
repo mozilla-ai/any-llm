@@ -144,6 +144,9 @@ class AnyLLM(FilesMixin, ABC):
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
 
+    _READS_CACHE_CONTROL_SIDE_CHANNEL: ClassVar[bool] = False
+    """Whether the Messages bridge should pass ``cache_control`` breakpoints in ``extra_content``."""
+
     TIMEOUT_SUPPORT: Literal["unsupported", "native", "mapped"] = "unsupported"
     """How the provider honors a per-request ``timeout`` (in seconds).
 
@@ -1095,7 +1098,9 @@ class AnyLLM(FilesMixin, ABC):
             split_cached_input_tokens,
         )
 
-        completion_kwargs = messages_params_to_completion_params(params)
+        completion_kwargs = messages_params_to_completion_params(
+            params, cache_breakpoints=self._READS_CACHE_CONTROL_SIDE_CHANNEL
+        )
         completion_params = CompletionParams(**completion_kwargs)
         try:
             result = await self._acompletion(completion_params, **kwargs)

@@ -28,6 +28,7 @@ MISSING_PACKAGES_ERROR = None
 try:
     from google.genai import types
 
+    from .context_cache import ContextCacheUse, prepare_context_cache, report_cache_write
     from .utils import (
         CodeExecutionState,
         _convert_google_batch_job_to_openai_batch,
@@ -46,7 +47,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Sequence
+    from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
     from google import genai
 
@@ -203,6 +204,7 @@ class GoogleProvider(AnyLLM):
     TIMEOUT_SUPPORT = "mapped"
 
     BUILT_IN_TOOLS: ClassVar[list[Any] | None] = [types.Tool]
+    _READS_CACHE_CONTROL_SIDE_CHANNEL: ClassVar[bool] = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -408,24 +410,43 @@ class GoogleProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         kwargs["provider_name"] = self.PROVIDER_NAME
         converted_kwargs = self._convert_completion_params(params, **kwargs)
+        cache_use = await prepare_context_cache(self.client, self.PROVIDER_NAME, params.messages, converted_kwargs)
 
         if params.stream:
-            response_stream = await self.client.aio.models.generate_content_stream(**converted_kwargs)
+            response_stream = await self._send_with_context_cache(
+                self.client.aio.models.generate_content_stream, cache_use
+            )
 
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
                 tool_call_counter: list[int] = [0]
                 code_execution_state = CodeExecutionState()
                 async for chunk in response_stream:
-                    yield self._convert_completion_chunk_response(
+                    converted_chunk = self._convert_completion_chunk_response(
                         chunk, tool_call_counter=tool_call_counter, code_execution_state=code_execution_state
                     )
+                    report_cache_write(converted_chunk.usage, cache_use)
+                    yield converted_chunk
 
             return _stream()
 
-        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(**converted_kwargs)
+        response: types.GenerateContentResponse = await self._send_with_context_cache(
+            self.client.aio.models.generate_content, cache_use
+        )
 
         response_dict = _convert_response_to_response_dict(response)
-        return self._convert_completion_response((response_dict, params.model_id))
+        completion = self._convert_completion_response((response_dict, params.model_id))
+        report_cache_write(completion.usage, cache_use)
+        return completion
+
+    @staticmethod
+    async def _send_with_context_cache(send: Callable[..., Awaitable[Any]], cache_use: ContextCacheUse) -> Any:
+        try:
+            return await send(**cache_use.request_kwargs)
+        except Exception as exc:
+            if not cache_use.is_stale_cache_error(exc):
+                raise
+            cache_use.forget()
+            return await send(**cache_use.uncached_kwargs)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
