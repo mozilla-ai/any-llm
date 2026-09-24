@@ -102,13 +102,15 @@ class LLMProvider(StrEnum):
 
         if value not in PROVIDER_REGISTRY:
             return None
-        # Cached so repeated lookups return the same object, as they do for declared members.
-        if value not in _REGISTRY_MEMBERS:
-            member = str.__new__(cls, value)
-            member._name_ = value.upper()
-            member._value_ = value
-            _REGISTRY_MEMBERS[value] = member
-        return _REGISTRY_MEMBERS[value]
+        cached = _REGISTRY_MEMBERS.get(value)
+        if cached is not None:
+            return cached
+        member = str.__new__(cls, value)
+        member._name_ = value.upper()
+        member._value_ = value
+        # setdefault is atomic, so concurrent first lookups all get whichever member was stored first
+        # and identity holds as it does for declared members.
+        return _REGISTRY_MEMBERS.setdefault(value, member)
 
     @classmethod
     def from_string(cls, value: "str | LLMProvider") -> "LLMProvider":

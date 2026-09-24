@@ -1,9 +1,12 @@
+import threading
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from any_llm import constants
 from any_llm.any_llm import AnyLLM
 from any_llm.api import (
     acancel_batch,
@@ -129,6 +132,21 @@ def test_llm_provider_resolves_registry_only_row(community_row: OpenAICompatible
     assert LLMProvider("testgateway") is member
     assert LLMProvider.from_string(" TestGateway ") is member
     assert AnyLLM.get_provider_class(member) is get_registry_provider_class("testgateway")
+
+
+def test_llm_provider_concurrent_first_lookups_share_one_member(
+    community_row: OpenAICompatibleProviderConfig,
+) -> None:
+    constants._REGISTRY_MEMBERS.pop("testgateway", None)
+    barrier = threading.Barrier(16)
+
+    def resolve(_: int) -> LLMProvider:
+        barrier.wait()
+        return LLMProvider("testgateway")
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        members = list(pool.map(resolve, range(16)))
+    assert all(member is members[0] for member in members)
 
 
 def test_llm_provider_iteration_omits_registry_only_rows(community_row: OpenAICompatibleProviderConfig) -> None:
