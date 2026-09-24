@@ -41,6 +41,15 @@ META: dict[str, Any] = {
     "purpose": "batch",
     "status": "processed",
 }
+CONTAINER_META: dict[str, Any] = {
+    "id": "cfile-xyz",
+    "object": "container.file",
+    "bytes": 12,
+    "container_id": "cntr_abc",
+    "created_at": 1700000000,
+    "path": "/mnt/data/result.csv",
+    "source": "assistant",
+}
 OPERATIONS = ("upload", "list", "retrieve", "delete", "download")
 
 
@@ -477,3 +486,122 @@ def test_files_capabilities_are_explicit_on_openai_and_azure() -> None:
         assert not custom.get_provider_metadata().files
     finally:
         run_async_in_sync(custom.client.close())
+
+
+@pytest.mark.asyncio
+async def test_container_retrieve_maps_path_and_does_not_use_files_endpoint() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=CONTAINER_META)
+
+    provider = provider_for(respond)
+    async with provider.client:
+        result = await provider.aretrieve_file("cfile-xyz", container_id="cntr_abc")
+    assert [request.url.path for request in requests] == ["/v1/containers/cntr_abc/files/cfile-xyz"]
+    assert result.id == "cfile-xyz"
+    assert result.filename == "result.csv"
+    assert result.size_bytes == 12
+    assert result.downloadable is True
+    assert result.created_at == datetime.fromtimestamp(CONTAINER_META["created_at"], UTC)
+    assert result.model_extra is not None
+    assert result.model_extra["container_id"] == "cntr_abc"
+    assert result.model_extra["path"] == "/mnt/data/result.csv"
+    assert result.model_extra["source"] == "assistant"
+    assert result.model_extra["object"] == "container.file"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reads", [0, 1, 3])
+async def test_container_download_streams_content_without_prefetch(reads: int) -> None:
+    stream = CountingStream()
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.url.path == "/v1/containers/cntr_abc/files/cfile-xyz/content"
+        assert request.headers["x-test"] == "yes"
+        return httpx.Response(200, headers={"content-type": "text/csv"}, stream=stream)
+
+    provider = provider_for(respond)
+    async with provider.client:
+        async with provider.adownload_file(
+            "cfile-xyz", container_id="cntr_abc", chunk_size=4, extra_headers={"x-test": "yes"}
+        ) as download:
+            assert download.status_code == 200
+            assert download.headers["content-type"] == "text/csv"
+            assert stream.reads == 0
+            for _ in range(reads):
+                assert await anext(download) == b"data"
+            assert stream.reads == reads
+        assert stream.closed
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["retrieve", "download"])
+async def test_container_404_is_a_missing_file(operation: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
+    provider = provider_for(
+        lambda _: httpx.Response(404, json={"error": {"message": "container file not found"}}), max_retries=0
+    )
+    async with provider.client:
+        with pytest.raises(ProviderFileNotFoundError, match="container file not found"):
+            if operation == "retrieve":
+                await provider.aretrieve_file("cfile-xyz", container_id="cntr_abc")
+            else:
+                async with provider.adownload_file("cfile-xyz", container_id="cntr_abc"):
+                    pytest.fail("Missing container file entered the consumer context")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["retrieve", "download"])
+@pytest.mark.parametrize("container_id", ["", ".", "..", "../cntr", "cntr\\bad", " cntr", True, 1])
+async def test_invalid_container_id_fails_before_network(operation: str, container_id: Any) -> None:
+    provider = provider_for(lambda _: pytest.fail("Invalid container ID reached the network"))
+    async with provider.client:
+        with pytest.raises(InvalidRequestError):
+            if operation == "retrieve":
+                await provider.aretrieve_file("cfile-xyz", container_id=container_id)
+            else:
+                async with provider.adownload_file("cfile-xyz", container_id=container_id):
+                    pytest.fail("Invalid container ID opened a download")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["upload", "list", "delete"])
+async def test_container_id_is_rejected_on_non_read_operations(operation: str) -> None:
+    provider = provider_for(lambda _: pytest.fail("container_id reached a non-read operation"))
+    async with provider.client:
+        with pytest.raises(UnsupportedParameterError, match="container_id"):
+            await call_operation(provider, operation, container_id="cntr_abc")
+
+
+def test_sync_container_retrieve_and_download() -> None:
+    stream = CountingStream()
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/content"):
+            return httpx.Response(200, headers={"content-type": "text/csv"}, stream=stream)
+        return httpx.Response(200, json=CONTAINER_META)
+
+    provider = provider_for(respond)
+    try:
+        metadata = provider.retrieve_file("cfile-xyz", container_id="cntr_abc")
+        assert metadata.filename == "result.csv"
+        assert metadata.downloadable is True
+        with provider.download_file("cfile-xyz", container_id="cntr_abc", chunk_size=4) as download:
+            assert download.status_code == 200
+            assert stream.reads == 0
+            assert next(download) == b"data"
+            assert stream.reads == 1
+        assert stream.closed
+        assert [request.url.path for request in requests] == [
+            "/v1/containers/cntr_abc/files/cfile-xyz",
+            "/v1/containers/cntr_abc/files/cfile-xyz/content",
+        ]
+    finally:
+        run_async_in_sync(provider.client.close())
