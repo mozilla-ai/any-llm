@@ -159,7 +159,7 @@ class TogetherProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
-        """Convert rerank parameters for the Together API.
+        """Convert rerank parameters, including per-request timeout, for the Together API.
 
         Raises:
             UnsupportedParameterError: If `max_tokens_per_doc` or `rank_fields` is provided.
@@ -186,7 +186,7 @@ class TogetherProvider(AnyLLM):
         }
         if kwargs.get("top_n") is not None:
             params["top_n"] = kwargs["top_n"]
-        for key in ("return_documents",):
+        for key in ("return_documents", "timeout"):
             if key in kwargs:
                 params[key] = kwargs[key]
         return params
