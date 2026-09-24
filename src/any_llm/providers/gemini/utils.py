@@ -270,7 +270,12 @@ def _convert_file_to_part(block: dict[str, Any], provider_name: str) -> types.Pa
         mime_type, raw_data = _parse_data_uri(file_data, "file.file_data", provider_name)
         return types.Part.from_bytes(data=raw_data, mime_type=mime_type)
 
-    guessed_type, _ = mimetypes.guess_type(file_data)
+    # A provider-hosted file URI carries no extension, so the block's filename is the only
+    # MIME hint available for a file referenced by URI, including one uploaded through the Files API.
+    filename = block.get("file", {}).get("filename")
+    guessed_type = mimetypes.guess_type(filename)[0] if isinstance(filename, str) and filename else None
+    if guessed_type is None:
+        guessed_type, _ = mimetypes.guess_type(file_data)
     return types.Part.from_uri(file_uri=file_data, mime_type=guessed_type or "application/octet-stream")
 
 
@@ -312,6 +317,18 @@ def _extract_google_thought_signature(container: dict[str, Any], provider_name: 
         )
         raise InvalidRequestError(msg, provider_name=provider_name)
     return signature
+
+
+def _pending_function_response_parts(contents: list[types.Content]) -> list[types.Part] | None:
+    """Return the parts of a trailing user turn made only of function responses, else None."""
+    if not contents:
+        return None
+    last = contents[-1]
+    if last.role != "user" or not last.parts:
+        return None
+    if any(part.function_response is None for part in last.parts):
+        return None
+    return last.parts
 
 
 def _convert_messages(
@@ -400,7 +417,13 @@ def _convert_messages(
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
             part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
-            formatted_messages.append(types.Content(role="function", parts=[part]))
+            # The API documents only "user" and "model" as Content roles. "function" is tolerated by
+            # older models and rejected with 400 INVALID_ARGUMENT by gemini-3.5-flash-lite, 3.7-flash
+            # and 3.8-flash. Results of parallel calls share one user turn, as google-genai emits them.
+            if (pending := _pending_function_response_parts(formatted_messages)) is not None:
+                pending.append(part)
+            else:
+                formatted_messages.append(types.Content(role="user", parts=[part]))
 
     return formatted_messages, system_instruction
 

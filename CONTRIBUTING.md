@@ -241,7 +241,7 @@ Add one row to `PROVIDER_REGISTRY` in `src/any_llm/providers/registry.py`:
 ),
 ```
 
-That row is the whole change. There is no provider class, no folder, no `__init__.py`, no `pyproject.toml` extra, and no `LLMProvider` member: the name resolves by string everywhere a provider name is accepted, including `AnyLLM.create("examplegw")`, `"examplegw:model"`, and `provider="examplegw"`.
+That row is the whole change. There is no provider class, no folder, no `__init__.py`, no `pyproject.toml` extra, and no declared `LLMProvider` member: the name resolves everywhere a provider name is accepted, including `AnyLLM.create("examplegw")`, `"examplegw:model"`, `provider="examplegw"`, and `LLMProvider("examplegw")`. Iterating `LLMProvider` lists declared members only; `AnyLLM.get_supported_providers()` lists every row.
 
 - [ ] Add the row, setting capability flags for what the gateway actually supports. Flags default to the conservative baseline of completion, streaming, and model listing; everything else is opt-in. Do not set a flag you have not exercised against the live endpoint.
 - [ ] Link the issue or discussion where someone asked for this gateway.

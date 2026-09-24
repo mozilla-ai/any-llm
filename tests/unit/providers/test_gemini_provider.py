@@ -26,6 +26,7 @@ from any_llm.providers.gemini.utils import (
     _has_additional_properties,
     _has_type_unions,
     _map_finish_reason,
+    _pending_function_response_parts,
 )
 from any_llm.types.completion import (
     ChatCompletion,
@@ -815,7 +816,7 @@ async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, 
         assert len(contents) == 3
         assert contents[0].role == "user"
         assert contents[1].role == "model"
-        assert contents[2].role == "function"
+        assert contents[2].role == "user"
 
 
 @pytest.mark.parametrize(
@@ -2409,11 +2410,97 @@ def test_convert_messages_with_thought_signature_in_extra_content() -> None:
 def _function_response_names(contents: list[types.Content]) -> list[str | None]:
     names = []
     for content in contents:
-        if content.role == "function":
-            assert content.parts is not None
-            assert content.parts[0].function_response is not None
-            names.append(content.parts[0].function_response.name)
+        if content.role != "user":
+            continue
+        for part in content.parts or []:
+            if part.function_response is not None:
+                names.append(part.function_response.name)
     return names
+
+
+def _tool_call(call_id: str, name: str) -> dict[str, Any]:
+    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": "{}"}}
+
+
+def _tool_result(call_id: str, name: str) -> dict[str, Any]:
+    return {"role": "tool", "tool_call_id": call_id, "name": name, "content": "{}"}
+
+
+def _turn_shapes(contents: list[types.Content]) -> list[tuple[str, list[str]]]:
+    """(role, part kinds) per turn, e.g. ("user", ["function_response", "function_response"])."""
+    shapes: list[tuple[str, list[str]]] = []
+    for content in contents:
+        kinds = [
+            "function_response" if p.function_response is not None else "function_call" if p.function_call else "text"
+            for p in content.parts or []
+        ]
+        shapes.append((content.role or "", kinds))
+    return shapes
+
+
+def test_convert_messages_groups_parallel_tool_results_into_one_user_turn() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "weather and time?"},
+        {"role": "assistant", "tool_calls": [_tool_call("c1", "get_weather"), _tool_call("c2", "get_time")]},
+        _tool_result("c1", "get_weather"),
+        _tool_result("c2", "get_time"),
+    ]
+    contents, _ = _convert_messages(messages, provider_name="gemini")
+    assert _turn_shapes(contents) == [
+        ("user", ["text"]),
+        ("model", ["function_call", "function_call"]),
+        ("user", ["function_response", "function_response"]),
+    ]
+    assert _function_response_names(contents) == ["get_weather", "get_time"]
+
+
+def test_convert_messages_does_not_merge_a_tool_result_into_a_text_user_turn() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "tool_calls": [_tool_call("c1", "get_weather")]},
+        {"role": "user", "content": "also, hurry up"},
+        _tool_result("c1", "get_weather"),
+    ]
+    contents, _ = _convert_messages(messages, provider_name="gemini")
+    assert _turn_shapes(contents) == [
+        ("model", ["function_call"]),
+        ("user", ["text"]),
+        ("user", ["function_response"]),
+    ]
+
+
+def test_pending_function_response_parts_ignores_a_partless_user_turn() -> None:
+    contents = [types.Content(role="user", parts=[])]
+    assert _pending_function_response_parts(contents) is None
+    assert _pending_function_response_parts([]) is None
+    assert _pending_function_response_parts([types.Content(role="model", parts=[types.Part(text="x")])]) is None
+    trailing = types.Content(role="user", parts=[types.Part.from_function_response(name="f", response={"ok": True})])
+    # The returned list is the turn's own parts, so appending to it extends that turn in place.
+    assert _pending_function_response_parts([trailing]) is trailing.parts
+
+
+def test_convert_messages_accepts_a_leading_tool_result() -> None:
+    contents, _ = _convert_messages([_tool_result("c1", "get_weather")], provider_name="gemini")
+    assert _turn_shapes(contents) == [("user", ["function_response"])]
+    assert _function_response_names(contents) == ["get_weather"]
+
+
+def test_convert_messages_keeps_tool_results_of_separate_rounds_in_separate_turns() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "tool_calls": [_tool_call("c1", "get_weather")]},
+        _tool_result("c1", "get_weather"),
+        {"role": "assistant", "tool_calls": [_tool_call("c2", "get_time")]},
+        _tool_result("c2", "get_time"),
+    ]
+    contents, _ = _convert_messages(messages, provider_name="gemini")
+    assert _turn_shapes(contents) == [
+        ("user", ["text"]),
+        ("model", ["function_call"]),
+        ("user", ["function_response"]),
+        ("model", ["function_call"]),
+        ("user", ["function_response"]),
+    ]
+    assert _function_response_names(contents) == ["get_weather", "get_time"]
 
 
 def test_convert_messages_resolves_tool_result_name_from_tool_call_id() -> None:
@@ -2848,7 +2935,7 @@ def test_convert_messages_tool_response_accepts_json_or_parsed_content(
     formatted_messages, _ = _convert_messages(messages)
 
     tool_message = formatted_messages[2]
-    assert tool_message.role == "function"
+    assert tool_message.role == "user"
     assert tool_message.parts is not None
     assert len(tool_message.parts) == 1
     function_response = tool_message.parts[0].function_response
@@ -3573,3 +3660,52 @@ async def test_service_tier_omitted_when_not_requested() -> None:
 
         _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
         assert call_kwargs["config"].service_tier is None
+
+
+def test_convert_messages_file_uri_takes_its_mime_type_from_the_filename() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+                        "filename": "report.pdf",
+                    },
+                },
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert parts[0].file_data is not None
+    assert parts[0].file_data.file_uri == "https://generativelanguage.googleapis.com/v1beta/files/abc123"
+    assert parts[0].file_data.mime_type == "application/pdf"
+
+
+def test_convert_messages_file_uri_without_a_usable_filename_falls_back_to_octet_stream() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "file",
+                    "file": {
+                        "file_data": "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+                        "filename": "report",
+                    },
+                },
+            ],
+        }
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[0].parts
+    assert parts is not None
+    assert parts[0].file_data is not None
+    assert parts[0].file_data.mime_type == "application/octet-stream"
