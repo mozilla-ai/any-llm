@@ -382,3 +382,89 @@ async def test_alist_models_delegates_to_openai_client() -> None:
 
     assert result == []
     provider.client.models.list.assert_awaited_once()
+
+
+_GEMINI_SIGNED_CONVERSATION: list[dict[str, Any]] = [
+    {"role": "user", "content": "Weather?"},
+    {
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "Checking.", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+            {
+                "type": "tool_use",
+                "id": "call_a",
+                "name": "get_weather",
+                "input": {},
+                "extra_content": {"google": {"thought_signature": "c2ln"}},
+            },
+        ],
+    },
+    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_a", "content": "Sunny"}]},
+]
+_STRIPPED_ASSISTANT_CONTENT = [
+    {"type": "text", "text": "Checking."},
+    {"type": "tool_use", "id": "call_a", "name": "get_weather", "input": {}},
+]
+
+
+@pytest.mark.asyncio
+async def test_amessages_strips_bridge_extra_content_from_blocks() -> None:
+    provider = _build_provider()
+    provider._stream_messages_async = Mock(return_value=AsyncMock())  # type: ignore[method-assign]
+
+    params = MessagesParams(model="muse-spark-1.2", messages=_GEMINI_SIGNED_CONVERSATION, max_tokens=64, stream=True)
+    await provider._amessages(params)
+
+    sent = provider._stream_messages_async.call_args.kwargs["messages"]
+    assert sent[1]["content"] == _STRIPPED_ASSISTANT_CONTENT
+    assert "extra_content" in params.messages[1]["content"][0]
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_strips_bridge_extra_content_from_blocks() -> None:
+    provider = _build_provider()
+    provider._anthropic_client.messages.create = AsyncMock(  # type: ignore[method-assign]
+        return_value=Message(
+            id="msg_1",
+            type="message",
+            role="assistant",
+            model="muse-spark-1.2",
+            stop_reason="end_turn",
+            content=[TextBlock(type="text", text="{}")],
+            usage=Usage(input_tokens=5, output_tokens=2),
+        )
+    )
+
+    params = MessagesParams(
+        model="muse-spark-1.2",
+        messages=_GEMINI_SIGNED_CONVERSATION,
+        max_tokens=64,
+        output_format={"format": {"type": "json_schema", "schema": {"type": "object"}}},
+    )
+    await provider._amessages(params)
+
+    sent = provider._anthropic_client.messages.create.call_args.kwargs["messages"]
+    assert sent[1]["content"] == _STRIPPED_ASSISTANT_CONTENT
+
+
+@pytest.mark.asyncio
+async def test_amessages_renders_foreign_code_execution_blocks_as_text() -> None:
+    provider = _build_provider()
+    provider._stream_messages_async = Mock(return_value=AsyncMock())  # type: ignore[method-assign]
+    code_use = {"type": "server_tool_use", "id": "exec_1", "name": "code_execution", "input": {"code": "1+1"}}
+    code_result = {
+        "type": "code_execution_tool_result",
+        "tool_use_id": "exec_1",
+        "content": {"type": "code_execution_result", "stdout": "2", "stderr": "", "return_code": 0, "content": []},
+    }
+
+    params = MessagesParams(
+        model="muse-spark-1.2",
+        messages=[{"role": "user", "content": "Add"}, {"role": "assistant", "content": [code_use, code_result]}],
+        max_tokens=64,
+        stream=True,
+    )
+    await provider._amessages(params)
+
+    sent = provider._stream_messages_async.call_args.kwargs["messages"]
+    assert sent[1]["content"] == [{"type": "text", "text": "Code execution (python):\n```python\n1+1\n```\nOutput:\n2"}]

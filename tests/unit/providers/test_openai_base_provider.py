@@ -73,6 +73,64 @@ async def test_openai_messages_bridge_sends_typed_prompt_cache_key() -> None:
     assert json.loads(requests[0].content)["prompt_cache_key"] == "tenant-1"
 
 
+async def _wire_body_of_openai_call(call: str, **kwargs: object) -> str:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "gpt-5.6",
+                "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "ok"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenaiProvider(api_key="test-key", http_client=http_client)
+    try:
+        await getattr(provider, call)(model="gpt-5.6", **kwargs)
+    finally:
+        await http_client.aclose()
+    assert len(requests) == 1
+    return requests[0].content.decode()
+
+
+@pytest.mark.asyncio
+async def test_openai_messages_bridge_never_sends_cache_control_breakpoints() -> None:
+    ephemeral = {"type": "ephemeral", "ttl": "1h"}
+
+    body = await _wire_body_of_openai_call(
+        "amessages",
+        system=[{"type": "text", "text": "Be brief.", "cache_control": ephemeral}],
+        messages=[{"role": "user", "content": [{"type": "text", "text": "Hello", "cache_control": ephemeral}]}],
+        cache_control=ephemeral,
+        max_tokens=100,
+    )
+
+    assert "cache_control" not in body
+    assert "extra_content" not in body
+    assert json.loads(body)["messages"][0] == {"role": "system", "content": "Be brief."}
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_drops_the_cache_control_side_channel() -> None:
+    body = await _wire_body_of_openai_call(
+        "acompletion",
+        messages=[
+            {"role": "system", "content": "Be brief.", "extra_content": {"cache_control": {"type": "ephemeral"}}},
+            {"role": "user", "content": "Hello"},
+        ],
+    )
+
+    assert "cache_control" not in body
+    assert "extra_content" not in body
+
+
 class _City(BaseModel):
     city_name: str
 
