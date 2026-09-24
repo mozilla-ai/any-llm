@@ -1,5 +1,6 @@
 import sys
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -10,6 +11,52 @@ _SKIP_PYTHON_314 = pytest.mark.skipif(
     sys.version_info >= (3, 14),
     reason="voyageai is not compatible with Python 3.14+ (pydantic v1 breaking changes)",
 )
+
+
+@_SKIP_PYTHON_314
+@pytest.mark.parametrize(
+    ("api_base", "base_url"),
+    [
+        (None, None),
+        (None, "https://sdk.example/v1"),
+        ("https://proxy.example/v1", None),
+        ("https://proxy.example/v1", "https://sdk.example/v1"),
+    ],
+)
+def test_init_client_forwards_api_base(
+    api_base: str | None, base_url: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("voyageai")
+    from voyageai.client_async import AsyncClient
+
+    monkeypatch.delenv("VOYAGE_API_BASE", raising=False)
+    kwargs: dict[str, Any] = {"timeout": 7, "max_retries": 2}
+    if base_url is not None:
+        kwargs["base_url"] = base_url
+
+    with patch("any_llm.providers.voyage.voyage.AsyncClient", wraps=AsyncClient) as client:
+        provider = VoyageProvider(api_key="test-api-key", api_base=api_base, **kwargs)
+
+    expected_kwargs = dict(kwargs)
+    if api_base is not None:
+        expected_kwargs["base_url"] = api_base
+    client.assert_called_once_with(api_key="test-api-key", **expected_kwargs)
+    assert isinstance(provider.client, AsyncClient)
+    assert provider.client._params == AsyncClient(api_key="test-api-key", **expected_kwargs)._params
+    assert kwargs.get("base_url") == base_url
+
+
+@_SKIP_PYTHON_314
+def test_init_client_forwards_api_base_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("voyageai")
+    from voyageai.client_async import AsyncClient
+
+    monkeypatch.setenv("VOYAGE_API_BASE", "https://proxy.example/v1")
+    with patch("any_llm.providers.voyage.voyage.AsyncClient", wraps=AsyncClient) as client:
+        provider = VoyageProvider(api_key="test-api-key")
+
+    client.assert_called_once_with(api_key="test-api-key", base_url="https://proxy.example/v1")
+    assert provider.client._params["base_url"] == "https://proxy.example/v1"
 
 
 @contextmanager
