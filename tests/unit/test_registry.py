@@ -118,8 +118,44 @@ def test_registry_only_name_resolves_without_enum_entry(community_row: OpenAICom
     assert isinstance(provider, BaseOpenAIProvider)
     assert provider.PROVIDER_NAME == "testgateway"
     assert str(provider.client.base_url).rstrip("/") == "https://testgateway.example/v1"
-    with pytest.raises(UnsupportedProviderError):
-        LLMProvider.from_string("testgateway")
+
+
+def test_llm_provider_resolves_registry_only_row(community_row: OpenAICompatibleProviderConfig) -> None:
+    member = LLMProvider("testgateway")
+    assert isinstance(member, LLMProvider)
+    assert member == "testgateway"
+    assert member.value == "testgateway"
+    assert member.name == "TESTGATEWAY"
+    assert LLMProvider("testgateway") is member
+    assert LLMProvider.from_string(" TestGateway ") is member
+    assert AnyLLM.get_provider_class(member) is get_registry_provider_class("testgateway")
+
+
+def test_llm_provider_iteration_omits_registry_only_rows(community_row: OpenAICompatibleProviderConfig) -> None:
+    LLMProvider("testgateway")
+    assert "testgateway" not in [provider.value for provider in LLMProvider]
+    assert "testgateway" in AnyLLM.get_registry_provider_names()
+
+
+def test_llm_provider_rejects_unknown_and_non_string_values() -> None:
+    with pytest.raises(ValueError, match="nonexistent"):
+        LLMProvider("nonexistent")
+    with pytest.raises(ValueError, match="42"):
+        LLMProvider(42)  # type: ignore[arg-type]
+
+
+def test_llm_provider_rejects_row_once_removed(community_row: OpenAICompatibleProviderConfig) -> None:
+    LLMProvider("testgateway")
+    del registry.PROVIDER_REGISTRY["testgateway"]
+    with pytest.raises(ValueError, match="testgateway"):
+        LLMProvider("testgateway")
+
+
+def test_from_string_error_lists_registry_only_rows(community_row: OpenAICompatibleProviderConfig) -> None:
+    with pytest.raises(UnsupportedProviderError) as excinfo:
+        LLMProvider.from_string("nonexistent")
+    assert excinfo.value.supported_providers == AnyLLM.get_supported_providers()
+    assert "testgateway" in excinfo.value.supported_providers
 
 
 def test_row_defaults_are_conservative(community_row: OpenAICompatibleProviderConfig) -> None:
@@ -323,14 +359,11 @@ def test_unsupported_provider_error_lists_registry_names_from_get_provider_enum(
     assert "testgateway" in excinfo.value.supported_providers
 
 
-def test_get_provider_enum_still_rejects_registry_only_names(
+def test_get_provider_enum_accepts_registry_only_names(
     community_row: OpenAICompatibleProviderConfig,
 ) -> None:
-    """A registry row has no enum member, so the enum accessor raises by design."""
-    with pytest.raises(UnsupportedProviderError):
-        AnyLLM.get_provider_enum("testgateway")
-    # ...while the resolver accepts it.
-    assert AnyLLM.resolve_provider_key("testgateway") == "testgateway"
+    assert AnyLLM.get_provider_enum("testgateway") is LLMProvider("testgateway")
+    assert AnyLLM.resolve_provider_key("testgateway") is LLMProvider("testgateway")
 
 
 def test_create_unsupported_error_lists_registry_names(community_row: OpenAICompatibleProviderConfig) -> None:

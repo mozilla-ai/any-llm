@@ -1,6 +1,8 @@
 import builtins
 from enum import StrEnum
 
+from typing_extensions import override
+
 from any_llm.exceptions import UnsupportedProviderError
 
 INSIDE_NOTEBOOK = hasattr(builtins, "__IPYTHON__")
@@ -29,7 +31,13 @@ class ProviderTier(StrEnum):
 
 
 class LLMProvider(StrEnum):
-    """String enum for supported providers."""
+    """String enum for supported providers.
+
+    Registry rows without a declared member still resolve by value, so
+    ``LLMProvider(name)`` accepts every name ``AnyLLM.get_supported_providers()``
+    lists. Iteration covers declared members only, because the enum drives the
+    test matrix and a registry-only row has no package or extra to test.
+    """
 
     ANTHROPIC = "anthropic"
     BEDROCK = "bedrock"
@@ -85,6 +93,24 @@ class LLMProvider(StrEnum):
     TELNYX = "telnyx"
 
     @classmethod
+    @override
+    def _missing_(cls, value: object) -> "LLMProvider | None":
+        if not isinstance(value, str):
+            return None
+        # Imported lazily: the registry builds on BaseOpenAIProvider, which imports this module.
+        from any_llm.providers.registry import PROVIDER_REGISTRY
+
+        if value not in PROVIDER_REGISTRY:
+            return None
+        # Cached so repeated lookups return the same object, as they do for declared members.
+        if value not in _REGISTRY_MEMBERS:
+            member = str.__new__(cls, value)
+            member._name_ = value.upper()
+            member._value_ = value
+            _REGISTRY_MEMBERS[value] = member
+        return _REGISTRY_MEMBERS[value]
+
+    @classmethod
     def from_string(cls, value: "str | LLMProvider") -> "LLMProvider":
         """Convert a string to a ProviderName enum."""
         if isinstance(value, cls):
@@ -94,8 +120,12 @@ class LLMProvider(StrEnum):
         try:
             return cls(formatted_value)
         except ValueError as exc:
-            supported = [provider.value for provider in cls]
-            raise UnsupportedProviderError(value, supported) from exc
+            from any_llm.any_llm import AnyLLM
+
+            raise UnsupportedProviderError(value, AnyLLM.get_supported_providers()) from exc
+
+
+_REGISTRY_MEMBERS: dict[str, LLMProvider] = {}
 
 
 # The single source of truth for the verified tier: the providers CI actually

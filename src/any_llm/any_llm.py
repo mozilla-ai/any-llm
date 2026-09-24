@@ -382,18 +382,17 @@ class AnyLLM(FilesMixin, ABC):
     def get_supported_providers(cls) -> list[str]:
         """Get a list of supported provider keys.
 
-        Includes registry-only gateways, which resolve by name without an
-        ``LLMProvider`` member.
+        Includes registry-only gateways, which ``LLMProvider(name)`` resolves
+        even though enum iteration does not list them.
         """
         return [provider.value for provider in LLMProvider] + cls.get_registry_provider_names()
 
     @classmethod
     def resolve_provider_key(cls, provider_key: str | LLMProvider) -> str | LLMProvider:
-        """Resolve a provider key to an ``LLMProvider`` member where one exists.
+        """Resolve a provider key to its ``LLMProvider`` member.
 
-        Registry-only gateways have no enum member, so their name is returned
-        unchanged. Everything downstream (``create``, ``get_provider_class``)
-        accepts either form.
+        Registry rows without a declared member resolve too, through
+        ``LLMProvider``'s value lookup.
 
         Raises:
             UnsupportedProviderError: The key is neither an enum member nor a
@@ -404,14 +403,9 @@ class AnyLLM(FilesMixin, ABC):
             return provider_key
         # Match LLMProvider.from_string's normalization so both resolution paths
         # accept the same spellings.
-        normalized = provider_key.strip().lower()
         try:
-            return LLMProvider(normalized)
+            return LLMProvider(provider_key.strip().lower())
         except ValueError:
-            from any_llm.providers.registry import get_registry_config
-
-            if get_registry_config(normalized) is not None:
-                return normalized
             raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from None
 
     @classmethod
@@ -434,11 +428,7 @@ class AnyLLM(FilesMixin, ABC):
 
     @classmethod
     def get_provider_enum(cls, provider_key: str) -> LLMProvider:
-        """Convert a string provider key to a ProviderName enum.
-
-        Registry-only gateways have no enum member, so this raises for them even
-        though they are resolvable. Use ``resolve_provider_key`` to accept both.
-        """
+        """Convert a string provider key to a ProviderName enum, registry rows included."""
         try:
             return LLMProvider(provider_key)
         except ValueError as e:
@@ -455,8 +445,8 @@ class AnyLLM(FilesMixin, ABC):
 
         The legacy format will be deprecated in version 1.0.
 
-        Returns an ``LLMProvider`` member when the provider has one, and the bare
-        name for registry-only gateways. Both forms are accepted by ``create``.
+        The provider is returned as an ``LLMProvider`` member, registry-only
+        gateways included.
         """
         colon_index = model.find(":")
         slash_index = model.find("/")
