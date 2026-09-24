@@ -142,7 +142,7 @@ async def test_completion_reasoning_streaming(
         assert num_chunks >= 1, f"Expected at least 1 chunk, got {num_chunks}"
         assert output != "", f"Expected non-empty output content, got {output}"
 
-        assert reasoning != "", f"Expected non-empty reasoning content for {provider.value}, got {output}"
+        assert reasoning != "", f"Expected non-empty reasoning content for {provider.value}, got content {output!r}"
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
             raise
