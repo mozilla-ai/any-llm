@@ -3,6 +3,7 @@ import dataclasses
 import json
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -800,3 +801,183 @@ async def test_chunk_stream_stops_after_close(consume_first: bool) -> None:
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     close.assert_awaited_once()
+
+
+_WEATHER_TOOL = {
+    "name": "get_weather",
+    "description": "Get the weather",
+    "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+}
+
+
+def _make_responses_result_with_tool_call() -> Response:
+    from openai.types.responses import ResponseFunctionToolCall, ResponseReasoningItem
+    from openai.types.responses.response_reasoning_item import Summary
+    from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails, ResponseUsage
+
+    reasoning = ResponseReasoningItem(
+        id="rs-1",
+        type="reasoning",
+        summary=[Summary(type="summary_text", text="need weather")],
+    )
+    tool_call = ResponseFunctionToolCall(
+        type="function_call",
+        call_id="call_weather",
+        name="get_weather",
+        arguments='{"city":"Paris"}',
+    )
+    return Response(
+        id="resp-tools",
+        created_at=0,
+        model="gpt-5.6",
+        object="response",
+        output=[reasoning, tool_call],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+        status="completed",
+        usage=ResponseUsage(
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            output_tokens_details=OutputTokensDetails(reasoning_tokens=2),
+        ),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_amessages_tools_and_thinking_routes_to_responses(stream: bool) -> None:
+    """tools + thinking must use Responses, not Completions (#1432)."""
+    from any_llm.types.messages import MessageResponse, MessageStartEvent, MessageStopEvent
+
+    async def empty_stream() -> AsyncIterator[Any]:
+        from openai.types.responses import ResponseCreatedEvent, ResponseCompletedEvent
+
+        created = Response(
+            id="resp-stream",
+            created_at=0,
+            model="gpt-5.6",
+            object="response",
+            output=[],
+            parallel_tool_calls=False,
+            tool_choice="auto",
+            tools=[],
+        )
+        yield ResponseCreatedEvent(type="response.created", sequence_number=0, response=created)
+        yield ResponseCompletedEvent(type="response.completed", sequence_number=1, response=created)
+
+    with patch.object(OpenaiProvider, "_init_client"):
+        provider = OpenaiProvider(api_key="test-key")
+        mock_aresponses = AsyncMock(
+            return_value=empty_stream() if stream else _make_responses_result_with_tool_call()
+        )
+        mock_acompletion = AsyncMock()
+        with (
+            patch.object(OpenaiProvider, "_aresponses", mock_aresponses),
+            patch.object(BaseOpenAIProvider, "_acompletion", mock_acompletion),
+        ):
+            result = await provider.amessages(
+                model="gpt-5.6",
+                max_tokens=128,
+                thinking={"type": "enabled", "budget_tokens": 2048},
+                tools=[_WEATHER_TOOL],
+                messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+                stream=stream,
+            )
+
+            mock_aresponses.assert_awaited_once()
+            mock_acompletion.assert_not_called()
+            responses_params = mock_aresponses.call_args.args[0]
+            assert responses_params.tools is not None
+            assert responses_params.tools[0]["name"] == "get_weather"
+            assert "function" not in responses_params.tools[0]
+            assert responses_params.reasoning == {"effort": "low"}
+            assert responses_params.stream is stream
+
+            if stream:
+                events = [event async for event in result]  # type: ignore[union-attr]
+                assert isinstance(events[0], MessageStartEvent)
+                assert isinstance(events[-1], MessageStopEvent)
+            else:
+                assert isinstance(result, MessageResponse)
+                assert result.stop_reason == "tool_use"
+                assert any(block.type == "tool_use" for block in result.content)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tools", "thinking"),
+    [
+        ([_WEATHER_TOOL], None),
+        ([_WEATHER_TOOL], {"type": "disabled"}),
+        (None, {"type": "enabled", "budget_tokens": 2048}),
+        (None, None),
+    ],
+)
+@pytest.mark.parametrize("stream", [False, True])
+async def test_amessages_without_tools_and_thinking_keeps_completions(
+    tools: list[dict[str, Any]] | None,
+    thinking: dict[str, Any] | None,
+    stream: bool,
+) -> None:
+    """tools without thinking, thinking without tools, or neither → Completions bridge."""
+    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
+    from any_llm.types.messages import MessageResponse, MessageStartEvent
+
+    async def empty_chunk_stream() -> AsyncIterator[Any]:
+        from any_llm.types.completion import ChatCompletionChunk, ChoiceDelta, ChunkChoice
+
+        yield ChatCompletionChunk(
+            id="chatcmpl-1",
+            created=0,
+            model="gpt-5.6",
+            object="chat.completion.chunk",
+            choices=[ChunkChoice(index=0, delta=ChoiceDelta(role="assistant", content="ok"), finish_reason="stop")],
+            usage=CompletionUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
+    completion = ChatCompletion(
+        id="chatcmpl-1",
+        created=0,
+        model="gpt-5.6",
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="stop",
+                message=ChatCompletionMessage(role="assistant", content="ok"),
+            )
+        ],
+        usage=CompletionUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+    )
+
+    with patch.object(OpenaiProvider, "_init_client"):
+        provider = OpenaiProvider(api_key="test-key")
+        mock_aresponses = AsyncMock()
+        mock_acompletion = AsyncMock(return_value=empty_chunk_stream() if stream else completion)
+        with (
+            patch.object(OpenaiProvider, "_aresponses", mock_aresponses),
+            patch.object(BaseOpenAIProvider, "_acompletion", mock_acompletion),
+        ):
+            kwargs: dict[str, Any] = {
+                "model": "gpt-5.6",
+                "max_tokens": 64,
+                "messages": [{"role": "user", "content": "Hello"}],
+                "stream": stream,
+            }
+            if tools is not None:
+                kwargs["tools"] = tools
+            if thinking is not None:
+                kwargs["thinking"] = thinking
+
+            result = await provider.amessages(**kwargs)
+
+            mock_acompletion.assert_awaited_once()
+            mock_aresponses.assert_not_called()
+            if stream:
+                events = [event async for event in result]  # type: ignore[union-attr]
+                assert isinstance(events[0], MessageStartEvent)
+            else:
+                assert isinstance(result, MessageResponse)
