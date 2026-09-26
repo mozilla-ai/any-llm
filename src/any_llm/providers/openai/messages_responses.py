@@ -91,7 +91,12 @@ def messages_params_to_responses_params(params: MessagesParams) -> ResponsesPara
 
     if params.thinking and params.thinking.get("type") == "enabled":
         budget = params.thinking.get("budget_tokens", 8192)
-        result["reasoning"] = {"effort": _budget_to_reasoning_effort(budget)}
+        # Without summary=auto the API returns a reasoning item with an empty summary,
+        # so response_to_message_response never emits a ThinkingBlock (#1432 QA).
+        result["reasoning"] = {
+            "effort": _budget_to_reasoning_effort(budget),
+            "summary": "auto",
+        }
 
     if params.output_format is not None:
         if is_structured_output_type(params.output_format):

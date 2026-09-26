@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
+from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
 from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.providers.sambanova.sambanova import SambanovaProvider
 from any_llm.types.completion import CompletionParams
@@ -810,15 +811,22 @@ _WEATHER_TOOL = {
 }
 
 
-def _make_responses_result_with_tool_call() -> Response:
+def _make_responses_result_with_tool_call(*, with_summary: bool = True) -> Response:
+    """Fixture shaped like a live Responses tools+thinking result.
+
+    Summary text is only present when ``with_summary=True``. Live OpenAI returns a
+    non-empty summary only when the request set ``reasoning.summary="auto"``; without
+    that the reasoning item arrives with ``summary=[]`` and no ThinkingBlock.
+    """
     from openai.types.responses import ResponseFunctionToolCall, ResponseReasoningItem
     from openai.types.responses.response_reasoning_item import Summary
     from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails, ResponseUsage
 
+    summary = [Summary(type="summary_text", text="need weather")] if with_summary else []
     reasoning = ResponseReasoningItem(
         id="rs-1",
         type="reasoning",
-        summary=[Summary(type="summary_text", text="need weather")],
+        summary=summary,
     )
     tool_call = ResponseFunctionToolCall(
         type="function_call",
@@ -846,14 +854,68 @@ def _make_responses_result_with_tool_call() -> Response:
     )
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("stream", [False, True])
-async def test_amessages_tools_and_thinking_routes_to_responses(stream: bool) -> None:
-    """tools + thinking must use Responses, not Completions (#1432)."""
-    from any_llm.types.messages import MessageResponse, MessageStartEvent, MessageStopEvent
+def test_messages_params_to_responses_params_sets_summary_auto() -> None:
+    """Thinking enabled → Responses reasoning must request summary=auto (#1432 QA)."""
+    from any_llm.providers.openai.messages_responses import messages_params_to_responses_params
+    from any_llm.types.messages import MessagesParams
 
-    async def empty_stream() -> AsyncIterator[Any]:
-        from openai.types.responses import ResponseCreatedEvent, ResponseCompletedEvent
+    params = MessagesParams(
+        model="gpt-5.6",
+        max_tokens=128,
+        messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+        tools=[_WEATHER_TOOL],
+        thinking={"type": "enabled", "budget_tokens": 2048},
+    )
+    converted = messages_params_to_responses_params(params)
+    assert converted.reasoning == {"effort": "low", "summary": "auto"}
+    assert converted.tools is not None
+    assert converted.tools[0]["name"] == "get_weather"
+
+
+def test_response_to_message_response_thinking_requires_summary_text() -> None:
+    """Empty summary (live without summary=auto) → no ThinkingBlock; filled summary → ThinkingBlock."""
+    from any_llm.providers.openai.messages_responses import response_to_message_response
+    from any_llm.types.messages import ThinkingBlock, ToolUseBlock
+
+    empty = response_to_message_response(_make_responses_result_with_tool_call(with_summary=False))
+    assert not any(isinstance(b, ThinkingBlock) for b in empty.content)
+    assert any(isinstance(b, ToolUseBlock) for b in empty.content)
+
+    filled = response_to_message_response(_make_responses_result_with_tool_call(with_summary=True))
+    thinking = [b for b in filled.content if isinstance(b, ThinkingBlock)]
+    assert len(thinking) == 1
+    assert thinking[0].thinking == "need weather"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_cls", [OpenaiProvider, AzureopenaiProvider])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_amessages_tools_and_thinking_routes_to_responses(
+    provider_cls: type[OpenaiProvider] | type[AzureopenaiProvider],
+    stream: bool,
+) -> None:
+    """tools + thinking must use Responses on every BaseOpenAI SUPPORTS_RESPONSES provider (#1432)."""
+    from any_llm.types.messages import (
+        ContentBlockDeltaEvent,
+        ContentBlockStartEvent,
+        MessageResponse,
+        MessageStartEvent,
+        MessageStopEvent,
+        ThinkingBlock,
+        ThinkingDelta,
+        ToolUseBlock,
+    )
+
+    async def live_like_stream() -> AsyncIterator[Any]:
+        from openai.types.responses import (
+            ResponseCompletedEvent,
+            ResponseCreatedEvent,
+            ResponseFunctionToolCall,
+            ResponseOutputItemAddedEvent,
+            ResponseOutputItemDoneEvent,
+            ResponseReasoningItem,
+            ResponseReasoningSummaryTextDeltaEvent,
+        )
 
         created = Response(
             id="resp-stream",
@@ -865,17 +927,50 @@ async def test_amessages_tools_and_thinking_routes_to_responses(stream: bool) ->
             tool_choice="auto",
             tools=[],
         )
+        reasoning = ResponseReasoningItem(id="rs-1", type="reasoning", summary=[])
+        tool_call = ResponseFunctionToolCall(
+            type="function_call",
+            call_id="call_weather",
+            name="get_weather",
+            arguments='{"city":"Paris"}',
+        )
         yield ResponseCreatedEvent(type="response.created", sequence_number=0, response=created)
-        yield ResponseCompletedEvent(type="response.completed", sequence_number=1, response=created)
+        yield ResponseOutputItemAddedEvent(
+            type="response.output_item.added", sequence_number=1, output_index=0, item=reasoning
+        )
+        # Live only emits these deltas when the request asked for reasoning.summary=auto.
+        yield ResponseReasoningSummaryTextDeltaEvent(
+            type="response.reasoning_summary_text.delta",
+            sequence_number=2,
+            item_id="rs-1",
+            output_index=0,
+            summary_index=0,
+            delta="need weather",
+        )
+        yield ResponseOutputItemDoneEvent(
+            type="response.output_item.done", sequence_number=3, output_index=0, item=reasoning
+        )
+        yield ResponseOutputItemAddedEvent(
+            type="response.output_item.added", sequence_number=4, output_index=1, item=tool_call
+        )
+        yield ResponseOutputItemDoneEvent(
+            type="response.output_item.done", sequence_number=5, output_index=1, item=tool_call
+        )
+        done = created.model_copy(update={"output": [reasoning, tool_call], "status": "completed"})
+        yield ResponseCompletedEvent(type="response.completed", sequence_number=6, response=done)
 
-    with patch.object(OpenaiProvider, "_init_client"):
-        provider = OpenaiProvider(api_key="test-key")
+    init_kwargs: dict[str, Any] = {"api_key": "test-key"}
+    if provider_cls is AzureopenaiProvider:
+        init_kwargs["api_base"] = "https://resource.openai.azure.com"
+
+    with patch.object(provider_cls, "_init_client"):
+        provider = provider_cls(**init_kwargs)
         mock_aresponses = AsyncMock(
-            return_value=empty_stream() if stream else _make_responses_result_with_tool_call()
+            return_value=live_like_stream() if stream else _make_responses_result_with_tool_call(with_summary=True)
         )
         mock_acompletion = AsyncMock()
         with (
-            patch.object(OpenaiProvider, "_aresponses", mock_aresponses),
+            patch.object(provider_cls, "_aresponses", mock_aresponses),
             patch.object(BaseOpenAIProvider, "_acompletion", mock_acompletion),
         ):
             result = await provider.amessages(
@@ -893,20 +988,26 @@ async def test_amessages_tools_and_thinking_routes_to_responses(stream: bool) ->
             assert responses_params.tools is not None
             assert responses_params.tools[0]["name"] == "get_weather"
             assert "function" not in responses_params.tools[0]
-            assert responses_params.reasoning == {"effort": "low"}
+            assert responses_params.reasoning == {"effort": "low", "summary": "auto"}
             assert responses_params.stream is stream
 
             if stream:
                 events = [event async for event in result]  # type: ignore[union-attr]
                 assert isinstance(events[0], MessageStartEvent)
                 assert isinstance(events[-1], MessageStopEvent)
+                starts = [e for e in events if isinstance(e, ContentBlockStartEvent)]
+                assert any(isinstance(e.content_block, ThinkingBlock) for e in starts)
+                deltas = [e for e in events if isinstance(e, ContentBlockDeltaEvent)]
+                assert any(isinstance(e.delta, ThinkingDelta) and e.delta.thinking == "need weather" for e in deltas)
             else:
                 assert isinstance(result, MessageResponse)
                 assert result.stop_reason == "tool_use"
-                assert any(block.type == "tool_use" for block in result.content)
+                assert any(isinstance(block, ToolUseBlock) for block in result.content)
+                assert any(isinstance(block, ThinkingBlock) for block in result.content)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("provider_cls", [OpenaiProvider, AzureopenaiProvider])
 @pytest.mark.parametrize(
     ("tools", "thinking"),
     [
@@ -918,6 +1019,7 @@ async def test_amessages_tools_and_thinking_routes_to_responses(stream: bool) ->
 )
 @pytest.mark.parametrize("stream", [False, True])
 async def test_amessages_without_tools_and_thinking_keeps_completions(
+    provider_cls: type[OpenaiProvider] | type[AzureopenaiProvider],
     tools: list[dict[str, Any]] | None,
     thinking: dict[str, Any] | None,
     stream: bool,
@@ -953,12 +1055,16 @@ async def test_amessages_without_tools_and_thinking_keeps_completions(
         usage=CompletionUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
     )
 
-    with patch.object(OpenaiProvider, "_init_client"):
-        provider = OpenaiProvider(api_key="test-key")
+    init_kwargs: dict[str, Any] = {"api_key": "test-key"}
+    if provider_cls is AzureopenaiProvider:
+        init_kwargs["api_base"] = "https://resource.openai.azure.com"
+
+    with patch.object(provider_cls, "_init_client"):
+        provider = provider_cls(**init_kwargs)
         mock_aresponses = AsyncMock()
         mock_acompletion = AsyncMock(return_value=empty_chunk_stream() if stream else completion)
         with (
-            patch.object(OpenaiProvider, "_aresponses", mock_aresponses),
+            patch.object(provider_cls, "_aresponses", mock_aresponses),
             patch.object(BaseOpenAIProvider, "_acompletion", mock_acompletion),
         ):
             kwargs: dict[str, Any] = {
