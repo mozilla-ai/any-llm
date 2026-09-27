@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from any_llm.exceptions import ProviderError
 from any_llm.tools import _flatten_responses_tool
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
@@ -275,6 +276,15 @@ def response_stream_event_to_message_events(
     events: list[MessageStreamEvent] = []
     etype = _item_attr(event, "type")
     index: int | None
+
+    if etype in ("response.failed", "error"):
+        # Responses reports a failed stream as an event rather than an exception, so
+        # raise here instead of ending the Messages stream without message_stop.
+        error = _item_attr(_item_attr(event, "response"), "error") if etype == "response.failed" else event
+        code = _item_attr(error, "code")
+        detail = _item_attr(error, "message") or "Responses stream failed"
+        msg = f"{code}: {detail}" if code else detail
+        raise ProviderError(msg)
 
     if etype == "response.created":
         response = _item_attr(event, "response")

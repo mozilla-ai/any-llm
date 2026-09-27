@@ -1188,3 +1188,45 @@ def test_responses_stream_refusal_maps_to_text_and_stop_reason() -> None:
     assert [d.delta.text for d in deltas if isinstance(d.delta, TextDelta)] == ["I can't help with that."]
     message_delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
     assert message_delta.delta.stop_reason == "refusal"
+
+
+@pytest.mark.parametrize("failure", ["response.failed", "error"])
+def test_responses_stream_failure_raises(failure: str) -> None:
+    """A failed Responses stream must surface as an error, not end the Messages stream quietly."""
+    from openai.types.responses import (
+        ResponseCreatedEvent,
+        ResponseError,
+        ResponseErrorEvent,
+        ResponseFailedEvent,
+    )
+
+    from any_llm.exceptions import ProviderError
+    from any_llm.providers.openai.messages_responses import (
+        ResponsesStreamingState,
+        response_stream_event_to_message_events,
+    )
+
+    created = Response(
+        id="resp-failed",
+        created_at=0,
+        model="gpt-5.6",
+        object="response",
+        output=[],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+    if failure == "response.failed":
+        failed = created.model_copy(
+            update={"status": "failed", "error": ResponseError(code="server_error", message="boom")}
+        )
+        event: Any = ResponseFailedEvent(type="response.failed", sequence_number=1, response=failed)
+    else:
+        event = ResponseErrorEvent(type="error", sequence_number=1, code="server_error", message="boom", param=None)
+
+    state = ResponsesStreamingState()
+    response_stream_event_to_message_events(
+        ResponseCreatedEvent(type="response.created", sequence_number=0, response=created), state
+    )
+    with pytest.raises(ProviderError, match="server_error: boom"):
+        response_stream_event_to_message_events(event, state)
