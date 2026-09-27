@@ -16,7 +16,7 @@ from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError
+from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import (
     _convert_chat_completion,
@@ -34,28 +34,29 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
-from any_llm.types.model import Model
-from any_llm.types.moderation import ModerationResponse
 from any_llm.types.messages import (
     MessageResponse,
-    MessageStreamEvent,
     MessagesParams,
+    MessageStreamEvent,
     ParsedBetaMessage,
     ParsedMessage,
 )
+from any_llm.types.model import Model
+from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
-from .messages_responses import (
-    convert_responses_stream,
-    messages_needs_responses,
-    messages_params_to_responses_params,
-    response_to_message_response,
-)
 from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
     is_structured_output_type,
+)
+
+from .messages_responses import (
+    convert_responses_stream,
+    messages_needs_responses,
+    messages_params_to_responses_params,
+    response_to_message_response,
 )
 
 
@@ -342,6 +343,15 @@ class BaseOpenAIProvider(AnyLLM):
         if params.context_management is not None or params.betas:
             msg = "context_management and betas require a provider with a native Anthropic Messages API"
             raise NotImplementedError(msg)
+        if params.stop_sequences:
+            # The Completions bridge maps these to ``stop``; Responses has no equivalent, and
+            # dropping them would change the output without telling the caller.
+            param = "stop_sequences"
+            msg = (
+                "Messages requests with tools and enabled thinking are served by the Responses API, "
+                "which has no stop parameter."
+            )
+            raise UnsupportedParameterError(param, self.PROVIDER_NAME, msg)
 
         responses_params = messages_params_to_responses_params(params)
         result = await self._aresponses(responses_params, **kwargs)

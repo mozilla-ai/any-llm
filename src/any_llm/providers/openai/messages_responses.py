@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from any_llm.tools import _flatten_responses_tool
 from any_llm.types.messages import (
@@ -32,13 +32,14 @@ from any_llm.utils.messages_compat import (
     _convert_system_to_openai,
     _convert_tool_choice_to_openai,
     _convert_tools_to_openai,
+    _output_config_to_response_format,
 )
-from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
+from any_llm.utils.structured_output import is_structured_output_type
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from any_llm.types.messages import MessageContentBlock, MessageStreamEvent, MessagesParams, StopReason
+    from any_llm.types.messages import MessageContentBlock, MessagesParams, MessageStreamEvent, StopReason
     from any_llm.types.responses import ResponseStreamEvent
 
 
@@ -101,15 +102,12 @@ def messages_params_to_responses_params(params: MessagesParams) -> ResponsesPara
     if params.output_format is not None:
         if is_structured_output_type(params.output_format):
             result["response_format"] = params.output_format
-        else:
-            fmt = normalize_output_config(params.output_format).get("format")
-            if isinstance(fmt, dict) and fmt.get("schema"):
-                schema = fmt["schema"]
-                result["response_format"] = {
-                    "type": "json_schema",
-                    "name": schema.get("title", "structured_output"),
-                    "schema": schema,
-                }
+        elif (
+            response_format := _output_config_to_response_format(cast("dict[str, Any]", params.output_format))
+        ) is not None:
+            # Same validation as the Completions bridge (a named format with no schema raises);
+            # Responses takes the text.format shape, so lift name/schema out of json_schema.
+            result["response_format"] = {"type": "json_schema", **response_format["json_schema"]}
 
     return ResponsesParams(**result)
 
@@ -276,6 +274,7 @@ def response_stream_event_to_message_events(
     """Convert one Responses stream event into zero or more Messages events."""
     events: list[MessageStreamEvent] = []
     etype = _item_attr(event, "type")
+    index: int | None
 
     if etype == "response.created":
         response = _item_attr(event, "response")
@@ -371,11 +370,13 @@ def response_stream_event_to_message_events(
             )
         return events
 
-    if etype == "response.output_text.delta":
+    if etype in ("response.output_text.delta", "response.refusal.delta"):
         item_id = _item_attr(event, "item_id") or ""
         index = state.block_by_item.get(item_id)
         if index is None:
             return events
+        if etype == "response.refusal.delta":
+            state.stop_reason = "refusal"
         delta_text = _item_attr(event, "delta") or ""
         if delta_text:
             events.append(
