@@ -14,8 +14,8 @@ from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
 from typing_extensions import override
 
-from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
+from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.providers.sambanova.sambanova import SambanovaProvider
 from any_llm.types.completion import CompletionParams
@@ -1087,3 +1087,104 @@ async def test_amessages_without_tools_and_thinking_keeps_completions(
                 assert isinstance(events[0], MessageStartEvent)
             else:
                 assert isinstance(result, MessageResponse)
+
+
+def test_messages_params_to_responses_params_output_format() -> None:
+    """A usable schema maps to the Responses text.format shape; a named format without one raises."""
+    from any_llm.exceptions import InvalidRequestError
+    from any_llm.providers.openai.messages_responses import messages_params_to_responses_params
+    from any_llm.types.messages import MessagesParams
+
+    schema = {"title": "Weather", "type": "object", "properties": {"city": {"type": "string"}}}
+    base: dict[str, Any] = {
+        "model": "gpt-5.6",
+        "max_tokens": 128,
+        "messages": [{"role": "user", "content": "What's the weather in Paris?"}],
+        "tools": [_WEATHER_TOOL],
+        "thinking": {"type": "enabled", "budget_tokens": 2048},
+    }
+
+    converted = messages_params_to_responses_params(
+        MessagesParams(**base, output_format={"format": {"type": "json_schema", "schema": schema}})
+    )
+    assert converted.response_format == {"type": "json_schema", "name": "Weather", "schema": schema}
+
+    with pytest.raises(InvalidRequestError, match="no JSON schema"):
+        messages_params_to_responses_params(MessagesParams(**base, output_format={"format": {"type": "json_schema"}}))
+
+
+@pytest.mark.asyncio
+async def test_amessages_tools_and_thinking_rejects_stop_sequences() -> None:
+    """Responses has no stop parameter, so stop_sequences must fail loudly rather than be dropped."""
+    from any_llm.exceptions import UnsupportedParameterError
+
+    with patch.object(OpenaiProvider, "_init_client"):
+        provider = OpenaiProvider(api_key="test-key")
+        mock_aresponses = AsyncMock()
+        with patch.object(OpenaiProvider, "_aresponses", mock_aresponses):
+            with pytest.raises(UnsupportedParameterError, match="stop_sequences"):
+                await provider.amessages(
+                    model="gpt-5.6",
+                    max_tokens=128,
+                    thinking={"type": "enabled", "budget_tokens": 2048},
+                    tools=[_WEATHER_TOOL],
+                    messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+                    stop_sequences=["END"],
+                )
+        mock_aresponses.assert_not_awaited()
+
+
+def test_responses_stream_refusal_maps_to_text_and_stop_reason() -> None:
+    """Streamed refusal text reaches the client and the message ends with stop_reason=refusal."""
+    from openai.types.responses import (
+        ResponseCompletedEvent,
+        ResponseCreatedEvent,
+        ResponseOutputItemAddedEvent,
+        ResponseOutputMessage,
+        ResponseRefusalDeltaEvent,
+    )
+
+    from any_llm.providers.openai.messages_responses import (
+        ResponsesStreamingState,
+        response_stream_event_to_message_events,
+    )
+    from any_llm.types.messages import ContentBlockDeltaEvent, MessageDeltaEvent, TextDelta
+
+    created = Response(
+        id="resp-refusal",
+        created_at=0,
+        model="gpt-5.6",
+        object="response",
+        output=[],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+    message = ResponseOutputMessage(id="msg-1", type="message", role="assistant", status="in_progress", content=[])
+    stream = [
+        ResponseCreatedEvent(type="response.created", sequence_number=0, response=created),
+        ResponseOutputItemAddedEvent(
+            type="response.output_item.added", sequence_number=1, output_index=0, item=message
+        ),
+        ResponseRefusalDeltaEvent(
+            type="response.refusal.delta",
+            sequence_number=2,
+            item_id="msg-1",
+            output_index=0,
+            content_index=0,
+            delta="I can't help with that.",
+        ),
+        ResponseCompletedEvent(
+            type="response.completed",
+            sequence_number=3,
+            response=created.model_copy(update={"status": "completed"}),
+        ),
+    ]
+
+    state = ResponsesStreamingState()
+    events = [e for event in stream for e in response_stream_event_to_message_events(event, state)]
+
+    deltas = [e for e in events if isinstance(e, ContentBlockDeltaEvent)]
+    assert [d.delta.text for d in deltas if isinstance(d.delta, TextDelta)] == ["I can't help with that."]
+    message_delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    assert message_delta.delta.stop_reason == "refusal"
