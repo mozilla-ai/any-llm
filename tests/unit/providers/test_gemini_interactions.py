@@ -31,6 +31,7 @@ from google.genai.interactions import (
     TextDelta,
     ThoughtSignatureDelta,
     ThoughtStep,
+    UnknownContent,
     UnknownInteractionSSEEvent,
     UnknownStep,
     UnknownStepDeltaData,
@@ -214,7 +215,7 @@ def test_convert_interaction_skips_model_output_without_text() -> None:
 def test_convert_interaction_ignores_non_output_steps() -> None:
     interaction = _interaction(
         steps=[
-            {"type": "future_step", "future": True},
+            UnknownStep(raw={"type": "future_step", "future": True}),
             ModelOutputStep(content=[TextContent(text="kept")]),
         ]
     )
@@ -231,7 +232,7 @@ def test_convert_interaction_ignores_non_output_steps() -> None:
     [
         [ImageContent(data="aW1hZ2U=", mime_type="image/png")],
         [TextContent(text="partial"), ImageContent(data="aW1hZ2U=", mime_type="image/png")],
-        [TextContent(text="partial"), {"type": "future_content", "future": True}],
+        [TextContent(text="partial"), UnknownContent(raw={"type": "future_content", "future": True})],
     ],
 )
 def test_convert_interaction_rejects_non_text_model_output(content: list[object]) -> None:
