@@ -169,3 +169,34 @@ def test_extract_reasoning_from_response_empty_output() -> None:
 
     assert result.reasoning is None
     assert result == mock_response
+
+
+def test_extract_reasoning_from_response_leaves_a_trailing_tool_call_alone() -> None:
+    """A response ending in a function_call has no content to scan, so it is returned unchanged."""
+    response = Response.model_validate(
+        {
+            "id": "resp_1",
+            "object": "response",
+            "created_at": 0,
+            "model": "accounts/fireworks/models/kimi-k3",
+            "status": "completed",
+            "parallel_tool_calls": True,
+            "tool_choice": "auto",
+            "tools": [],
+            "output": [
+                {
+                    "type": "function_call",
+                    "id": "fc_1",
+                    "call_id": "call_1",
+                    "name": "get_number",
+                    "arguments": "{}",
+                    "status": "completed",
+                }
+            ],
+        }
+    )
+
+    result = extract_reasoning_from_response(response)
+
+    assert result.reasoning is None
+    assert result.output[0].type == "function_call"
