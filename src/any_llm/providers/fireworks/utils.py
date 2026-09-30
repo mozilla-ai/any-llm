@@ -24,7 +24,8 @@ def extract_reasoning_from_response(response: Response) -> Response:
     if response.reasoning:
         return response
 
-    if not response.output or not response.output[-1].content:
+    # Only a message item has content; a response ending in a tool call has none.
+    if not response.output or not hasattr(response.output[-1], "content") or not response.output[-1].content:
         return response
 
     message: dict[str, Any] = {"content": response.output[-1].content[0].text}
