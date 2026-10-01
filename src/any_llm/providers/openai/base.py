@@ -16,7 +16,7 @@ from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError
+from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import (
     _convert_chat_completion,
@@ -34,6 +34,13 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
+from any_llm.types.messages import (
+    MessageResponse,
+    MessagesParams,
+    MessageStreamEvent,
+    ParsedBetaMessage,
+    ParsedMessage,
+)
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
@@ -43,6 +50,13 @@ from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
     is_structured_output_type,
+)
+
+from .messages_responses import (
+    convert_responses_stream,
+    messages_needs_responses,
+    messages_params_to_responses_params,
+    response_to_message_response,
 )
 
 
@@ -307,6 +321,45 @@ class BaseOpenAIProvider(AnyLLM):
                 logger.info(msg)
                 return response
         return response
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
+        """Route tools + thinking through Responses when this provider supports it.
+
+        Chat Completions rejects function tools combined with a non-none reasoning_effort on
+        newer OpenAI reasoning models. The Responses API accepts that combination, so when the
+        caller asked for Messages with both and ``SUPPORTS_RESPONSES``, serve via ``_aresponses``
+        instead of guessing by model name (#1432). Providers without Responses keep the
+        Completions bridge from ``AnyLLM._amessages``.
+        """
+        if not (self.SUPPORTS_RESPONSES and messages_needs_responses(params)):
+            return await super()._amessages(params, **kwargs)
+
+        if params.container is not None:
+            msg = "container requires a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
+        if params.context_management is not None or params.betas:
+            msg = "context_management and betas require a provider with a native Anthropic Messages API"
+            raise NotImplementedError(msg)
+        if params.stop_sequences:
+            # The Completions bridge maps these to ``stop``; Responses has no equivalent, and
+            # dropping them would change the output without telling the caller.
+            param = "stop_sequences"
+            msg = (
+                "Messages requests with tools and enabled thinking are served by the Responses API, "
+                "which has no stop parameter."
+            )
+            raise UnsupportedParameterError(param, self.PROVIDER_NAME, msg)
+
+        responses_params = messages_params_to_responses_params(params)
+        result = await self._aresponses(responses_params, **kwargs)
+
+        if isinstance(result, (Response, ResponseResource)):
+            return response_to_message_response(result)
+
+        return convert_responses_stream(result)
 
     @override
     async def _aembedding(
