@@ -144,6 +144,9 @@ class VoyageProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        """Initialize Voyage with the resolved API base URL and other SDK options."""
+        if api_base is not None:
+            kwargs["base_url"] = api_base
         self.client = AsyncClient(api_key=api_key, **kwargs)
 
     @override

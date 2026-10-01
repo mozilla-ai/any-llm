@@ -865,8 +865,9 @@ def test_convert_together_rerank_response_without_usage() -> None:
     assert result.usage is None
 
 
+@pytest.mark.parametrize("kwargs", [{}, {"timeout": 2.5}, {"timeout": 0}, {"timeout": None}])
 @pytest.mark.asyncio
-async def test_together_arerank_calls_client() -> None:
+async def test_together_arerank_calls_client(kwargs: dict[str, Any]) -> None:
     """TogetherProvider._arerank calls client.rerank.create with converted params."""
     pytest.importorskip("together")
     from any_llm.providers.together import TogetherProvider
@@ -875,13 +876,14 @@ async def test_together_arerank_calls_client() -> None:
     provider.client = MagicMock()
     provider.client.rerank.create = AsyncMock(return_value=_together_rerank_response())
 
-    result = await provider._arerank("Salesforce/Llama-Rank-v1", "my query", ["doc1", "doc2"], top_n=2)
+    result = await provider.arerank("Salesforce/Llama-Rank-v1", "my query", ["doc1", "doc2"], top_n=2, **kwargs)
 
     provider.client.rerank.create.assert_awaited_once_with(
         model="Salesforce/Llama-Rank-v1",
         query="my query",
         documents=["doc1", "doc2"],
         top_n=2,
+        **kwargs,
     )
     assert isinstance(result, RerankResponse)
     assert result.id == "rerank-together-1"
