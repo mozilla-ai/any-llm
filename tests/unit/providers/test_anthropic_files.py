@@ -552,6 +552,21 @@ async def test_unknown_options_rejected(operation: str) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["retrieve", "download"])
+async def test_container_id_is_rejected(operation: str) -> None:
+    provider = provider_for(lambda _: pytest.fail("OpenAI container_id reached Anthropic"))
+    try:
+        with pytest.raises(UnsupportedParameterError, match="container_id"):
+            if operation == "retrieve":
+                await provider.aretrieve_file("file_123", container_id="cntr_abc")
+            else:
+                async with provider.adownload_file("file_123", container_id="cntr_abc"):
+                    pytest.fail("Rejected download entered the consumer context")
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("chunk_size", [0, -1, None, "64", True, 1.5])
 async def test_invalid_download_chunk_size(chunk_size: Any) -> None:
     provider = provider_for(lambda _: pytest.fail("Invalid chunk size reached network"))
