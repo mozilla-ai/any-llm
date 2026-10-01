@@ -17,6 +17,7 @@ from any_llm.types.messages import (
     MessageStartEvent,
     MessageStopEvent,
 )
+from any_llm.utils.messages_compat import prepare_blocks_for_native_messages
 from any_llm.utils.structured_output import is_structured_output_type
 
 if TYPE_CHECKING:
@@ -142,6 +143,7 @@ class MetaProvider(BaseOpenAIProvider):
             native_kwargs = params.model_dump(
                 exclude_none=True, exclude={"output_format", "stream", "betas", "context_management"}
             )
+            native_kwargs["messages"] = prepare_blocks_for_native_messages(native_kwargs["messages"])
             native_kwargs.update(kwargs)
             if is_structured_output_type(params.output_format):
                 return await self._anthropic_client.messages.parse(output_format=params.output_format, **native_kwargs)
@@ -152,6 +154,7 @@ class MetaProvider(BaseOpenAIProvider):
 
         api_kwargs = params.model_dump(exclude_none=True, exclude={"betas", "context_management"})
         api_kwargs.pop("stream", None)
+        api_kwargs["messages"] = prepare_blocks_for_native_messages(api_kwargs["messages"])
         api_kwargs.update(kwargs)
 
         if params.stream:
