@@ -55,7 +55,12 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         # (high/none only, see MistralProvider._convert_completion_params).
         LLMProvider.MISTRAL: "mistral-medium-3-5",
         LLMProvider.GMI: "zai-org/GLM-5-FP8",
-        LLMProvider.XAI: "grok-3-mini-latest",
+        # grok-3-mini is retired: its model page 307s to the model index and the slug is gone
+        # from the pricing table. Retired slugs do not error, they redirect to grok-4.3 at low
+        # reasoning effort, which is why every other xai test kept passing while the streamed
+        # reasoning deltas stopped arriving. grok-4.6 is current and documents reasoning_effort
+        # low/medium/high, defaulting to high, so reasoning is emitted without sending one.
+        LLMProvider.XAI: "grok-4.6",
         LLMProvider.OLLAMA: "qwen3:0.6b",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMAFILE: "N/A",
@@ -112,7 +117,9 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.MOONSHOT: "kimi-k3",
         LLMProvider.SAMBANOVA: "gpt-oss-120b",
         LLMProvider.TOGETHER: "Qwen/Qwen3.5-9B",
-        LLMProvider.XAI: "grok-3-mini-latest",
+        # grok-3-mini is retired and the slug already redirects here, so this pins the model
+        # these tests have in fact been running against.
+        LLMProvider.XAI: "grok-4.3",
         LLMProvider.INCEPTION: "mercury",
         LLMProvider.NEOSANTARA: "gemini-3-flash-preview",
         LLMProvider.NEBIUS: "openai/gpt-oss-120b",
