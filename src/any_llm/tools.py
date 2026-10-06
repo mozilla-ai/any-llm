@@ -11,6 +11,8 @@ from datetime import date, datetime, time
 from typing import Annotated as _Annotated
 from typing import Any, get_args, get_origin, get_type_hints
 from typing import Literal as _Literal
+from typing import NotRequired as _NotRequired
+from typing import Required as _Required
 
 from pydantic import BaseModel as PydanticBaseModel
 from typing_extensions import is_typeddict as _is_typeddict
@@ -90,7 +92,8 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     - Union[X, Y] and X | Y -> oneOf=[schema(X), schema(Y)] (without top-level type)
     - Optional[T] (Union[T, None]) -> schema(T) (nullability not encoded)
     - Literal[...]/Enum -> enum with appropriate type inference when uniform
-    - TypedDict -> object with properties/required per annotations
+    - TypedDict -> object with properties/required per resolved annotations;
+      Required/NotRequired qualifiers preserve the underlying field types
     - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields
     """
     origin = get_origin(python_type)
@@ -122,6 +125,9 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     if python_type is dict:
         return {"type": "object", "additionalProperties": {"type": "string"}}
 
+    if origin in (_Required, _NotRequired):
+        return _python_type_to_json_schema(args[0])
+
     if origin is _Literal:
         literal_values = list(args)
         schema_lit: dict[str, Any] = {"enum": literal_values}
@@ -150,13 +156,17 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         return schema
 
     if _is_typeddict(python_type):
-        annotations: dict[str, Any] = getattr(python_type, "__annotations__", {}) or {}
+        annotations = get_type_hints(python_type, include_extras=True)
         required_keys = set(getattr(python_type, "__required_keys__", set()))
         td_properties: dict[str, Any] = {}
         td_required: list[str] = []
         for field_name, field_type in annotations.items():
             td_properties[field_name] = _python_type_to_json_schema(field_type)
-            if field_name in required_keys:
+            required_type = field_type
+            while get_origin(required_type) is _Annotated:
+                required_type = get_args(required_type)[0]
+            field_origin = get_origin(required_type)
+            if field_origin is _Required or (field_origin is not _NotRequired and field_name in required_keys):
                 td_required.append(field_name)
         schema_td: dict[str, Any] = {
             "type": "object",
