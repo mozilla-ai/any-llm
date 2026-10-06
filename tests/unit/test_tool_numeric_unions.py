@@ -7,7 +7,7 @@ from pydantic import TypeAdapter
 from any_llm.tools import callable_to_tool
 
 
-def number(value: float) -> None:
+def number(value: int | float) -> None:  # noqa: PYI041 - exercise both numeric schema alternatives
     """Accept a numeric value."""
 
 
