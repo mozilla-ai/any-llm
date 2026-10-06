@@ -41,4 +41,5 @@ def test_tool_model_fields_use_pydantic_input_names(function: Callable[..., Any]
     assert set(schema["properties"]) == set(reference["properties"])
     assert schema["required"] == reference["required"]
     field_name = next(iter(reference["properties"]))
+    assert schema["properties"][field_name]["type"] == "integer"
     assert model.model_validate({field_name: 3}).model_dump() == {"value": 3}
