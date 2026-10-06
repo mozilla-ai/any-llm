@@ -18,6 +18,10 @@ from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 # any-llm (the Space never runs the model), so it cannot be parsed around.
 HF_STRUCTURED_RESPONSES_BROKEN = [LLMProvider.HUGGINGFACE]
 
+# Nebius serves /v1/responses for some models only and refuses the rest with HTTP 400
+# "This model does not support Responses API" (openai/gpt-oss-120b among them).
+RESPONSES_MODEL_OVERRIDES = {LLMProvider.NEBIUS: "deepseek-ai/DeepSeek-V4.1-Flash"}
+
 
 @pytest.mark.asyncio
 async def test_responses_async(
@@ -30,7 +34,7 @@ async def test_responses_async(
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         if not llm.SUPPORTS_RESPONSES:
             pytest.skip(f"{provider.value} does not support responses, skipping")
-        model_id = provider_reasoning_model_map[provider]
+        model_id = RESPONSES_MODEL_OVERRIDES.get(provider, provider_reasoning_model_map[provider])
         result = await llm.aresponses(
             model_id,
             input_data="What's the capital of France? Please think step by step.",
@@ -70,7 +74,7 @@ async def test_responses_format_basemodel(
                 f"{provider.value} OpenResponses Space returns HTTP 400 for structured-output "
                 "(json_schema) requests, skipping"
             )
-        model_id = provider_model_map[provider]
+        model_id = RESPONSES_MODEL_OVERRIDES.get(provider, provider_model_map[provider])
         result = await llm.aresponses(
             model_id,
             input_data="What is the capital of France?",
@@ -113,7 +117,7 @@ async def test_responses_format_dataclass(
                 f"{provider.value} OpenResponses Space returns HTTP 400 for structured-output "
                 "(json_schema) requests, skipping"
             )
-        model_id = provider_model_map[provider]
+        model_id = RESPONSES_MODEL_OVERRIDES.get(provider, provider_model_map[provider])
         result = await llm.aresponses(
             model_id,
             input_data="What is the capital of France?",

@@ -163,6 +163,7 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_image=True,
         supports_embedding=True,
         supports_moderation=True,
+        supports_responses=True,
     ),
     "neosantara": OpenAICompatibleProviderConfig(
         name="neosantara",
