@@ -49,7 +49,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`mistral`](https://docs.mistral.ai/) | ✅ Verified | MISTRAL_API_KEY | MISTRAL_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
 | [`moonshot`](https://platform.moonshot.ai/) | ✅ Verified | MOONSHOT_API_KEY | MOONSHOT_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | [`mzai`](https://any-llm.ai) | 🤝 Community | ANY_LLM_KEY | ANY_LLM_PLATFORM_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| [`nebius`](https://studio.nebius.ai/) | ✅ Verified | NEBIUS_API_KEY | NEBIUS_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| [`nebius`](https://studio.nebius.ai/) | ✅ Verified | NEBIUS_API_KEY | NEBIUS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`neosantara`](https://docs.neosantara.xyz) | 🤝 Community | NEOSANTARA_API_KEY | NEOSANTARA_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [`ollama`](https://github.com/ollama/ollama) | ✅ Verified | None | OLLAMA_HOST | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`openai`](https://platform.openai.com/docs/api-reference) | ✅ Verified | OPENAI_API_KEY | OPENAI_BASE_URL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
