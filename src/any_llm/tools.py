@@ -91,7 +91,8 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     - Optional[T] (Union[T, None]) -> schema(T) (nullability not encoded)
     - Literal[...]/Enum -> enum with appropriate type inference when uniform
     - TypedDict -> object with properties/required per annotations
-    - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields
+    - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields;
+      Pydantic fields use their string validation aliases in the input schema
     """
     origin = get_origin(python_type)
     args = get_args(python_type)
@@ -189,10 +190,12 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         pd_required: list[str] = []
         model_fields = getattr(python_type, "model_fields", {})
         for name, field_info in model_fields.items():
-            pd_properties[name] = _python_type_to_json_schema(model_type_hints.get(name, Any))
+            input_name = field_info.validation_alias
+            schema_name = input_name if isinstance(input_name, str) else field_info.alias or name
+            pd_properties[schema_name] = _python_type_to_json_schema(model_type_hints.get(name, Any))
             is_required = getattr(field_info, "is_required", None)
             if callable(is_required) and is_required():
-                pd_required.append(name)
+                pd_required.append(schema_name)
         schema_pd: dict[str, Any] = {"type": "object", "properties": pd_properties}
         if pd_required:
             schema_pd["required"] = pd_required
