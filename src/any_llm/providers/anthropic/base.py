@@ -25,6 +25,7 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
+from any_llm.utils.messages_compat import prepare_blocks_for_native_messages
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type, normalize_output_config
 
 MISSING_PACKAGES_ERROR = None
@@ -337,6 +338,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         use_beta = params.context_management is not None or bool(betas)
 
         api_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream", "betas"})
+        api_kwargs["messages"] = prepare_blocks_for_native_messages(api_kwargs["messages"])
         if betas:
             api_kwargs["betas"] = betas
         api_kwargs.update(kwargs)
