@@ -2,6 +2,7 @@ import base64
 import dataclasses
 import json
 import logging
+import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -1988,3 +1989,23 @@ async def test_list_models_raises_other_inference_profile_errors() -> None:
 
         with pytest.raises(ClientError, match="ThrottlingException"):
             await provider.alist_models()
+
+
+@pytest.mark.asyncio
+async def test_list_models_runs_aws_calls_off_the_event_loop() -> None:
+    event_loop_thread = threading.get_ident()
+    calling_threads: list[int] = []
+
+    def list_foundation_models(**kwargs: Any) -> dict[str, Any]:
+        calling_threads.append(threading.get_ident())
+        return {"modelSummaries": []}
+
+    control_client = Mock()
+    control_client.list_foundation_models.side_effect = list_foundation_models
+    control_client.get_paginator.return_value.paginate.return_value = []
+    provider = BedrockProvider(client=Mock(), control_client=control_client)
+
+    await provider.alist_models()
+
+    assert calling_threads
+    assert event_loop_thread not in calling_threads

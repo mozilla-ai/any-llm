@@ -405,6 +405,9 @@ class BedrockProvider(AnyLLM):
         An inference profile is listed only when every model it routes to passes the same filters.
         For example, ``byInferenceType="ON_DEMAND"`` leaves out the profiles of profile-only models.
         """
+        return await asyncio.to_thread(self._list_models, **kwargs)
+
+    def _list_models(self, **kwargs: Any) -> Sequence[Model]:
         client = self._get_bedrock_control_client()
         foundation_models = client.list_foundation_models(**kwargs).get("modelSummaries", [])
         profiles = self._list_system_inference_profiles(client)
