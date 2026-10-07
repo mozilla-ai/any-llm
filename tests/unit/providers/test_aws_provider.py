@@ -1,15 +1,19 @@
 import base64
 import dataclasses
 import json
+import logging
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, get_args
 from unittest.mock import Mock, patch
 
+import boto3
 import botocore.session
 import pytest
-from botocore.exceptions import ProfileNotFound
+from botocore.exceptions import ClientError, ProfileNotFound
+from botocore.stub import Stubber
 from botocore.tokens import ScopedEnvTokenProvider
 from pydantic import BaseModel
 
@@ -1770,3 +1774,193 @@ async def test_guardrail_blocked_structured_output_raises_content_filter_error()
             messages=[{"role": "user", "content": "Hello"}],
             response_format=_City,
         )
+
+
+def _foundation_model(model_id: str, inference_types: list[str] | None) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "modelArn": f"arn:aws:bedrock:us-east-1::foundation-model/{model_id}",
+        "modelId": model_id,
+    }
+    if inference_types is not None:
+        summary["inferenceTypesSupported"] = inference_types
+    return summary
+
+
+def _inference_profile(profile_id: str, model_id: str) -> dict[str, Any]:
+    return {
+        "inferenceProfileName": profile_id,
+        "inferenceProfileArn": f"arn:aws:bedrock:us-east-1:123456789012:inference-profile/{profile_id}",
+        "inferenceProfileId": profile_id,
+        "models": [
+            {"modelArn": f"arn:aws:bedrock:us-east-1::foundation-model/{model_id}"},
+            {"modelArn": f"arn:aws:bedrock:us-west-2::foundation-model/{model_id}"},
+        ],
+        "status": "ACTIVE",
+        "type": "SYSTEM_DEFINED",
+    }
+
+
+@contextmanager
+def _stubbed_control_client() -> Iterator[tuple[BedrockProvider, Any]]:
+    """Yield a provider whose control-plane client is a real ``bedrock`` client under a ``Stubber``."""
+    control_client = boto3.client(  # type: ignore[no-untyped-call]
+        "bedrock",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",  # noqa: S106
+    )
+    provider = BedrockProvider(client=Mock(), control_client=control_client)
+    with Stubber(control_client) as stubber:  # type: ignore[no-untyped-call]
+        yield provider, stubber
+        stubber.assert_no_pending_responses()
+
+
+@pytest.mark.asyncio
+async def test_list_models_keeps_on_demand_foundation_models_and_drops_profile_only_ones() -> None:
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response(
+            "list_foundation_models",
+            {
+                "modelSummaries": [
+                    _foundation_model("amazon.nova-pro-v1:0", ["ON_DEMAND"]),
+                    _foundation_model("moonshotai.kimi-k3", ["INFERENCE_PROFILE"]),
+                    _foundation_model("amazon.titan-tg1-large", ["PROVISIONED"]),
+                ]
+            },
+            {},
+        )
+        stubber.add_response(
+            "list_inference_profiles", {"inferenceProfileSummaries": []}, {"typeEquals": "SYSTEM_DEFINED"}
+        )
+
+        models = await provider.alist_models()
+
+    assert [model.id for model in models] == ["amazon.nova-pro-v1:0"]
+
+
+@pytest.mark.asyncio
+async def test_list_models_drops_foundation_model_without_reported_inference_types() -> None:
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response(
+            "list_foundation_models",
+            {"modelSummaries": [_foundation_model("amazon.nova-pro-v1:0", None)]},
+            {},
+        )
+        stubber.add_response(
+            "list_inference_profiles", {"inferenceProfileSummaries": []}, {"typeEquals": "SYSTEM_DEFINED"}
+        )
+
+        models = await provider.alist_models()
+
+    assert models == []
+
+
+@pytest.mark.asyncio
+async def test_list_models_includes_system_defined_inference_profiles() -> None:
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response(
+            "list_foundation_models",
+            {"modelSummaries": [_foundation_model("moonshotai.kimi-k3", ["INFERENCE_PROFILE"])]},
+            {},
+        )
+        stubber.add_response(
+            "list_inference_profiles",
+            {
+                "inferenceProfileSummaries": [
+                    _inference_profile("us.moonshotai.kimi-k3", "moonshotai.kimi-k3"),
+                    _inference_profile("global.moonshotai.kimi-k3", "moonshotai.kimi-k3"),
+                ]
+            },
+            {"typeEquals": "SYSTEM_DEFINED"},
+        )
+
+        models = await provider.alist_models()
+
+    assert [model.id for model in models] == ["us.moonshotai.kimi-k3", "global.moonshotai.kimi-k3"]
+    assert all(model.owned_by == "aws" for model in models)
+
+
+@pytest.mark.asyncio
+async def test_list_models_follows_inference_profile_pagination() -> None:
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response("list_foundation_models", {"modelSummaries": []}, {})
+        stubber.add_response(
+            "list_inference_profiles",
+            {
+                "inferenceProfileSummaries": [_inference_profile("us.moonshotai.kimi-k3", "moonshotai.kimi-k3")],
+                "nextToken": "page-2",
+            },
+            {"typeEquals": "SYSTEM_DEFINED"},
+        )
+        stubber.add_response(
+            "list_inference_profiles",
+            {"inferenceProfileSummaries": [_inference_profile("us.amazon.nova-pro-v1:0", "amazon.nova-pro-v1:0")]},
+            {"typeEquals": "SYSTEM_DEFINED", "nextToken": "page-2"},
+        )
+
+        models = await provider.alist_models()
+
+    assert [model.id for model in models] == ["us.moonshotai.kimi-k3", "us.amazon.nova-pro-v1:0"]
+
+
+@pytest.mark.asyncio
+async def test_list_models_applies_foundation_model_filters_to_inference_profiles() -> None:
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response(
+            "list_foundation_models",
+            {"modelSummaries": [_foundation_model("moonshotai.kimi-k3", ["INFERENCE_PROFILE"])]},
+            {"byProvider": "moonshotai"},
+        )
+        stubber.add_response(
+            "list_inference_profiles",
+            {
+                "inferenceProfileSummaries": [
+                    _inference_profile("us.moonshotai.kimi-k3", "moonshotai.kimi-k3"),
+                    _inference_profile("us.amazon.nova-pro-v1:0", "amazon.nova-pro-v1:0"),
+                ]
+            },
+            {"typeEquals": "SYSTEM_DEFINED"},
+        )
+
+        models = await provider.alist_models(byProvider="moonshotai")
+
+    assert [model.id for model in models] == ["us.moonshotai.kimi-k3"]
+
+
+@pytest.mark.asyncio
+async def test_list_models_without_profile_permission_returns_foundation_models_and_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response(
+            "list_foundation_models",
+            {"modelSummaries": [_foundation_model("amazon.nova-pro-v1:0", ["ON_DEMAND"])]},
+            {},
+        )
+        stubber.add_client_error(
+            "list_inference_profiles",
+            service_error_code="AccessDeniedException",
+            http_status_code=403,
+            expected_params={"typeEquals": "SYSTEM_DEFINED"},
+        )
+
+        with caplog.at_level(logging.WARNING, logger="any_llm"):
+            models = await provider.alist_models()
+
+    assert [model.id for model in models] == ["amazon.nova-pro-v1:0"]
+    assert "bedrock:ListInferenceProfiles" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_list_models_raises_other_inference_profile_errors() -> None:
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response("list_foundation_models", {"modelSummaries": []}, {})
+        stubber.add_client_error(
+            "list_inference_profiles",
+            service_error_code="ThrottlingException",
+            http_status_code=429,
+            expected_params={"typeEquals": "SYSTEM_DEFINED"},
+        )
+
+        with pytest.raises(ClientError, match="ThrottlingException"):
+            await provider.alist_models()

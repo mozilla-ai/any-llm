@@ -25,6 +25,7 @@ MISSING_PACKAGES_ERROR = None
 try:
     import boto3
     from botocore.config import Config
+    from botocore.exceptions import ClientError
     from botocore.tokens import ScopedEnvTokenProvider
 
     from .utils import (
@@ -145,12 +146,19 @@ class BedrockProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
-        """Convert AWS Bedrock list models response to OpenAI format."""
-        models_list = response.get("modelSummaries", [])
-        # AWS doesn't provide a creation date for models
-        # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
-        # the modelId is a string and will not be None
-        return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
+        """Convert Bedrock foundation models and inference profiles into the model IDs a caller can invoke.
+
+        A foundation model is listed only when AWS reports on-demand support for it.
+        Any other foundation model is reachable only through an inference profile, which is listed by its own ID.
+        """
+        model_ids = [
+            model["modelId"]
+            for model in response.get("modelSummaries", [])
+            if "ON_DEMAND" in model.get("inferenceTypesSupported", [])
+        ]
+        model_ids += [profile["inferenceProfileId"] for profile in response.get("inferenceProfileSummaries", [])]
+        # AWS doesn't provide a creation date for models.
+        return [Model(id=model_id, object="model", created=0, owned_by="aws") for model_id in model_ids]
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -389,9 +397,50 @@ class BedrockProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        """List the model IDs this account can invoke.
+
+        Keyword arguments are ``ListFoundationModels`` filters such as ``byProvider``.
+        They also apply to inference profiles: a profile is listed only when every model it routes to passes them.
+        """
         client = self._get_bedrock_control_client()
-        response = client.list_foundation_models(**kwargs)
-        return self._convert_list_models_response(response)
+        foundation_models = client.list_foundation_models(**kwargs).get("modelSummaries", [])
+        profiles = self._list_system_inference_profiles(client)
+        if kwargs:
+            matching_ids = {model["modelId"] for model in foundation_models}
+            profiles = [profile for profile in profiles if self._routes_only_to(profile, matching_ids)]
+        return self._convert_list_models_response(
+            {"modelSummaries": foundation_models, "inferenceProfileSummaries": profiles}
+        )
+
+    @staticmethod
+    def _routes_only_to(profile: dict[str, Any], model_ids: set[str]) -> bool:
+        """Return whether every foundation model behind ``profile`` has one of ``model_ids``."""
+        return all(model["modelArn"].partition("foundation-model/")[2] in model_ids for model in profile["models"])
+
+    @staticmethod
+    def _list_system_inference_profiles(client: Any) -> list[dict[str, Any]]:
+        """Return every system-defined inference profile, or none when listing them is denied.
+
+        Application inference profiles are left out because they are invoked by ARN, not by ID.
+
+        NOTE: A denied request logs a warning and returns no profiles.
+        An IAM policy that allows only ``bedrock:ListFoundationModels`` then still gets a model list.
+        """
+        paginator = client.get_paginator("list_inference_profiles")
+        try:
+            return [
+                profile
+                for page in paginator.paginate(typeEquals="SYSTEM_DEFINED")
+                for profile in page.get("inferenceProfileSummaries", [])
+            ]
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") != "AccessDeniedException":
+                raise
+            logger.warning(
+                "Listing Bedrock inference profiles was denied, so models that can only be invoked through an "
+                "inference profile are left out. Grant bedrock:ListInferenceProfiles to include them."
+            )
+            return []
 
     def _get_bedrock_control_client(self) -> Any:
         """Return a ``bedrock`` control-plane client for batch and model management operations.
