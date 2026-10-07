@@ -148,6 +148,8 @@ class BedrockProvider(AnyLLM):
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert Bedrock foundation models and inference profiles into the model IDs a caller can invoke.
 
+        ``response`` holds ``modelSummaries`` from ``ListFoundationModels`` and ``inferenceProfileSummaries``
+        from ``ListInferenceProfiles``, since no single Bedrock API returns both.
         A foundation model is listed only when AWS reports on-demand support for it.
         Any other foundation model is reachable only through an inference profile, which is listed by its own ID.
         """
@@ -400,7 +402,8 @@ class BedrockProvider(AnyLLM):
         """List the model IDs this account can invoke.
 
         Keyword arguments are ``ListFoundationModels`` filters such as ``byProvider``.
-        They also apply to inference profiles: a profile is listed only when every model it routes to passes them.
+        An inference profile is listed only when every model it routes to passes the same filters.
+        For example, ``byInferenceType="ON_DEMAND"`` leaves out the profiles of profile-only models.
         """
         client = self._get_bedrock_control_client()
         foundation_models = client.list_foundation_models(**kwargs).get("modelSummaries", [])
@@ -423,8 +426,7 @@ class BedrockProvider(AnyLLM):
 
         Application inference profiles are left out because they are invoked by ARN, not by ID.
 
-        NOTE: A denied request logs a warning and returns no profiles.
-        An IAM policy that allows only ``bedrock:ListFoundationModels`` then still gets a model list.
+        NOTE: A denial is not an error, so an IAM policy that allows only ``bedrock:ListFoundationModels`` still works.
         """
         paginator = client.get_paginator("list_inference_profiles")
         try:
