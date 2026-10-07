@@ -1928,6 +1928,30 @@ async def test_list_models_applies_foundation_model_filters_to_inference_profile
 
 
 @pytest.mark.asyncio
+async def test_list_models_drops_profile_when_any_routed_model_fails_filters() -> None:
+    mixed_profile = _inference_profile("us.mixed-router", "moonshotai.kimi-k3")
+    mixed_profile["models"] = [
+        {"modelArn": "arn:aws:bedrock:us-east-1::foundation-model/moonshotai.kimi-k3"},
+        {"modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0"},
+    ]
+    with _stubbed_control_client() as (provider, stubber):
+        stubber.add_response(
+            "list_foundation_models",
+            {"modelSummaries": [_foundation_model("moonshotai.kimi-k3", ["INFERENCE_PROFILE"])]},
+            {"byProvider": "moonshotai"},
+        )
+        stubber.add_response(
+            "list_inference_profiles",
+            {"inferenceProfileSummaries": [mixed_profile]},
+            {"typeEquals": "SYSTEM_DEFINED"},
+        )
+
+        models = await provider.alist_models(byProvider="moonshotai")
+
+    assert models == []
+
+
+@pytest.mark.asyncio
 async def test_list_models_without_profile_permission_returns_foundation_models_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
