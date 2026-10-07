@@ -153,6 +153,8 @@ class BedrockProvider(AnyLLM):
         A foundation model is listed only when AWS reports on-demand support for it.
         Any other foundation model is reachable only through an inference profile, which is listed by its own ID.
         """
+        # NOTE: AWS marks inferenceTypesSupported as optional.
+        # A model that omits it is left out, not assumed to be invocable.
         model_ids = [
             model["modelId"]
             for model in response.get("modelSummaries", [])
