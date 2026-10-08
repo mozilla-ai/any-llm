@@ -54,6 +54,7 @@ async def test_rerank_providers_async(
         pytest.skip(f"{provider.value} connection failed, skipping")
 
     assert isinstance(result, RerankResponse)
+    assert result.model
     assert len(result.results) == len(_DOCUMENTS)
     assert {r.index for r in result.results} == set(range(len(_DOCUMENTS)))
     scores = [r.relevance_score for r in result.results]

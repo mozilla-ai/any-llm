@@ -1613,7 +1613,10 @@ class AnyLLM(FilesMixin, ABC):
             NotImplementedError: If the provider does not support reranking.
 
         """
-        return await self._arerank(model, query, documents, **kwargs)
+        response = await self._arerank(model, query, documents, **kwargs)
+        if not response.model:
+            response.model = model
+        return response
 
     async def _arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
         if not self.SUPPORTS_RERANK:

@@ -362,7 +362,7 @@ async def test_arerank_api_function() -> None:
         id="test-id",
         results=[RerankResult(index=0, relevance_score=0.9)],
     )
-    mock_provider._arerank = AsyncMock(return_value=mock_rerank_response)
+    mock_provider.arerank = AsyncMock(return_value=mock_rerank_response)
 
     with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
@@ -378,7 +378,7 @@ async def test_arerank_api_function() -> None:
         )
 
         assert result.id == "test-id"
-        call_args = mock_provider._arerank.call_args
+        call_args = mock_provider.arerank.call_args
         assert call_args[0][0] == "rerank-v3.5"
         assert call_args[1]["max_tokens_per_doc"] == 512
 
@@ -591,7 +591,7 @@ async def test_arerank_api_with_explicit_provider() -> None:
         id="async-explicit",
         results=[RerankResult(index=0, relevance_score=0.7)],
     )
-    mock_provider._arerank = AsyncMock(return_value=mock_rerank_response)
+    mock_provider.arerank = AsyncMock(return_value=mock_rerank_response)
 
     with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
@@ -608,7 +608,7 @@ async def test_arerank_api_with_explicit_provider() -> None:
         )
 
         assert result.id == "async-explicit"
-        call_args = mock_provider._arerank.call_args
+        call_args = mock_provider.arerank.call_args
         assert call_args[1]["top_n"] == 3
 
 
@@ -727,6 +727,35 @@ def test_rerank_response_id_optional() -> None:
     assert resp.id is None
 
 
+def test_rerank_response_model_optional() -> None:
+    assert RerankResponse(results=[]).model is None
+    assert RerankResponse(model="rerank-v3.5", results=[]).model == "rerank-v3.5"
+
+
+@pytest.mark.asyncio
+async def test_arerank_falls_back_to_requested_model() -> None:
+    from any_llm.providers.openai.openai import OpenaiProvider
+
+    provider = OpenaiProvider(api_key="test-key")
+    provider._arerank = AsyncMock(return_value=RerankResponse(results=[]))  # type: ignore[method-assign]
+
+    result = await provider.arerank("my-alias", "q", ["d"])
+
+    assert result.model == "my-alias"
+
+
+@pytest.mark.asyncio
+async def test_arerank_keeps_provider_reported_model() -> None:
+    from any_llm.providers.openai.openai import OpenaiProvider
+
+    provider = OpenaiProvider(api_key="test-key")
+    provider._arerank = AsyncMock(return_value=RerankResponse(model="served-model", results=[]))  # type: ignore[method-assign]
+
+    result = await provider.arerank("my-alias", "q", ["d"])
+
+    assert result.model == "served-model"
+
+
 def test_together_convert_rerank_params_basic() -> None:
     pytest.importorskip("together")
     from any_llm.providers.together import TogetherProvider
@@ -834,6 +863,7 @@ def test_convert_together_rerank_response_basic() -> None:
     result = _convert_together_rerank_response(_together_rerank_response())  # type: ignore[arg-type]
     assert isinstance(result, RerankResponse)
     assert result.id == "rerank-together-1"
+    assert result.model == "Salesforce/Llama-Rank-v1"
     assert len(result.results) == 2
     assert result.meta is None
 

@@ -230,6 +230,7 @@ def _convert_together_rerank_response(response: "TogetherRerankResponse") -> Rer
 
     return RerankResponse(
         id=response.id,
+        model=response.model,
         results=results,
         usage=usage,
     )
