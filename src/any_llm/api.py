@@ -1380,7 +1380,7 @@ async def arerank(
     llm, model_name, kwargs = _resolve_rerank_target(
         model, provider, top_n, max_tokens_per_doc, api_key, api_base, client_args, kwargs
     )
-    return await llm._arerank(model_name, query, documents, **kwargs)
+    return await llm.arerank(model_name, query, documents, **kwargs)
 
 
 def list_models(

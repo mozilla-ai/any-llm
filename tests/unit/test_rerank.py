@@ -362,7 +362,7 @@ async def test_arerank_api_function() -> None:
         id="test-id",
         results=[RerankResult(index=0, relevance_score=0.9)],
     )
-    mock_provider._arerank = AsyncMock(return_value=mock_rerank_response)
+    mock_provider.arerank = AsyncMock(return_value=mock_rerank_response)
 
     with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
@@ -378,7 +378,7 @@ async def test_arerank_api_function() -> None:
         )
 
         assert result.id == "test-id"
-        call_args = mock_provider._arerank.call_args
+        call_args = mock_provider.arerank.call_args
         assert call_args[0][0] == "rerank-v3.5"
         assert call_args[1]["max_tokens_per_doc"] == 512
 
@@ -591,7 +591,7 @@ async def test_arerank_api_with_explicit_provider() -> None:
         id="async-explicit",
         results=[RerankResult(index=0, relevance_score=0.7)],
     )
-    mock_provider._arerank = AsyncMock(return_value=mock_rerank_response)
+    mock_provider.arerank = AsyncMock(return_value=mock_rerank_response)
 
     with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
         mock_create.return_value = mock_provider
@@ -608,7 +608,7 @@ async def test_arerank_api_with_explicit_provider() -> None:
         )
 
         assert result.id == "async-explicit"
-        call_args = mock_provider._arerank.call_args
+        call_args = mock_provider.arerank.call_args
         assert call_args[1]["top_n"] == 3
 
 
