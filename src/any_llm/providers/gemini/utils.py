@@ -340,7 +340,7 @@ def _convert_messages(
     tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
 
     for message in messages:
-        if message["role"] == "system":
+        if message["role"] in ("system", "developer"):
             if system_instruction is None:
                 system_instruction = message["content"]
             else:
