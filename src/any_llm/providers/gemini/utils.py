@@ -340,7 +340,7 @@ def _convert_messages(
     tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
 
     for message in messages:
-        if message["role"] == "system":
+        if message["role"] in ("system", "developer"):
             if system_instruction is None:
                 system_instruction = message["content"]
             else:
@@ -424,6 +424,11 @@ def _convert_messages(
                 pending.append(part)
             else:
                 formatted_messages.append(types.Content(role="user", parts=[part]))
+
+    if not formatted_messages and isinstance(system_instruction, str):
+        # Gemini refuses a request with no contents ("contents are required"), and OpenAI-style
+        # callers send a lone system message as the whole prompt, so it becomes the user's turn.
+        return [types.Content(role="user", parts=[types.Part.from_text(text=system_instruction)])], None
 
     return formatted_messages, system_instruction
 

@@ -200,6 +200,66 @@ async def test_completion_with_system_instruction() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_with_only_system_messages_sends_them_as_the_user_turn() -> None:
+    """A request of system messages alone still sends contents, which Gemini requires."""
+    messages = [
+        {"role": "system", "content": "Classify this conversation."},
+        {"role": "system", "content": "Answer in JSON."},
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(CompletionParams(model_id="gemini-pro", messages=messages))
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        contents = call_kwargs["contents"]
+
+        assert len(contents) == 1
+        assert contents[0].role == "user"
+        assert contents[0].parts[0].text == "Classify this conversation.\nAnswer in JSON."
+        assert call_kwargs["config"].system_instruction is None
+
+
+@pytest.mark.asyncio
+async def test_completion_treats_developer_messages_as_system_instruction() -> None:
+    """OpenAI's developer role is the system role under a newer name, so its text is kept."""
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "developer", "content": "Answer in JSON."},
+        {"role": "user", "content": "Hello"},
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(CompletionParams(model_id="gemini-pro", messages=messages))
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+
+        assert call_kwargs["config"].system_instruction == "You are a helpful assistant\nAnswer in JSON."
+        assert len(call_kwargs["contents"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_completion_with_only_system_and_developer_messages_sends_them_as_the_user_turn() -> None:
+    messages = [
+        {"role": "system", "content": "Classify this conversation."},
+        {"role": "developer", "content": "Answer in JSON."},
+    ]
+
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(CompletionParams(model_id="gemini-pro", messages=messages))
+
+        _, call_kwargs = mock_genai.return_value.aio.models.generate_content.call_args
+        contents = call_kwargs["contents"]
+
+        assert len(contents) == 1
+        assert contents[0].role == "user"
+        assert contents[0].parts[0].text == "Classify this conversation.\nAnswer in JSON."
+        assert call_kwargs["config"].system_instruction is None
+
+
+@pytest.mark.asyncio
 async def test_completion_with_content_list() -> None:
     """Test that completion works correctly with content in list format."""
     api_key = "test-api-key"
