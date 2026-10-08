@@ -727,6 +727,35 @@ def test_rerank_response_id_optional() -> None:
     assert resp.id is None
 
 
+def test_rerank_response_model_optional() -> None:
+    assert RerankResponse(results=[]).model is None
+    assert RerankResponse(model="rerank-v3.5", results=[]).model == "rerank-v3.5"
+
+
+@pytest.mark.asyncio
+async def test_arerank_falls_back_to_requested_model() -> None:
+    from any_llm.providers.openai.openai import OpenaiProvider
+
+    provider = OpenaiProvider(api_key="test-key")
+    provider._arerank = AsyncMock(return_value=RerankResponse(results=[]))  # type: ignore[method-assign]
+
+    result = await provider.arerank("my-alias", "q", ["d"])
+
+    assert result.model == "my-alias"
+
+
+@pytest.mark.asyncio
+async def test_arerank_keeps_provider_reported_model() -> None:
+    from any_llm.providers.openai.openai import OpenaiProvider
+
+    provider = OpenaiProvider(api_key="test-key")
+    provider._arerank = AsyncMock(return_value=RerankResponse(model="served-model", results=[]))  # type: ignore[method-assign]
+
+    result = await provider.arerank("my-alias", "q", ["d"])
+
+    assert result.model == "served-model"
+
+
 def test_together_convert_rerank_params_basic() -> None:
     pytest.importorskip("together")
     from any_llm.providers.together import TogetherProvider
@@ -834,6 +863,7 @@ def test_convert_together_rerank_response_basic() -> None:
     result = _convert_together_rerank_response(_together_rerank_response())  # type: ignore[arg-type]
     assert isinstance(result, RerankResponse)
     assert result.id == "rerank-together-1"
+    assert result.model == "Salesforce/Llama-Rank-v1"
     assert len(result.results) == 2
     assert result.meta is None
 
