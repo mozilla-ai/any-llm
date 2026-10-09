@@ -42,6 +42,8 @@ from any_llm.providers.otari.otari import (
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
+    MessageDeltaEvent,
+    MessageIterationUsage,
     MessageResponse,
     MessagesParams,
     MessageStartEvent,
@@ -1391,3 +1393,32 @@ def test_message_stream_event_from_dict_returns_none_for_unknown_type() -> None:
     assert _message_stream_event_from_dict({"type": "ping"}) is None
     assert _message_stream_event_from_dict({"no_type": True}) is None
     assert isinstance(_message_stream_event_from_dict({"type": "message_stop"}), MessageStopEvent)
+
+
+def test_message_stream_event_from_dict_accepts_message_iteration_usage_without_model() -> None:
+    """A code-execution turn's message_delta reports iterations whose ``message`` entry has no ``model``."""
+    event = _message_stream_event_from_dict(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {
+                "input_tokens": 90,
+                "output_tokens": 12,
+                "iterations": [
+                    {
+                        "type": "message",
+                        "input_tokens": 90,
+                        "output_tokens": 12,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert isinstance(event, MessageDeltaEvent)
+    assert event.usage.iterations is not None
+    assert isinstance(event.usage.iterations[0], MessageIterationUsage)
+    assert event.usage.iterations[0].model is None
