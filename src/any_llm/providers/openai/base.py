@@ -348,11 +348,15 @@ class BaseOpenAIProvider(AnyLLM):
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
 
-        return await self.client.audio.transcriptions.create(  # type: ignore[no-any-return]
+        result = await self.client.audio.transcriptions.create(
             model=params.model_id,
-            file=params.file,
+            file=params.resolve_file().multipart,
             **api_kwargs,
         )
+        # The SDK returns the raw body for the text, srt and vtt formats.
+        if isinstance(result, str):
+            return Transcription(text=result)
+        return result  # type: ignore[no-any-return]
 
     @override
     async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:

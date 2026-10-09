@@ -1,7 +1,11 @@
 import asyncio
 import dataclasses
+import email
+import email.message
+import io
 import json
 import logging
+import pathlib
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,9 +17,11 @@ from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
 from typing_extensions import override
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.providers.sambanova.sambanova import SambanovaProvider
+from any_llm.types.audio import Transcription
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 from any_llm.types.responses import ParsedResponse, Response
@@ -800,3 +806,123 @@ async def test_chunk_stream_stops_after_close(consume_first: bool) -> None:
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     close.assert_awaited_once()
+
+
+def _multipart_file_part(request: httpx.Request) -> tuple[str | None, str, bytes]:
+    """Return the ``file`` part of a multipart request as ``(filename, content_type, payload)``."""
+    raw = b"Content-Type: " + request.headers["content-type"].encode() + b"\r\n\r\n" + request.content
+    message = email.message_from_bytes(raw)
+    for part in message.get_payload():
+        assert isinstance(part, email.message.Message)
+        if part.get_param("name", header="content-disposition") == "file":
+            payload = part.get_payload(decode=True)
+            assert isinstance(payload, bytes)
+            return part.get_filename(), part.get_content_type(), payload
+    msg = "no file part in request"
+    raise AssertionError(msg)
+
+
+def _transcription_transport() -> tuple[httpx.MockTransport, list[httpx.Request]]:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return httpx.Response(200, json={"text": "Hi Octonous, what is on my calendar tomorrow?"})
+
+    return httpx.MockTransport(handler), requests
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_named_bytesio_with_its_name_and_content_type() -> None:
+    """A named in-memory file reaches the wire as a file part with that name, as if read from disk."""
+    transport, requests = _transcription_transport()
+    audio = b"\x00\x00\x00\x1cftypM4A " + b"\x00" * 24
+    stream = io.BytesIO(audio)
+    stream.name = "audio_message.m4a"
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        result = await provider.atranscription("whisper-1", stream, language="en")
+    finally:
+        await provider.client.close()
+
+    assert result.text == "Hi Octonous, what is on my calendar tomorrow?"
+    assert len(requests) == 1
+    assert requests[0].url.path == "/v1/audio/transcriptions"
+    assert _multipart_file_part(requests[0]) == ("audio_message.m4a", "audio/mp4", audio)
+    assert b'name="language"\r\n\r\nen\r\n' in requests[0].content
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_bare_bytes_under_a_name_derived_from_their_container() -> None:
+    """Bare bytes no longer go out as an octet-stream named ``upload``, which OpenAI rejects."""
+    transport, requests = _transcription_transport()
+    audio = b"\x1a\x45\xdf\xa3" + b"\x00" * 28
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        await provider.atranscription("whisper-1", audio)
+    finally:
+        await provider.client.close()
+
+    assert _multipart_file_part(requests[0]) == ("audio.webm", "audio/webm", audio)
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_bytes_under_an_explicit_filename_and_mime_type() -> None:
+    transport, requests = _transcription_transport()
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        await provider.atranscription("whisper-1", b"opaque", filename="clip.mp3", mime_type="audio/mpeg")
+    finally:
+        await provider.client.close()
+
+    assert _multipart_file_part(requests[0]) == ("clip.mp3", "audio/mpeg", b"opaque")
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_a_path_under_its_file_name(tmp_path: pathlib.Path) -> None:
+    transport, requests = _transcription_transport()
+    clip = tmp_path / "voice.ogg"
+    clip.write_bytes(b"OggS" + b"\x00" * 28)
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        await provider.atranscription("whisper-1", clip)
+    finally:
+        await provider.client.close()
+
+    assert _multipart_file_part(requests[0]) == ("voice.ogg", "audio/ogg", clip.read_bytes())
+
+
+@pytest.mark.asyncio
+async def test_transcription_missing_path_raises_before_any_request(tmp_path: pathlib.Path) -> None:
+    transport, requests = _transcription_transport()
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        with pytest.raises(InvalidRequestError, match="Cannot read audio path"):
+            await provider.atranscription("whisper-1", tmp_path / "missing.m4a")
+    finally:
+        await provider.client.close()
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["text", "srt", "vtt"])
+async def test_transcription_wraps_text_formats_in_a_transcription(response_format: str) -> None:
+    """The SDK hands back the raw body for text formats; callers always get a Transcription."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return httpx.Response(200, headers={"content-type": "text/plain; charset=utf-8"}, text="hello there\n")
+
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    try:
+        result = await provider.atranscription("whisper-1", b"ID3" + b"\x00" * 29, response_format=response_format)
+    finally:
+        await provider.client.close()
+
+    assert isinstance(result, Transcription)
+    assert result.text == "hello there\n"
+    assert f'name="response_format"\r\n\r\n{response_format}\r\n'.encode() in requests[0].content

@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import re
@@ -366,3 +367,31 @@ async def test_azureopenai_sends_responses_to_v1() -> None:
     assert [request.url.path for request in requests] == ["/openai/v1/responses"]
     assert [request.headers["Authorization"] for request in requests] == ["Bearer api-key"]
     assert requests[0].read() == b'{"input":"Hello","model":"deployment-name"}'
+
+
+@pytest.mark.asyncio
+async def test_azureopenai_transcription_keeps_the_file_name_and_preview_api_version() -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return httpx.Response(_HTTP_OK, json={"text": "hello"})
+
+    stream = io.BytesIO(b"\x00\x00\x00\x1cftypM4A " + b"\x00" * 24)
+    stream.name = "audio_message.m4a"
+    provider = AzureopenaiProvider(
+        api_key="key",
+        api_base="https://resource.openai.azure.com/openai/v1/",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+    )
+    try:
+        result = await provider.atranscription("whisper", stream)
+    finally:
+        await provider.client.close()
+
+    assert result.text == "hello"
+    assert len(requests) == 1
+    assert requests[0].url.path == "/openai/v1/audio/transcriptions"
+    assert requests[0].url.params["api-version"] == "preview"
+    assert b'name="file"; filename="audio_message.m4a"\r\nContent-Type: audio/mp4\r\n' in requests[0].content
