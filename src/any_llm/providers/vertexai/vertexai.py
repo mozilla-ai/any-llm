@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 from google import genai
 from google.genai import types
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from typing_extensions import override
 
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import InvalidRequestError, MissingApiKeyError
 from any_llm.providers.gemini.base import GoogleProvider
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
@@ -49,6 +49,31 @@ def _partner_api_base(project: str, location: str, base_url: str | None = None) 
         host = "aiplatform.googleapis.com" if location == "global" else f"{location}-aiplatform.googleapis.com"
         root = f"https://{host}"
     return f"{root}/v1/projects/{project}/locations/{location}/endpoints/openapi"
+
+
+def _partner_client_kwargs(http_options: types.HttpOptions | None) -> dict[str, Any]:
+    """Carry the genai client's HTTP settings over to the OpenAI SDK client used for partner models."""
+    if http_options is None:
+        return {}
+    client_kwargs: dict[str, Any] = {}
+    if http_options.timeout is not None:
+        client_kwargs["timeout"] = http_options.timeout / 1000
+    if http_options.headers:
+        # The partner client sends its own refreshed OAuth token.
+        client_kwargs["default_headers"] = {
+            name: value for name, value in http_options.headers.items() if name.lower() != "authorization"
+        }
+    if http_options.httpx_async_client is not None:
+        client_kwargs["http_client"] = http_options.httpx_async_client
+    elif http_options.async_client_args:
+        # genai reads these as aiohttp arguments when aiohttp is installed; the OpenAI SDK only speaks httpx, so
+        # arguments it cannot take fail here instead of silently dropping a proxy or CA from partner requests.
+        try:
+            client_kwargs["http_client"] = DefaultAsyncHttpxClient(**http_options.async_client_args)
+        except TypeError as exc:
+            msg = "http_options.async_client_args must be httpx.AsyncClient arguments to call Vertex AI partner models"
+            raise InvalidRequestError(msg, exc, "vertexai") from exc
+    return client_kwargs
 
 
 class _VertexaiPartnerProvider(BaseOpenAIProvider):
@@ -97,7 +122,7 @@ class VertexaiProvider(GoogleProvider):
     _mistral_client: AsyncOpenAI | None = None
     # Seconds, taken from the genai client's http_options so the OpenAI-SDK routes time out the same way.
     _http_timeout: float | None = None
-    _http_base_url: str | None = None
+    _http_options: types.HttpOptions | None = None
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
@@ -115,9 +140,9 @@ class VertexaiProvider(GoogleProvider):
         if isinstance(http_options, dict):
             http_options = types.HttpOptions.model_validate(http_options)
         if isinstance(http_options, types.HttpOptions):
+            self._http_options = http_options
             if http_options.timeout is not None:
                 self._http_timeout = http_options.timeout / 1000
-            self._http_base_url = http_options.base_url
 
         self.client = genai.Client(
             vertexai=True,
@@ -137,13 +162,14 @@ class VertexaiProvider(GoogleProvider):
     def _get_partner_provider(self) -> _VertexaiPartnerProvider:
         if self._partner_provider is None:
             api_client = self.client._api_client
-            client_kwargs: dict[str, Any] = {"timeout": self._http_timeout} if self._http_timeout is not None else {}
             self._partner_provider = _VertexaiPartnerProvider(
                 api_base=_partner_api_base(
-                    cast("str", api_client.project), cast("str", api_client.location), self._http_base_url
+                    cast("str", api_client.project),
+                    cast("str", api_client.location),
+                    self._http_options.base_url if self._http_options else None,
                 ),
                 token_provider=self._access_token,
-                **client_kwargs,
+                **_partner_client_kwargs(self._http_options),
             )
         return self._partner_provider
 

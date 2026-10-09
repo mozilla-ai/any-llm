@@ -6,11 +6,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from google.genai import types
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.gemini.base import GoogleProvider
 from any_llm.providers.vertexai import VertexaiProvider
-from any_llm.providers.vertexai.vertexai import _is_partner_model, _partner_api_base, _VertexaiPartnerProvider
+from any_llm.providers.vertexai.vertexai import (
+    _is_partner_model,
+    _partner_api_base,
+    _partner_client_kwargs,
+    _VertexaiPartnerProvider,
+)
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 QWEN_MODEL = "qwen/qwen3-235b-a22b-instruct-2507-maas"
@@ -334,6 +340,54 @@ async def test_vertexai_partner_non_streaming_completion(genai_client: MagicMock
     assert body["max_tokens"] == 64
     assert "max_completion_tokens" not in body
     assert "stream" not in body
+
+
+@pytest.mark.asyncio
+async def test_vertexai_partner_request_uses_configured_headers_and_httpx_client(genai_client: MagicMock) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_completion_body(QWEN_MODEL))
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = VertexaiProvider(
+        http_options=types.HttpOptions(
+            headers={"X-Gateway-Key": "gw-secret", "authorization": "Bearer stale"},
+            httpx_async_client=http_client,
+        )
+    )
+
+    await provider._acompletion(CompletionParams(model_id=QWEN_MODEL, messages=[{"role": "user", "content": "Hi"}]))
+
+    # openai 3 types its client as httpx2 but accepts a legacy httpx one, which is what genai holds.
+    partner_http_client: Any = provider._get_partner_provider().client._client
+    assert partner_http_client is http_client
+    assert requests[0].headers["X-Gateway-Key"] == "gw-secret"
+    assert requests[0].headers["Authorization"] == "Bearer token-1"
+
+
+def test_vertexai_partner_client_built_from_async_client_args(genai_client: MagicMock) -> None:
+    provider = VertexaiProvider(http_options={"async_client_args": {"proxy": "http://proxy.example:8080"}})
+
+    with patch(
+        "any_llm.providers.vertexai.vertexai.DefaultAsyncHttpxClient", wraps=DefaultAsyncHttpxClient
+    ) as client_factory:
+        partner = provider._get_partner_provider()
+
+    client_factory.assert_called_once_with(proxy="http://proxy.example:8080")
+    assert isinstance(partner.client._client, DefaultAsyncHttpxClient)
+
+
+def test_vertexai_partner_rejects_non_httpx_async_client_args(genai_client: MagicMock) -> None:
+    provider = VertexaiProvider(http_options={"async_client_args": {"ssl": False}})
+
+    with pytest.raises(InvalidRequestError, match="httpx.AsyncClient arguments"):
+        provider._get_partner_provider()
+
+
+def test_vertexai_partner_client_kwargs_without_http_options() -> None:
+    assert _partner_client_kwargs(None) == {}
 
 
 @pytest.mark.asyncio
