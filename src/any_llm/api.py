@@ -1,11 +1,11 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import IO, Any, Literal
+from typing import Any, Literal
 
 from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
-from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.audio import AudioInput, AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.batch import Batch, BatchResult
 from any_llm.types.completion import (
     ChatCompletion,
@@ -1006,9 +1006,11 @@ async def aimage_generation(
 
 def transcription(
     model: str,
-    file: bytes | IO[bytes],
+    file: AudioInput,
     *,
     provider: str | LLMProvider | None = None,
+    filename: str | None = None,
+    mime_type: str | None = None,
     language: str | None = None,
     prompt: str | None = None,
     response_format: str | None = None,
@@ -1025,9 +1027,14 @@ def transcription(
         model: Model identifier. **Recommended**: Use with separate `provider` parameter
             (e.g., model='whisper-1', provider='openai').
             **Alternative**: Combined format 'provider:model' (e.g., 'openai:whisper-1').
-        file: Audio file content as bytes or file-like object.
+        file: Audio to transcribe: bytes, a readable binary file object, or a path.
             Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
         provider: Provider name to use for the request (e.g., 'openai').
+        filename: Name to upload the audio under. Defaults to the path or file object's name,
+            else a name derived from the audio format found in the bytes. Providers reject
+            audio whose name and content type do not identify its format.
+        mime_type: Content type to upload the audio under. Defaults to one guessed from
+            `filename`, else from the bytes.
         language: The language of the input audio in ISO-639-1 format.
         prompt: Optional text to guide the model's style or continue a previous segment.
         response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
@@ -1053,6 +1060,8 @@ def transcription(
     return llm._transcription(
         model_name,
         file,
+        filename=filename,
+        mime_type=mime_type,
         language=language,
         prompt=prompt,
         response_format=response_format,
@@ -1064,9 +1073,11 @@ def transcription(
 
 async def atranscription(
     model: str,
-    file: bytes | IO[bytes],
+    file: AudioInput,
     *,
     provider: str | LLMProvider | None = None,
+    filename: str | None = None,
+    mime_type: str | None = None,
     language: str | None = None,
     prompt: str | None = None,
     response_format: str | None = None,
@@ -1083,9 +1094,14 @@ async def atranscription(
         model: Model identifier. **Recommended**: Use with separate `provider` parameter
             (e.g., model='whisper-1', provider='openai').
             **Alternative**: Combined format 'provider:model' (e.g., 'openai:whisper-1').
-        file: Audio file content as bytes or file-like object.
+        file: Audio to transcribe: bytes, a readable binary file object, or a path.
             Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
         provider: Provider name to use for the request (e.g., 'openai').
+        filename: Name to upload the audio under. Defaults to the path or file object's name,
+            else a name derived from the audio format found in the bytes. Providers reject
+            audio whose name and content type do not identify its format.
+        mime_type: Content type to upload the audio under. Defaults to one guessed from
+            `filename`, else from the bytes.
         language: The language of the input audio in ISO-639-1 format.
         prompt: Optional text to guide the model's style or continue a previous segment.
         response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
@@ -1112,6 +1128,8 @@ async def atranscription(
         AudioTranscriptionParams(
             model_id=model_name,
             file=file,
+            filename=filename,
+            mime_type=mime_type,
             language=language,
             prompt=prompt,
             response_format=response_format,  # type: ignore[arg-type]

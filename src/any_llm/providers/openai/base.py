@@ -350,7 +350,7 @@ class BaseOpenAIProvider(AnyLLM):
 
         return await self.client.audio.transcriptions.create(  # type: ignore[no-any-return]
             model=params.model_id,
-            file=params.file,
+            file=params.resolve_file().multipart,
             **api_kwargs,
         )
 
