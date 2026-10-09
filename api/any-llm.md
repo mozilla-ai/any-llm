@@ -18,6 +18,7 @@ def create(
     api_base: str | None = None,
     *,
     unified_exceptions: bool | None = None,
+    max_retries: int | None = None,
     **kwargs: Any,
 ) -> AnyLLM
 ```
@@ -28,6 +29,7 @@ def create(
 | `api_key` | `str \| None` | None | API key for the provider |
 | `api_base` | `str \| None` | None | Base URL for the provider API |
 | `unified_exceptions` | `bool \| None` | None | Convert provider exceptions for this instance when True, or preserve them when False. None (default) uses ANY_LLM_UNIFIED_EXCEPTIONS. |
+| `max_retries` | `int \| None` | None | How many times the provider's SDK client retries a failed request (0 disables retries). None (default) keeps the SDK's own default. Raises UnsupportedParameterError for providers whose SDK has no retry count to set. |
 | `**kwargs` | `Any` | *required* | Additional provider-specific arguments |
 
 **Returns:** An `AnyLLM` instance bound to the specified provider.
