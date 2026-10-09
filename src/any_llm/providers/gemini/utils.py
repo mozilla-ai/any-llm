@@ -10,7 +10,7 @@ from google.genai import types
 from google.genai.pagers import Pager
 from pydantic import ValidationError
 
-from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
@@ -606,7 +606,12 @@ def _prompt_was_blocked(response: types.GenerateContentResponse) -> bool:
 
 
 def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
-    """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict."""
+    """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict.
+
+    Raises:
+        ProviderError: If no candidates were returned and the prompt was not blocked.
+
+    """
     response_dict = {
         "id": "google_genai_response",
         "model": "google/genai",
@@ -698,6 +703,9 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                 "index": 0,
             }
         )
+    else:
+        message = "generateContent returned no candidates and the prompt was not blocked"
+        raise ProviderError(message)
 
     response_dict["choices"] = choices
 

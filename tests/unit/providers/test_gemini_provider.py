@@ -14,6 +14,7 @@ from any_llm.exceptions import (
     ContentFilterFinishReasonError,
     InvalidRequestError,
     LengthFinishReasonError,
+    ProviderError,
     UnsupportedParameterError,
 )
 from any_llm.providers.gemini import GeminiProvider
@@ -28,6 +29,7 @@ from any_llm.providers.gemini.utils import (
     _map_finish_reason,
     _pending_function_response_parts,
 )
+from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -1535,18 +1537,38 @@ def test_convert_response_maps_prompt_block_to_content_filter(block_reason: type
     assert choice["message"]["refusal"] == "Response blocked by Gemini content filtering."
 
 
-def test_convert_response_does_not_filter_unspecified_prompt_feedback() -> None:
-    response_dict = _convert_response_to_response_dict(
-        _make_gemini_prompt_block(types.BlockedReason.BLOCKED_REASON_UNSPECIFIED)
+@pytest.mark.parametrize("candidates", [None, []])
+@pytest.mark.parametrize(
+    "prompt_feedback",
+    [
+        None,
+        types.GenerateContentResponsePromptFeedback(),
+        types.GenerateContentResponsePromptFeedback(block_reason=types.BlockedReason.BLOCKED_REASON_UNSPECIFIED),
+    ],
+)
+def test_convert_response_without_candidates_raises_provider_error(
+    candidates: list[types.Candidate] | None,
+    prompt_feedback: types.GenerateContentResponsePromptFeedback | None,
+) -> None:
+    response = types.GenerateContentResponse(
+        candidates=candidates,
+        prompt_feedback=prompt_feedback,
+        usage_metadata=types.GenerateContentResponseUsageMetadata(prompt_token_count=12),
     )
 
-    assert response_dict["choices"] == []
+    with pytest.raises(ProviderError, match="returned no candidates"):
+        _convert_response_to_response_dict(response)
 
 
-def test_convert_response_without_candidate_or_prompt_feedback_has_no_choices() -> None:
-    response_dict = _convert_response_to_response_dict(types.GenerateContentResponse(candidates=None))
+@pytest.mark.parametrize("provider_class", [GeminiProvider, VertexaiProvider])
+@pytest.mark.asyncio
+async def test_google_completion_without_candidates_raises_provider_error(provider_class: type[GoogleProvider]) -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        mock_client.return_value.aio.models.generate_content = AsyncMock(return_value=types.GenerateContentResponse())
+        provider = provider_class(api_key="test-key")
 
-    assert response_dict["choices"] == []
+        with pytest.raises(ProviderError, match="returned no candidates"):
+            await provider.acompletion(model="test-model", messages=[{"role": "user", "content": "Hello"}])
 
 
 def test_google_provider_preserves_prompt_block_as_refusal() -> None:
