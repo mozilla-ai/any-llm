@@ -803,8 +803,13 @@ def _create_openai_chunk_from_google_chunk(
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
     mapped_finish_reason = _map_finish_reason(candidate.finish_reason) if candidate else None
     prompt_was_blocked = _prompt_was_blocked(response)
+    # Gemini can send the function call and the STOP finish reason in separate chunks, so a
+    # tool call emitted earlier in the stream must still turn the final "stop" into "tool_calls".
+    # Only the terminal chunk reports it: a client that runs tools on each "tool_calls" would
+    # otherwise run them twice.
+    has_tool_calls = mapped_finish_reason is not None and tool_call_counter[0] > 0
     finish_reason = (
-        "content_filter" if prompt_was_blocked else _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list))
+        "content_filter" if prompt_was_blocked else _resolve_finish_reason(mapped_finish_reason, has_tool_calls)
     )
 
     delta = ChoiceDelta(
