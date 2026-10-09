@@ -38,7 +38,7 @@ Token usage information for Messages API.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `iterations` | `list[BetaMessageIterationUsage \| BetaCompactionIterationUsage \| BetaAdvisorMessageIterationUsage \| BetaFallbackMessageIterationUsage] \| None` |  |
+| `iterations` | `list[Annotated[MessageIterationUsage \| BetaCompactionIterationUsage \| BetaAdvisorMessageIterationUsage \| BetaFallbackMessageIterationUsage, FieldInfo(annotation=NoneType, required=True, discriminator='type')]] \| None` |  |
 | `speed` | `Literal['standard', 'fast'] \| None` |  |
 
 ### `MessageStreamEvent`
