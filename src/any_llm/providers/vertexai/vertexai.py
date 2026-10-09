@@ -123,10 +123,17 @@ class VertexaiProvider(GoogleProvider):
     # Seconds, taken from the genai client's http_options so the OpenAI-SDK routes time out the same way.
     _http_timeout: float | None = None
     _http_options: types.HttpOptions | None = None
+    # Kept for the OpenAI-SDK clients of partner and Mistral models; genai gets it through http_options.
+    _max_retries: int | None = None
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return api_key
+
+    @override
+    def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
+        super()._apply_max_retries(max_retries, client_kwargs)
+        self._max_retries = max_retries
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -169,6 +176,7 @@ class VertexaiProvider(GoogleProvider):
                     self._http_options.base_url if self._http_options else None,
                 ),
                 token_provider=self._access_token,
+                max_retries=self._max_retries,
                 **_partner_client_kwargs(self._http_options),
             )
         return self._partner_provider
@@ -187,7 +195,10 @@ class VertexaiProvider(GoogleProvider):
         api_client = self.client._api_client
         if self._mistral_client is None:
             self._mistral_client = create_mistral_client(
-                project=str(api_client.project), location=str(api_client.location), timeout=self._http_timeout
+                project=str(api_client.project),
+                location=str(api_client.location),
+                timeout=self._http_timeout,
+                max_retries=self._max_retries,
             )
         # The genai client owns the credentials and refreshes the token when it expires.
         access_token = await self._access_token()

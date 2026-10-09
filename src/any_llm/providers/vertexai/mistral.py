@@ -46,9 +46,13 @@ def mistral_base_url(project: str, location: str) -> str:
     return f"https://{host}/v1/projects/{project}/locations/{location}/publishers/mistralai/models"
 
 
-def create_mistral_client(project: str, location: str, timeout: float | None = None) -> AsyncOpenAI:
+def create_mistral_client(
+    project: str, location: str, timeout: float | None = None, max_retries: int | None = None
+) -> AsyncOpenAI:
     """Create an OpenAI SDK client aimed at the `mistralai` publisher on Vertex."""
     client_kwargs: dict[str, Any] = {"timeout": timeout} if timeout is not None else {}
+    if max_retries is not None:
+        client_kwargs["max_retries"] = max_retries
     return AsyncOpenAI(api_key=_PLACEHOLDER_API_KEY, base_url=mistral_base_url(project, location), **client_kwargs)
 
 
