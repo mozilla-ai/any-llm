@@ -2100,7 +2100,7 @@ def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunk
     assert [tc.index for tc in second_chunk.choices[0].delta.tool_calls] == [1, 2]
 
 
-async def _async_iter_chunks(items: list[Mock]) -> AsyncIterator[Mock]:
+async def _async_iter_chunks(items: list[Any]) -> AsyncIterator[Any]:
     for item in items:
         yield item
 
@@ -3769,3 +3769,101 @@ def test_convert_messages_file_uri_without_a_usable_filename_falls_back_to_octet
     assert parts is not None
     assert parts[0].file_data is not None
     assert parts[0].file_data.mime_type == "application/octet-stream"
+
+
+def _make_function_call_response(finish_reason: types.FinishReason | None) -> types.GenerateContentResponse:
+    return _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(name="get_weather", args={"location": "Paris"}))],
+        finish_reason,
+    )
+
+
+@pytest.mark.parametrize(
+    ("final_parts", "gemini_finish_reason", "expected_finish_reason"),
+    [
+        (None, types.FinishReason.STOP, "tool_calls"),
+        ([types.Part(text="")], types.FinishReason.STOP, "tool_calls"),
+        (None, types.FinishReason.MAX_TOKENS, "length"),
+        (None, types.FinishReason.SAFETY, "content_filter"),
+        ([types.Part(text="")], None, None),
+    ],
+)
+def test_streaming_finish_reason_after_tool_call_in_earlier_chunk(
+    final_parts: list[types.Part] | None,
+    gemini_finish_reason: types.FinishReason | None,
+    expected_finish_reason: str | None,
+) -> None:
+    tool_call_counter: list[int] = [0]
+
+    tool_chunk = _create_openai_chunk_from_google_chunk(_make_function_call_response(None), tool_call_counter)
+    final_chunk = _create_openai_chunk_from_google_chunk(
+        _make_gemini_response(final_parts, gemini_finish_reason), tool_call_counter
+    )
+
+    assert tool_chunk.choices[0].delta.tool_calls is not None
+    assert final_chunk.choices[0].delta.tool_calls is None
+    assert final_chunk.choices[0].finish_reason == expected_finish_reason
+
+
+def test_streaming_finish_reason_tool_call_and_stop_in_same_chunk() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_make_function_call_response(types.FinishReason.STOP), [0])
+
+    assert chunk.choices[0].delta.tool_calls is not None
+    assert chunk.choices[0].finish_reason == "tool_calls"
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+    ],
+)
+def test_streaming_finish_reason_without_tool_calls_is_unchanged(
+    gemini_finish_reason: types.FinishReason, expected_finish_reason: str
+) -> None:
+    tool_call_counter: list[int] = [0]
+
+    _create_openai_chunk_from_google_chunk(_make_gemini_response([types.Part(text="Hello")], None), tool_call_counter)
+    final_chunk = _create_openai_chunk_from_google_chunk(
+        _make_gemini_response(None, gemini_finish_reason), tool_call_counter
+    )
+
+    assert final_chunk.choices[0].finish_reason == expected_finish_reason
+
+
+@pytest.mark.asyncio
+async def test_streaming_via_acompletion_reports_tool_calls_when_stop_arrives_later() -> None:
+    raw_chunks = [_make_function_call_response(None), _make_gemini_response(None, types.FinishReason.STOP)]
+
+    with mock_gemini_provider() as mock_genai:
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content_stream = AsyncMock(return_value=_async_iter_chunks(raw_chunks))
+
+        provider = GeminiProvider(api_key="test-api-key")
+        result = await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=[{"role": "user", "content": "Weather?"}], stream=True)
+        )
+
+        assert not isinstance(result, ChatCompletion)
+        finish_reasons = [chunk.choices[0].finish_reason async for chunk in result]
+
+    assert finish_reasons[-1] == "tool_calls"
+
+
+def test_streaming_via_sync_completion_reports_tool_calls_when_stop_arrives_later() -> None:
+    raw_chunks = [_make_function_call_response(None), _make_gemini_response(None, types.FinishReason.STOP)]
+
+    with mock_gemini_provider() as mock_genai:
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content_stream = AsyncMock(return_value=_async_iter_chunks(raw_chunks))
+
+        provider = GeminiProvider(api_key="test-api-key")
+        result = provider.completion(
+            model="gemini-pro", messages=[{"role": "user", "content": "Weather?"}], stream=True
+        )
+
+        assert not isinstance(result, ChatCompletion)
+        finish_reasons = [chunk.choices[0].finish_reason for chunk in result]
+
+    assert finish_reasons[-1] == "tool_calls"
