@@ -382,7 +382,7 @@ def test_vertexai_partner_client_built_from_async_client_args(genai_client: Magi
 def test_vertexai_partner_rejects_non_httpx_async_client_args(genai_client: MagicMock) -> None:
     provider = VertexaiProvider(http_options={"async_client_args": {"ssl": False}})
 
-    with pytest.raises(InvalidRequestError, match="httpx.AsyncClient arguments"):
+    with pytest.raises(InvalidRequestError, match=r"httpx\.AsyncClient arguments"):
         provider._get_partner_provider()
 
 
