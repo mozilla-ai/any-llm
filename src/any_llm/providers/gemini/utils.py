@@ -706,7 +706,13 @@ def _convert_response_to_response_dict(
             }
         )
     else:
-        logger.debug("generateContent response without candidates: %s", response.model_dump_json(exclude_none=True))
+        logger.debug(
+            "generateContent response without candidates: response_id=%s model_version=%s prompt_feedback=%s usage=%s",
+            response.response_id,
+            response.model_version,
+            response.prompt_feedback.model_dump_json(exclude_none=True) if response.prompt_feedback else None,
+            response.usage_metadata.model_dump_json(exclude_none=True) if response.usage_metadata else None,
+        )
         message = "generateContent returned no candidates and the prompt was not blocked"
         raise ProviderError(message, provider_name=provider_name)
 

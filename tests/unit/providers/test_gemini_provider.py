@@ -1554,6 +1554,8 @@ def test_convert_response_without_candidates_raises_provider_error(
         candidates=candidates,
         prompt_feedback=prompt_feedback,
         usage_metadata=types.GenerateContentResponseUsageMetadata(prompt_token_count=12),
+        response_id="resp-123",
+        model_version="gemini-test",
     )
 
     with (
@@ -1564,7 +1566,11 @@ def test_convert_response_without_candidates_raises_provider_error(
 
     assert exc_info.value.provider_name is None
     mock_logger.debug.assert_called_once()
-    assert '"prompt_token_count":12' in mock_logger.debug.call_args.args[1]
+    _, response_id, model_version, logged_feedback, logged_usage = mock_logger.debug.call_args.args
+    assert response_id == "resp-123"
+    assert model_version == "gemini-test"
+    assert logged_feedback == (prompt_feedback.model_dump_json(exclude_none=True) if prompt_feedback else None)
+    assert logged_usage == '{"prompt_token_count":12}'
 
 
 @pytest.mark.parametrize("provider_class", [GeminiProvider, VertexaiProvider])
