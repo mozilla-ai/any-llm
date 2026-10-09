@@ -441,7 +441,7 @@ class GoogleProvider(AnyLLM):
 
         response: types.GenerateContentResponse = await self.client.aio.models.generate_content(**converted_kwargs)
 
-        response_dict = _convert_response_to_response_dict(response)
+        response_dict = _convert_response_to_response_dict(response, provider_name=self.PROVIDER_NAME)
         return self._convert_completion_response((response_dict, params.model_id))
 
     @override

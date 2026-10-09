@@ -14,6 +14,7 @@ from any_llm.exceptions import (
     ContentFilterFinishReasonError,
     InvalidRequestError,
     LengthFinishReasonError,
+    ProviderError,
     UnsupportedParameterError,
 )
 from any_llm.providers.gemini import GeminiProvider
@@ -28,6 +29,7 @@ from any_llm.providers.gemini.utils import (
     _map_finish_reason,
     _pending_function_response_parts,
 )
+from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -1535,18 +1537,53 @@ def test_convert_response_maps_prompt_block_to_content_filter(block_reason: type
     assert choice["message"]["refusal"] == "Response blocked by Gemini content filtering."
 
 
-def test_convert_response_does_not_filter_unspecified_prompt_feedback() -> None:
-    response_dict = _convert_response_to_response_dict(
-        _make_gemini_prompt_block(types.BlockedReason.BLOCKED_REASON_UNSPECIFIED)
+@pytest.mark.parametrize("candidates", [None, []])
+@pytest.mark.parametrize(
+    "prompt_feedback",
+    [
+        None,
+        types.GenerateContentResponsePromptFeedback(),
+        types.GenerateContentResponsePromptFeedback(block_reason=types.BlockedReason.BLOCKED_REASON_UNSPECIFIED),
+    ],
+)
+def test_convert_response_without_candidates_raises_provider_error(
+    candidates: list[types.Candidate] | None,
+    prompt_feedback: types.GenerateContentResponsePromptFeedback | None,
+) -> None:
+    response = types.GenerateContentResponse(
+        candidates=candidates,
+        prompt_feedback=prompt_feedback,
+        usage_metadata=types.GenerateContentResponseUsageMetadata(prompt_token_count=12),
+        response_id="resp-123",
+        model_version="gemini-test",
     )
 
-    assert response_dict["choices"] == []
+    with (
+        patch("any_llm.providers.gemini.utils.logger") as mock_logger,
+        pytest.raises(ProviderError, match="returned no candidates") as exc_info,
+    ):
+        _convert_response_to_response_dict(response)
+
+    assert exc_info.value.provider_name is None
+    mock_logger.debug.assert_called_once()
+    _, response_id, model_version, logged_feedback, logged_usage = mock_logger.debug.call_args.args
+    assert response_id == "resp-123"
+    assert model_version == "gemini-test"
+    assert logged_feedback == (prompt_feedback.model_dump_json(exclude_none=True) if prompt_feedback else None)
+    assert logged_usage == '{"prompt_token_count":12}'
 
 
-def test_convert_response_without_candidate_or_prompt_feedback_has_no_choices() -> None:
-    response_dict = _convert_response_to_response_dict(types.GenerateContentResponse(candidates=None))
+@pytest.mark.parametrize("provider_class", [GeminiProvider, VertexaiProvider])
+@pytest.mark.asyncio
+async def test_google_completion_without_candidates_raises_provider_error(provider_class: type[GoogleProvider]) -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        mock_client.return_value.aio.models.generate_content = AsyncMock(return_value=types.GenerateContentResponse())
+        provider = provider_class(api_key="test-key")
 
-    assert response_dict["choices"] == []
+        with pytest.raises(ProviderError, match="returned no candidates") as exc_info:
+            await provider.acompletion(model="test-model", messages=[{"role": "user", "content": "Hello"}])
+
+    assert exc_info.value.provider_name == provider_class.PROVIDER_NAME
 
 
 def test_google_provider_preserves_prompt_block_as_refusal() -> None:
@@ -2100,7 +2137,7 @@ def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunk
     assert [tc.index for tc in second_chunk.choices[0].delta.tool_calls] == [1, 2]
 
 
-async def _async_iter_chunks(items: list[Mock]) -> AsyncIterator[Mock]:
+async def _async_iter_chunks(items: list[Any]) -> AsyncIterator[Any]:
     for item in items:
         yield item
 
@@ -3033,7 +3070,7 @@ def test_streaming_completion_with_tool_call_without_args() -> None:
     assert tool_call.function is not None
     assert tool_call.function.name == "no_args_function"
     assert tool_call.function.arguments == "{}"
-    assert chunk.choices[0].finish_reason == "tool_calls"
+    assert chunk.choices[0].finish_reason is None
 
 
 def test_streaming_completion_with_finish_reason_none() -> None:
@@ -3642,11 +3679,11 @@ def test_streaming_chunk_without_candidate_or_prompt_block_remains_nonterminal()
         (types.FinishReason.MAX_TOKENS, "length"),
         (types.FinishReason.SAFETY, "content_filter"),
         (types.FinishReason.STOP, "tool_calls"),
-        (None, "tool_calls"),
+        (None, None),
     ],
 )
 def test_streaming_chunk_truncation_and_filtering_override_tool_calls(
-    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str | None
 ) -> None:
     response = _make_gemini_response(
         [types.Part(function_call=types.FunctionCall(name="search_web", args={"query": "test"}))],
@@ -3769,3 +3806,102 @@ def test_convert_messages_file_uri_without_a_usable_filename_falls_back_to_octet
     assert parts is not None
     assert parts[0].file_data is not None
     assert parts[0].file_data.mime_type == "application/octet-stream"
+
+
+def _make_function_call_response(finish_reason: types.FinishReason | None) -> types.GenerateContentResponse:
+    return _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(name="get_weather", args={"location": "Paris"}))],
+        finish_reason,
+    )
+
+
+@pytest.mark.parametrize(
+    ("final_parts", "gemini_finish_reason", "expected_finish_reason"),
+    [
+        (None, types.FinishReason.STOP, "tool_calls"),
+        ([types.Part(text="")], types.FinishReason.STOP, "tool_calls"),
+        (None, types.FinishReason.MAX_TOKENS, "length"),
+        (None, types.FinishReason.SAFETY, "content_filter"),
+        ([types.Part(text="")], None, None),
+    ],
+)
+def test_streaming_finish_reason_after_tool_call_in_earlier_chunk(
+    final_parts: list[types.Part] | None,
+    gemini_finish_reason: types.FinishReason | None,
+    expected_finish_reason: str | None,
+) -> None:
+    tool_call_counter: list[int] = [0]
+
+    tool_chunk = _create_openai_chunk_from_google_chunk(_make_function_call_response(None), tool_call_counter)
+    final_chunk = _create_openai_chunk_from_google_chunk(
+        _make_gemini_response(final_parts, gemini_finish_reason), tool_call_counter
+    )
+
+    assert tool_chunk.choices[0].delta.tool_calls is not None
+    assert tool_chunk.choices[0].finish_reason is None
+    assert final_chunk.choices[0].delta.tool_calls is None
+    assert final_chunk.choices[0].finish_reason == expected_finish_reason
+
+
+def test_streaming_finish_reason_tool_call_and_stop_in_same_chunk() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_make_function_call_response(types.FinishReason.STOP), [0])
+
+    assert chunk.choices[0].delta.tool_calls is not None
+    assert chunk.choices[0].finish_reason == "tool_calls"
+
+
+@pytest.mark.parametrize(
+    ("gemini_finish_reason", "expected_finish_reason"),
+    [
+        (types.FinishReason.STOP, "stop"),
+        (types.FinishReason.MAX_TOKENS, "length"),
+    ],
+)
+def test_streaming_finish_reason_without_tool_calls_is_unchanged(
+    gemini_finish_reason: types.FinishReason, expected_finish_reason: str
+) -> None:
+    tool_call_counter: list[int] = [0]
+
+    _create_openai_chunk_from_google_chunk(_make_gemini_response([types.Part(text="Hello")], None), tool_call_counter)
+    final_chunk = _create_openai_chunk_from_google_chunk(
+        _make_gemini_response(None, gemini_finish_reason), tool_call_counter
+    )
+
+    assert final_chunk.choices[0].finish_reason == expected_finish_reason
+
+
+@pytest.mark.asyncio
+async def test_streaming_via_acompletion_reports_tool_calls_when_stop_arrives_later() -> None:
+    raw_chunks = [_make_function_call_response(None), _make_gemini_response(None, types.FinishReason.STOP)]
+
+    with mock_gemini_provider() as mock_genai:
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content_stream = AsyncMock(return_value=_async_iter_chunks(raw_chunks))
+
+        provider = GeminiProvider(api_key="test-api-key")
+        result = await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=[{"role": "user", "content": "Weather?"}], stream=True)
+        )
+
+        assert not isinstance(result, ChatCompletion)
+        finish_reasons = [chunk.choices[0].finish_reason async for chunk in result]
+
+    assert finish_reasons == [None, "tool_calls"]
+
+
+def test_streaming_via_sync_completion_reports_tool_calls_when_stop_arrives_later() -> None:
+    raw_chunks = [_make_function_call_response(None), _make_gemini_response(None, types.FinishReason.STOP)]
+
+    with mock_gemini_provider() as mock_genai:
+        mock_client = mock_genai.return_value
+        mock_client.aio.models.generate_content_stream = AsyncMock(return_value=_async_iter_chunks(raw_chunks))
+
+        provider = GeminiProvider(api_key="test-api-key")
+        result = provider.completion(
+            model="gemini-pro", messages=[{"role": "user", "content": "Weather?"}], stream=True
+        )
+
+        assert not isinstance(result, ChatCompletion)
+        finish_reasons = [chunk.choices[0].finish_reason for chunk in result]
+
+    assert finish_reasons == [None, "tool_calls"]

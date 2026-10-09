@@ -5,7 +5,7 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
 
 from openresponses_types import ResponseResource
 from pydantic import BaseModel
@@ -20,7 +20,7 @@ from any_llm.exceptions import (
     UnsupportedProviderError,
 )
 from any_llm.tools import _flatten_responses_tool, prepare_tools
-from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.audio import AudioInput, AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -1511,7 +1511,7 @@ class AnyLLM(FilesMixin, ABC):
         msg = "Subclasses must implement _aimage_generation method"
         raise NotImplementedError(msg)
 
-    def _transcription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+    def _transcription(self, model: str, file: AudioInput, **kwargs: Any) -> Transcription:
         """Transcribe audio synchronously.
 
         See [AnyLLM.atranscription][any_llm.any_llm.AnyLLM.atranscription]
@@ -1520,14 +1520,15 @@ class AnyLLM(FilesMixin, ABC):
         return run_async_in_sync(self.atranscription(model, file, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def atranscription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+    async def atranscription(self, model: str, file: AudioInput, **kwargs: Any) -> Transcription:
         """Transcribe audio asynchronously.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='whisper-1' for LLMProvider.OPENAI).
-            file: Audio file content as bytes or file-like object.
+            file: Audio to transcribe: bytes, a readable binary file object, or a path.
                 Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
-            **kwargs: Additional parameters (language, prompt, response_format, temperature, timestamp_granularities).
+            **kwargs: Additional parameters (filename, mime_type, language, prompt, response_format,
+                temperature, timestamp_granularities). See [atranscription][any_llm.api.atranscription].
 
         Returns:
             The transcription response from the provider.

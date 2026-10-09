@@ -10,7 +10,7 @@ from google.genai import types
 from google.genai.pagers import Pager
 from pydantic import ValidationError
 
-from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.completion import (
@@ -605,8 +605,15 @@ def _prompt_was_blocked(response: types.GenerateContentResponse) -> bool:
     )
 
 
-def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
-    """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict."""
+def _convert_response_to_response_dict(
+    response: types.GenerateContentResponse, provider_name: str | None = None
+) -> dict[str, Any]:
+    """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict.
+
+    Raises:
+        ProviderError: If no candidates were returned and the prompt was not blocked.
+
+    """
     response_dict = {
         "id": "google_genai_response",
         "model": "google/genai",
@@ -698,6 +705,16 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
                 "index": 0,
             }
         )
+    else:
+        logger.debug(
+            "generateContent response without candidates: response_id=%s model_version=%s prompt_feedback=%s usage=%s",
+            response.response_id,
+            response.model_version,
+            response.prompt_feedback.model_dump_json(exclude_none=True) if response.prompt_feedback else None,
+            response.usage_metadata.model_dump_json(exclude_none=True) if response.usage_metadata else None,
+        )
+        message = "generateContent returned no candidates and the prompt was not blocked"
+        raise ProviderError(message, provider_name=provider_name)
 
     response_dict["choices"] = choices
 
@@ -803,8 +820,13 @@ def _create_openai_chunk_from_google_chunk(
     # Unmapped reasons stay None so non-final chunks are not forced to a terminal reason.
     mapped_finish_reason = _map_finish_reason(candidate.finish_reason) if candidate else None
     prompt_was_blocked = _prompt_was_blocked(response)
+    # Gemini can send the function call and the STOP finish reason in separate chunks, so a
+    # tool call emitted earlier in the stream must still turn the final "stop" into "tool_calls".
+    # Only the terminal chunk reports it: a client that runs tools on each "tool_calls" would
+    # otherwise run them twice.
+    has_tool_calls = mapped_finish_reason is not None and tool_call_counter[0] > 0
     finish_reason = (
-        "content_filter" if prompt_was_blocked else _resolve_finish_reason(mapped_finish_reason, bool(tool_calls_list))
+        "content_filter" if prompt_was_blocked else _resolve_finish_reason(mapped_finish_reason, has_tool_calls)
     )
 
     delta = ChoiceDelta(

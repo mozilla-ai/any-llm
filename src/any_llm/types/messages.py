@@ -15,11 +15,14 @@ from anthropic.types import ThinkingBlock as AnthropicThinkingBlock
 from anthropic.types import ToolUseBlock as AnthropicToolUseBlock
 from anthropic.types import Usage as AnthropicUsage
 from anthropic.types.beta import (
+    BetaAdvisorMessageIterationUsage,
     BetaCompactionBlock,
     BetaCompactionContentBlockDelta,
+    BetaCompactionIterationUsage,
     BetaContainer,
     BetaContentBlock,
-    BetaIterationsUsage,
+    BetaFallbackMessageIterationUsage,
+    BetaMessageIterationUsage,
     BetaStopReason,
     BetaThinkingBlock,
 )
@@ -53,10 +56,12 @@ __all__ = [
     "ContentBlockStartEvent",
     "ContentBlockStopEvent",
     "InputJSONDelta",
+    "IterationsUsage",
     "MessageContentBlock",
     "MessageDelta",
     "MessageDeltaEvent",
     "MessageDeltaUsage",
+    "MessageIterationUsage",
     "MessageResponse",
     "MessageStartEvent",
     "MessageStopEvent",
@@ -78,8 +83,32 @@ __all__ = [
 StopReason = BetaStopReason
 
 
+class MessageIterationUsage(BetaMessageIterationUsage):
+    """Usage of one sampling iteration of the requested model.
+
+    The Anthropic SDK requires ``model`` here, but a Messages stream can arrive
+    without it (Otari relays code-execution turns that way), and strict
+    validation would then reject the whole event. The SDK itself builds its
+    objects without validating, so its own instances can lack it too.
+    """
+
+    model: str | None = None  # type: ignore[assignment]
+
+
+IterationsUsage = list[
+    Annotated[
+        MessageIterationUsage
+        | BetaCompactionIterationUsage
+        | BetaAdvisorMessageIterationUsage
+        | BetaFallbackMessageIterationUsage,
+        Field(discriminator="type"),
+    ]
+]
+"""Anthropic's ``BetaIterationsUsage``, with ``model`` optional on ``message`` iterations."""
+
+
 class MessageUsage(AnthropicUsage):
-    iterations: BetaIterationsUsage | None = None
+    iterations: IterationsUsage | None = None
     speed: Literal["standard", "fast"] | None = None
 
 
@@ -159,7 +188,7 @@ class MessageDelta(AnthropicMessageDelta):
 
 
 class MessageDeltaUsage(AnthropicMessageDeltaUsage):
-    iterations: BetaIterationsUsage | None = None
+    iterations: IterationsUsage | None = None
 
 
 class MessageStartEvent(AnthropicMessageStartEvent):
