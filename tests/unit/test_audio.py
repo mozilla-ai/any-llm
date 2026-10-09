@@ -690,3 +690,9 @@ def test_resolve_file_unknown_mime_type_still_takes_the_extension_from_the_bytes
         model_id="whisper-1", file=WEBM_HEADER, mime_type="audio/x-custom"
     ).resolve_file()
     assert resolved == ResolvedAudioFile(filename="audio.webm", content=WEBM_HEADER, content_type="audio/x-custom")
+
+
+def test_resolve_file_path_with_embedded_nul_raises_invalid_request() -> None:
+    # pathlib raises ValueError, not OSError, for an embedded NUL byte.
+    with pytest.raises(InvalidRequestError, match="Cannot read audio path"):
+        AudioTranscriptionParams(model_id="whisper-1", file="clip\x00.m4a").resolve_file()

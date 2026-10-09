@@ -172,9 +172,10 @@ class AudioTranscriptionParams(BaseModel):
             path = Path(self.file)
             try:
                 return path.read_bytes(), self.filename or path.name
-            except OSError as exc:
-                # Without this, exception conversion classifies FileNotFoundError by its type name as ModelNotFoundError.
-                msg = f"Cannot read audio path {str(path)!r}: {exc.strerror or exc}"
+            except (OSError, ValueError) as exc:
+                # Without this, exception conversion classifies FileNotFoundError by its type name as
+                # ModelNotFoundError. ValueError is what an embedded NUL byte in the path raises.
+                msg = f"Cannot read audio path {str(path)!r}: {getattr(exc, 'strerror', None) or exc}"
                 raise InvalidRequestError(msg, original_exception=exc) from exc
         content = self.file.read()
         if not isinstance(content, bytes):
