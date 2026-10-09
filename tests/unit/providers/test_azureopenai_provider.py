@@ -366,7 +366,7 @@ async def test_azureopenai_sends_responses_to_v1() -> None:
     assert response.id == "resp-test"
     assert [request.url.path for request in requests] == ["/openai/v1/responses"]
     assert [request.headers["Authorization"] for request in requests] == ["Bearer api-key"]
-    assert requests[0].read() == b'{"input":"Hello","model":"deployment-name"}'
+    assert json.loads(requests[0].read()) == {"input": "Hello", "model": "deployment-name"}
 
 
 @pytest.mark.asyncio

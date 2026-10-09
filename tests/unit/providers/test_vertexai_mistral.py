@@ -290,7 +290,7 @@ async def test_mistral_client_is_created_once_with_vertex_project_and_location(p
 def test_mistral_client_inherits_provider_timeout() -> None:
     with patch("any_llm.providers.vertexai.vertexai.genai.Client"):
         provider = VertexaiProvider(timeout=30.0)
-    assert provider._mistral_timeout == 30.0
+    assert provider._http_timeout == 30.0
 
 
 @pytest.mark.asyncio
