@@ -56,6 +56,8 @@ class VoyageProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = True
+    # The Voyage SDK's max_retries is tenacity's stop_after_attempt, which counts the first request.
+    MAX_RETRIES_SUPPORT = "mapped"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -141,6 +143,10 @@ class VoyageProvider(AnyLLM):
     def _convert_rerank_response(response: Any) -> RerankResponse:
         """Convert a Voyage rerank response to a normalized RerankResponse."""
         return _convert_voyage_rerank_response(response)
+
+    @override
+    def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
+        client_kwargs["max_retries"] = max_retries + 1
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:

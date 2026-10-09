@@ -108,6 +108,7 @@ class BaseOpenAIProvider(AnyLLM):
 
     # The OpenAI SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
+    MAX_RETRIES_SUPPORT: Literal["unsupported", "native", "mapped"] = "native"
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
 

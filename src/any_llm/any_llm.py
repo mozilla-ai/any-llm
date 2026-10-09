@@ -154,6 +154,15 @@ class AnyLLM(FilesMixin, ABC):
     mis-send or drop the value.
     """
 
+    MAX_RETRIES_SUPPORT: Literal["unsupported", "native", "mapped"] = "unsupported"
+    """How the provider honors the ``max_retries`` client option.
+
+    ``native`` providers pass ``max_retries`` unchanged to an SDK client that accepts it.
+    ``mapped`` providers translate it to the SDK's own retry setting in ``_apply_max_retries``.
+    ``unsupported`` providers have no client-level retry count, so a caller-supplied value is
+    rejected rather than silently dropped.
+    """
+
     API_BASE: str | None = None
     """This is used to set the API base for the provider.
     It is not required but may prove useful for providers that have overridable api bases.
@@ -184,15 +193,38 @@ class AnyLLM(FilesMixin, ABC):
         api_base: str | None = None,
         *,
         unified_exceptions: bool | None = None,
+        max_retries: int | None = None,
         **kwargs: Any,
     ) -> None:
         self._unified_exceptions = unified_exceptions
         self._verify_no_missing_packages()
+        if max_retries is not None:
+            self._apply_max_retries(self._validate_max_retries(max_retries), kwargs)
         self._init_client(
             api_key=self._verify_and_set_api_key(api_key),
             api_base=self._resolve_api_base(api_base),
             **kwargs,
         )
+
+    @staticmethod
+    def _validate_max_retries(max_retries: int) -> int:
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
+            msg = "max_retries must be a non-negative integer"
+            raise ValueError(msg)
+        return max_retries
+
+    def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
+        """Translate ``max_retries`` into this provider's client constructor arguments.
+
+        ``mapped`` providers override this method. Settings that ``client_kwargs`` already
+        carries in the SDK's own retry format take precedence over ``max_retries``.
+        """
+        if self.MAX_RETRIES_SUPPORT == "native":
+            client_kwargs["max_retries"] = max_retries
+            return
+        parameter_name = "max_retries"
+        additional_message = "Configure retries with the SDK's own client options in client_args instead."
+        raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
@@ -231,6 +263,7 @@ class AnyLLM(FilesMixin, ABC):
         api_base: str | None = None,
         *,
         unified_exceptions: bool | None = None,
+        max_retries: int | None = None,
         **kwargs: Any,
     ) -> AnyLLM:
         """Create a provider instance using the given provider name and config.
@@ -241,6 +274,9 @@ class AnyLLM(FilesMixin, ABC):
             api_base: Base URL for the provider API
             unified_exceptions: Convert provider exceptions for this instance when True,
                 or preserve them when False. None (default) uses ANY_LLM_UNIFIED_EXCEPTIONS.
+            max_retries: How many times the provider's SDK client retries a failed request
+                (0 disables retries). None (default) keeps the SDK's own default. Raises
+                UnsupportedParameterError for providers whose SDK has no retry count to set.
             **kwargs: Additional provider-specific arguments
 
         Returns:
@@ -248,7 +284,12 @@ class AnyLLM(FilesMixin, ABC):
 
         """
         return cls._create_provider(
-            provider, api_key=api_key, api_base=api_base, unified_exceptions=unified_exceptions, **kwargs
+            provider,
+            api_key=api_key,
+            api_base=api_base,
+            unified_exceptions=unified_exceptions,
+            max_retries=max_retries,
+            **kwargs,
         )
 
     @classmethod
