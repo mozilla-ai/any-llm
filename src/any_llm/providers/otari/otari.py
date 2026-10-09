@@ -234,6 +234,8 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_RERANK = True
     SUPPORTS_MESSAGES_NATIVE = True
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING = True
+    # AsyncOtariClient replaces the inherited OpenAI client and takes no retry count.
+    MAX_RETRIES_SUPPORT = "unsupported"
 
     otari_client: Any
 

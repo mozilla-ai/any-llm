@@ -276,6 +276,43 @@ any-llm automatically converts your Python functions to OpenAI tools format. Fun
 - Type annotations for all parameters
 - A return type annotation
 
+## Retries
+
+Provider SDKs differ in how often they retry a failed request on their own: the OpenAI and
+Anthropic SDKs retry twice by default (honouring `Retry-After`), while the Google GenAI SDK
+used by `gemini` and `vertexai` does not retry unless configured to. Set `max_retries` to give
+every provider the same retry count, for example `0` when your own code or gateway already
+handles retries and failover:
+
+```python
+from any_llm import AnyLLM, completion
+
+llm = AnyLLM.create("gemini", max_retries=0)
+
+response = completion(
+    model="gpt-4o-mini",
+    provider="openai",
+    messages=[{"role": "user", "content": "Hello!"}],
+    client_args={"max_retries": 0},
+)
+```
+
+`max_retries` counts retries after the first request, so `0` means one request in total.
+Omitting it, or passing `None`, keeps each SDK's own default. Each provider maps the value to
+its SDK's native setting:
+
+| Providers | SDK setting |
+|-----------|-------------|
+| OpenAI-compatible providers (`openai`, `azureopenai`, `deepseek`, `openrouter`, `meta`, registry gateways, `AnyLLM.create_openai_compatible()`, ...), `anthropic`, `azureanthropic`, `vertexaianthropic`, `groq`, `cerebras`, `together`, `cohere`, `voyage` | `max_retries` on the SDK client |
+| `gemini`, `vertexai` | `http_options.retry_options.attempts`, set to `max_retries + 1` |
+
+The other providers (`azure`, `bedrock`, `huggingface`, `lmstudio`, `mistral`, `ollama`,
+`otari`, `sagemaker`, `watsonx`, `xai`) raise `UnsupportedParameterError` for `max_retries`,
+because their SDK has no single retry count to set. Configure retries for them through the
+SDK's own options in `client_args`, for example `retry_config` for Mistral or a botocore
+`Config` for Bedrock. For `gemini` and `vertexai`, `retry_options` that you pass in
+`http_options` take precedence over `max_retries`.
+
 ## Exception Handling
 
 The `any-llm` package provides a unified exception hierarchy that works consistently across all LLM providers.
