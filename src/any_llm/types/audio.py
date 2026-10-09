@@ -87,6 +87,7 @@ def sniff_audio_format(content: bytes) -> tuple[str, str] | None:
 
 
 def _validate_audio_input(value: Any) -> Any:
+    """Accept bytes, a path, or any object with a ``read`` method as transcription input."""
     # typing.BinaryIO is not usable with isinstance (io.BytesIO and open() handles both fail it),
     # so accept anything readable instead of the annotation's exact types.
     if isinstance(value, (bytes, str, PathLike)) or callable(getattr(value, "read", None)):
@@ -166,6 +167,7 @@ class AudioTranscriptionParams(BaseModel):
         return ResolvedAudioFile(filename=name, content=content, content_type=content_type)
 
     def _read_file(self) -> tuple[bytes, str | None]:
+        """Return the audio bytes and the file name they came with, if any."""
         if isinstance(self.file, bytes):
             return self.file, self.filename
         if isinstance(self.file, (str, PathLike)):
