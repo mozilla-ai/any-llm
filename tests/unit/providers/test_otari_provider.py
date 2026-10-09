@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 from types import SimpleNamespace
@@ -42,6 +43,8 @@ from any_llm.providers.otari.otari import (
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
+    MessageDeltaEvent,
+    MessageIterationUsage,
     MessageResponse,
     MessagesParams,
     MessageStartEvent,
@@ -464,8 +467,50 @@ async def test_otari_transcription_json_format_returns_text() -> None:
 
     result = await provider._atranscription(params)
 
-    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio", language="en")
+    mocked_client.transcription.assert_awaited_once_with(
+        model="whisper", file=b"audio", filename="audio", language="en"
+    )
     assert result.text == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_otari_transcription_forwards_the_file_object_name() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hello world"}, text=None)
+    provider = _build_provider(mocked_client)
+    stream = io.BytesIO(b"audio")
+    stream.name = "audio_message.m4a"
+    params = AudioTranscriptionParams(model_id="whisper", file=stream)
+
+    await provider._atranscription(params)
+
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio", filename="audio_message.m4a")
+
+
+@pytest.mark.asyncio
+async def test_otari_transcription_forwards_an_explicit_filename_for_bytes() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hello world"}, text=None)
+    provider = _build_provider(mocked_client)
+    params = AudioTranscriptionParams(model_id="whisper", file=b"audio", filename="clip.webm", mime_type="audio/webm")
+
+    await provider._atranscription(params)
+
+    # The otari SDK derives the content type from the filename, so only the name travels.
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio", filename="clip.webm")
+
+
+@pytest.mark.asyncio
+async def test_otari_transcription_names_unnamed_bytes_from_their_container() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hello world"}, text=None)
+    provider = _build_provider(mocked_client)
+    webm = b"\x1a\x45\xdf\xa3" + b"\x00" * 12
+    params = AudioTranscriptionParams(model_id="whisper", file=webm)
+
+    await provider._atranscription(params)
+
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=webm, filename="audio.webm")
 
 
 @pytest.mark.asyncio
@@ -482,18 +527,15 @@ async def test_otari_transcription_text_format_returns_text() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_transcription_reads_file_handle() -> None:
-    import io
-
     mocked_client = _mock_otari_client()
     mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hi"}, text=None)
     provider = _build_provider(mocked_client)
-    # IO handles do not pass AudioTranscriptionParams validation, so build the params
-    # without validation to exercise the file-handle (.read()) branch directly.
-    params = AudioTranscriptionParams.model_construct(model_id="whisper", file=io.BytesIO(b"audio-bytes"))
+    params = AudioTranscriptionParams(model_id="whisper", file=io.BytesIO(b"audio-bytes"))
 
     await provider._atranscription(params)
 
-    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio-bytes")
+    # No name on the handle and no recognizable container in the bytes: the SDK's default name.
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio-bytes", filename="audio")
 
 
 @pytest.mark.asyncio
@@ -1391,3 +1433,32 @@ def test_message_stream_event_from_dict_returns_none_for_unknown_type() -> None:
     assert _message_stream_event_from_dict({"type": "ping"}) is None
     assert _message_stream_event_from_dict({"no_type": True}) is None
     assert isinstance(_message_stream_event_from_dict({"type": "message_stop"}), MessageStopEvent)
+
+
+def test_message_stream_event_from_dict_accepts_message_iteration_usage_without_model() -> None:
+    """A code-execution turn's message_delta reports iterations whose ``message`` entry has no ``model``."""
+    event = _message_stream_event_from_dict(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {
+                "input_tokens": 90,
+                "output_tokens": 12,
+                "iterations": [
+                    {
+                        "type": "message",
+                        "input_tokens": 90,
+                        "output_tokens": 12,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert isinstance(event, MessageDeltaEvent)
+    assert event.usage.iterations is not None
+    assert isinstance(event.usage.iterations[0], MessageIterationUsage)
+    assert event.usage.iterations[0].model is None

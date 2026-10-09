@@ -251,6 +251,52 @@ def test_vertexai_partner_provider_uses_global_host(genai_client: MagicMock) -> 
     )
 
 
+def test_vertexai_partner_api_base_uses_configured_base_url() -> None:
+    assert (
+        _partner_api_base("my-project", "us-south1", "https://vertex.internal.example/")
+        == "https://vertex.internal.example/v1/projects/my-project/locations/us-south1/endpoints/openapi"
+    )
+
+
+@pytest.mark.parametrize(
+    "http_options",
+    [
+        types.HttpOptions(base_url="https://vertex.internal.example"),
+        {"base_url": "https://vertex.internal.example"},
+    ],
+)
+def test_vertexai_partner_provider_uses_configured_base_url(
+    genai_client: MagicMock, http_options: types.HttpOptions | dict[str, Any]
+) -> None:
+    provider = VertexaiProvider(http_options=http_options)
+
+    assert str(provider._get_partner_provider().client.base_url) == (
+        "https://vertex.internal.example/v1/projects/my-project/locations/us-south1/endpoints/openapi/"
+    )
+
+
+@pytest.mark.parametrize(
+    ("client_args", "expected_timeout"),
+    [
+        ({"timeout": 30.0}, 30.0),
+        ({"http_options": types.HttpOptions(timeout=10_000)}, 10.0),
+        ({"timeout": 30.0, "http_options": {"timeout": 10_000}}, 10.0),
+    ],
+)
+def test_vertexai_partner_provider_uses_configured_timeout(
+    genai_client: MagicMock, client_args: dict[str, Any], expected_timeout: float
+) -> None:
+    provider = VertexaiProvider(**client_args)
+
+    assert provider._get_partner_provider().client.timeout == expected_timeout
+
+
+def test_vertexai_partner_provider_without_timeout_keeps_sdk_default(genai_client: MagicMock) -> None:
+    provider = VertexaiProvider()
+
+    assert provider._get_partner_provider().client.timeout == AsyncOpenAI(api_key="x").timeout
+
+
 @pytest.mark.asyncio
 async def test_vertexai_partner_non_streaming_completion(genai_client: MagicMock) -> None:
     requests: list[httpx.Request] = []
@@ -285,7 +331,8 @@ async def test_vertexai_partner_non_streaming_completion(genai_client: MagicMock
     body = json.loads(request.content)
     assert body["model"] == QWEN_MODEL
     assert body["tools"] == [WEATHER_TOOL]
-    assert body["max_completion_tokens"] == 64
+    assert body["max_tokens"] == 64
+    assert "max_completion_tokens" not in body
     assert "stream" not in body
 
 

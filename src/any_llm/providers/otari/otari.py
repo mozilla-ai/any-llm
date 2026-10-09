@@ -501,10 +501,11 @@ class OtariProvider(BaseOpenAIProvider):
 
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
-        file_bytes = params.file if isinstance(params.file, bytes) else params.file.read()
+        upload = params.resolve_file()
         result = await self.otari_client.transcription(
             model=params.model_id,
-            file=file_bytes,
+            file=upload.content,
+            filename=upload.filename,
             **api_kwargs,
         )
         # otari wraps the response: ``json`` for JSON formats, ``text`` for text/srt/vtt.
