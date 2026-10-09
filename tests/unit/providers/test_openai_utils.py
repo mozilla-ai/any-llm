@@ -168,6 +168,45 @@ def test_convert_chunk_response_with_nonstandard_service_tier() -> None:
     assert result.service_tier == "standard"
 
 
+def _vertex_partner_chunk(usage: dict[str, object]) -> OpenAIChatCompletionChunk:
+    return OpenAIChatCompletionChunk.model_construct(
+        id="test-id",
+        choices=[{"index": 0, "delta": {"role": "assistant", "content": "OK"}, "finish_reason": None}],
+        created=1234567890,
+        model="qwen/qwen3-235b-a22b-instruct-2507-maas",
+        object="chat.completion.chunk",
+        usage=usage,
+    )
+
+
+def test_convert_chunk_response_drops_usage_without_token_counts() -> None:
+    """Vertex AI's OpenAI-compatible stream sends usage with only extra_properties on every chunk."""
+    chunk = _vertex_partner_chunk({"extra_properties": {"google": {"traffic_type": "ON_DEMAND"}}})
+
+    result = BaseOpenAIProvider._convert_completion_chunk_response(chunk)
+
+    assert result.usage is None
+    assert result.choices[0].delta.content == "OK"
+
+
+def test_convert_chunk_response_keeps_usage_with_token_counts() -> None:
+    """The last chunk's counts survive, next to the provider's extra_properties."""
+    chunk = _vertex_partner_chunk(
+        {
+            "prompt_tokens": 11,
+            "completion_tokens": 2,
+            "total_tokens": 13,
+            "prompt_tokens_details": {"cached_tokens": 3},
+            "extra_properties": {"google": {"traffic_type": "ON_DEMAND"}},
+        }
+    )
+
+    result = BaseOpenAIProvider._convert_completion_chunk_response(chunk)
+
+    assert result.usage is not None
+    assert (result.usage.prompt_tokens, result.usage.completion_tokens, result.usage.total_tokens) == (11, 2, 13)
+
+
 @pytest.mark.parametrize(
     "audio_piece",
     [
