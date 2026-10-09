@@ -140,9 +140,10 @@ class AudioTranscriptionParams(BaseModel):
 
         The name comes from ``filename``, else the path or the file object's ``name``, else the
         audio container recognized from the bytes. The content type comes from ``mime_type``,
-        else the name's extension, else the recognized container. A name without an extension
-        gets one from the content type when there is one, so a provider that only looks at the
-        extension still recognizes the format.
+        else the name's extension, else the recognized container. OpenAI decides the format by
+        the extension alone (``voice.bin`` with type audio/webm is refused, ``voice.bin.webm`` is
+        not), so a name without a known audio extension gets the one for the content type or the
+        recognized container appended.
         """
         content, name = self._read_file()
         sniffed = sniff_audio_format(content)
@@ -154,7 +155,7 @@ class AudioTranscriptionParams(BaseModel):
             content_type = _AUDIO_MIME_TYPES.get(extension)
         if content_type is None and sniffed is not None:
             content_type = sniffed[1]
-        if not extension:
+        if extension not in _AUDIO_MIME_TYPES:
             new_extension = None
             if content_type is not None:
                 new_extension = _AUDIO_EXTENSIONS.get(content_type.split(";")[0].strip().lower())

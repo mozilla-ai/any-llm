@@ -21,6 +21,7 @@ from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.providers.sambanova.sambanova import SambanovaProvider
+from any_llm.types.audio import Transcription
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 from any_llm.types.responses import ParsedResponse, Response
@@ -903,3 +904,25 @@ async def test_transcription_missing_path_raises_before_any_request(tmp_path: pa
         await provider.client.close()
 
     assert requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["text", "srt", "vtt"])
+async def test_transcription_wraps_text_formats_in_a_transcription(response_format: str) -> None:
+    """The SDK hands back the raw body for text formats; callers always get a Transcription."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return httpx.Response(200, headers={"content-type": "text/plain; charset=utf-8"}, text="hello there\n")
+
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    try:
+        result = await provider.atranscription("whisper-1", b"ID3" + b"\x00" * 29, response_format=response_format)
+    finally:
+        await provider.client.close()
+
+    assert isinstance(result, Transcription)
+    assert result.text == "hello there\n"
+    assert f'name="response_format"\r\n\r\n{response_format}\r\n'.encode() in requests[0].content

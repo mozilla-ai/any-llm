@@ -615,9 +615,23 @@ def test_resolve_file_unknown_mime_type_leaves_the_name_bare() -> None:
     assert resolved == ResolvedAudioFile(filename="audio", content=b"opaque", content_type="audio/x-custom")
 
 
-def test_resolve_file_unknown_extension_takes_content_type_from_the_bytes() -> None:
+def test_resolve_file_unknown_extension_gets_the_one_from_the_bytes_appended() -> None:
+    # OpenAI decides the format by the extension, so "clip.bin" would be refused even typed audio/ogg.
     resolved = AudioTranscriptionParams(model_id="whisper-1", file=OGG_HEADER, filename="clip.bin").resolve_file()
-    assert resolved == ResolvedAudioFile(filename="clip.bin", content=OGG_HEADER, content_type="audio/ogg")
+    assert resolved == ResolvedAudioFile(filename="clip.bin.ogg", content=OGG_HEADER, content_type="audio/ogg")
+
+
+def test_resolve_file_unknown_extension_gets_the_one_from_the_mime_type_appended() -> None:
+    resolved = AudioTranscriptionParams(
+        model_id="whisper-1", file=b"opaque", filename="clip.bin", mime_type="audio/webm"
+    ).resolve_file()
+    assert resolved == ResolvedAudioFile(filename="clip.bin.webm", content=b"opaque", content_type="audio/webm")
+
+
+def test_resolve_file_known_extension_is_kept_even_when_the_bytes_say_otherwise() -> None:
+    # The caller's name is authoritative once it carries a supported audio extension.
+    resolved = AudioTranscriptionParams(model_id="whisper-1", file=WEBM_HEADER, filename="clip.mp3").resolve_file()
+    assert resolved == ResolvedAudioFile(filename="clip.mp3", content=WEBM_HEADER, content_type="audio/mpeg")
 
 
 def test_resolve_file_unknown_extension_without_recognizable_bytes_has_no_content_type() -> None:
