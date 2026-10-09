@@ -4,19 +4,32 @@ import io
 import json
 import tempfile
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from anthropic import transform_schema
 from pydantic import BaseModel
 
-from any_llm.exceptions import BatchNotCompleteError
+from any_llm.exceptions import (
+    AnyLLMError,
+    AuthenticationError,
+    BatchNotCompleteError,
+    GatewayTimeoutError,
+    InsufficientFundsError,
+    InvalidRequestError,
+    ModelNotFoundError,
+    ProviderError,
+    RateLimitError,
+)
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
 from any_llm.types.batch import BatchResult
 from any_llm.types.completion import ChatCompletion, CompletionParams
 from any_llm.types.image import ImageGenerationParams
 from any_llm.types.model import Model
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 pytest.importorskip("otari")
 
@@ -1321,6 +1334,97 @@ async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown()
     assert isinstance(collected[-1], MessageStopEvent)
     assert len(collected) == len(raw_events) - 1
     assert client.message.call_args.kwargs["stream"] is True
+
+
+async def _open_otari_message_stream(
+    raw_events: list[dict[str, Any]], request_id: str | None = None
+) -> AsyncIterator[Any]:
+    client = _mock_otari_client()
+    client.with_response_metadata.message.return_value = _MockMetadataStream(raw_events, request_id=request_id)
+    provider = _build_provider(client)
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await provider._amessages(params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    return result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_type", "expected_class"),
+    [
+        ("invalid_request_error", InvalidRequestError),
+        ("request_too_large", InvalidRequestError),
+        ("authentication_error", AuthenticationError),
+        ("permission_error", AuthenticationError),
+        ("billing_error", InsufficientFundsError),
+        ("not_found_error", ModelNotFoundError),
+        ("rate_limit_error", RateLimitError),
+        ("timeout_error", GatewayTimeoutError),
+        ("api_error", ProviderError),
+        ("overloaded_error", ProviderError),
+        ("some_future_error", ProviderError),
+    ],
+)
+async def test_otari_amessages_streaming_error_event_raises_mapped_exception(
+    error_type: str, expected_class: type[AnyLLMError]
+) -> None:
+    raw_events: list[dict[str, Any]] = [
+        {"type": "error", "error": {"type": error_type, "message": "Upstream went away"}},
+    ]
+    stream = await _open_otari_message_stream(raw_events, request_id="req-err-1")
+
+    with pytest.raises(expected_class) as exc_info:
+        _ = [event async for event in stream]
+
+    assert type(exc_info.value) is expected_class
+    assert exc_info.value.provider_name == "otari"
+    assert exc_info.value.error_type == error_type
+    assert "Upstream went away" in exc_info.value.message
+    assert error_type in exc_info.value.message
+    assert "req-err-1" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_error_event_after_content_raises() -> None:
+    raw_events: list[dict[str, Any]] = [
+        {"type": "message_start", "message": _message_response_payload()},
+        {"type": "ping"},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}},
+        {"type": "message_stop"},
+    ]
+    stream = await _open_otari_message_stream(raw_events)
+
+    collected = [await anext(stream) for _ in range(3)]
+    with pytest.raises(ProviderError, match="Overloaded") as exc_info:
+        await anext(stream)
+
+    # The ping is skipped and the content before the error is still delivered.
+    assert [type(event) for event in collected] == [
+        MessageStartEvent,
+        ContentBlockStartEvent,
+        ContentBlockDeltaEvent,
+    ]
+    assert exc_info.value.error_type == "overloaded_error"
+    assert "request_id" not in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_malformed_error_event_raises_provider_error() -> None:
+    stream = await _open_otari_message_stream([{"type": "error", "error": "boom"}])
+
+    with pytest.raises(ProviderError) as exc_info:
+        _ = [event async for event in stream]
+
+    assert type(exc_info.value) is ProviderError
+    assert exc_info.value.error_type is None
+    assert "error type: unknown" in exc_info.value.message
 
 
 def test_message_stream_event_from_dict_returns_none_for_unknown_type() -> None:
