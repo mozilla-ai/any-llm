@@ -3033,7 +3033,7 @@ def test_streaming_completion_with_tool_call_without_args() -> None:
     assert tool_call.function is not None
     assert tool_call.function.name == "no_args_function"
     assert tool_call.function.arguments == "{}"
-    assert chunk.choices[0].finish_reason == "tool_calls"
+    assert chunk.choices[0].finish_reason is None
 
 
 def test_streaming_completion_with_finish_reason_none() -> None:
@@ -3642,11 +3642,11 @@ def test_streaming_chunk_without_candidate_or_prompt_block_remains_nonterminal()
         (types.FinishReason.MAX_TOKENS, "length"),
         (types.FinishReason.SAFETY, "content_filter"),
         (types.FinishReason.STOP, "tool_calls"),
-        (None, "tool_calls"),
+        (None, None),
     ],
 )
 def test_streaming_chunk_truncation_and_filtering_override_tool_calls(
-    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str
+    gemini_finish_reason: types.FinishReason | None, expected_finish_reason: str | None
 ) -> None:
     response = _make_gemini_response(
         [types.Part(function_call=types.FunctionCall(name="search_web", args={"query": "test"}))],
@@ -3801,6 +3801,7 @@ def test_streaming_finish_reason_after_tool_call_in_earlier_chunk(
     )
 
     assert tool_chunk.choices[0].delta.tool_calls is not None
+    assert tool_chunk.choices[0].finish_reason is None
     assert final_chunk.choices[0].delta.tool_calls is None
     assert final_chunk.choices[0].finish_reason == expected_finish_reason
 
@@ -3848,7 +3849,7 @@ async def test_streaming_via_acompletion_reports_tool_calls_when_stop_arrives_la
         assert not isinstance(result, ChatCompletion)
         finish_reasons = [chunk.choices[0].finish_reason async for chunk in result]
 
-    assert finish_reasons[-1] == "tool_calls"
+    assert finish_reasons == [None, "tool_calls"]
 
 
 def test_streaming_via_sync_completion_reports_tool_calls_when_stop_arrives_later() -> None:
@@ -3866,4 +3867,4 @@ def test_streaming_via_sync_completion_reports_tool_calls_when_stop_arrives_late
         assert not isinstance(result, ChatCompletion)
         finish_reasons = [chunk.choices[0].finish_reason for chunk in result]
 
-    assert finish_reasons[-1] == "tool_calls"
+    assert finish_reasons == [None, "tool_calls"]
