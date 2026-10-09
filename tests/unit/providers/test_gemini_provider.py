@@ -1556,8 +1556,15 @@ def test_convert_response_without_candidates_raises_provider_error(
         usage_metadata=types.GenerateContentResponseUsageMetadata(prompt_token_count=12),
     )
 
-    with pytest.raises(ProviderError, match="returned no candidates"):
+    with (
+        patch("any_llm.providers.gemini.utils.logger") as mock_logger,
+        pytest.raises(ProviderError, match="returned no candidates") as exc_info,
+    ):
         _convert_response_to_response_dict(response)
+
+    assert exc_info.value.provider_name is None
+    mock_logger.debug.assert_called_once()
+    assert '"prompt_token_count":12' in mock_logger.debug.call_args.args[1]
 
 
 @pytest.mark.parametrize("provider_class", [GeminiProvider, VertexaiProvider])
@@ -1567,8 +1574,10 @@ async def test_google_completion_without_candidates_raises_provider_error(provid
         mock_client.return_value.aio.models.generate_content = AsyncMock(return_value=types.GenerateContentResponse())
         provider = provider_class(api_key="test-key")
 
-        with pytest.raises(ProviderError, match="returned no candidates"):
+        with pytest.raises(ProviderError, match="returned no candidates") as exc_info:
             await provider.acompletion(model="test-model", messages=[{"role": "user", "content": "Hello"}])
+
+    assert exc_info.value.provider_name == provider_class.PROVIDER_NAME
 
 
 def test_google_provider_preserves_prompt_block_as_refusal() -> None:

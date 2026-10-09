@@ -605,7 +605,9 @@ def _prompt_was_blocked(response: types.GenerateContentResponse) -> bool:
     )
 
 
-def _convert_response_to_response_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
+def _convert_response_to_response_dict(
+    response: types.GenerateContentResponse, provider_name: str | None = None
+) -> dict[str, Any]:
     """Convert a Gemini GenerateContentResponse into an OpenAI-shaped completion dict.
 
     Raises:
@@ -704,8 +706,9 @@ def _convert_response_to_response_dict(response: types.GenerateContentResponse) 
             }
         )
     else:
+        logger.debug("generateContent response without candidates: %s", response.model_dump_json(exclude_none=True))
         message = "generateContent returned no candidates and the prompt was not blocked"
-        raise ProviderError(message)
+        raise ProviderError(message, provider_name=provider_name)
 
     response_dict["choices"] = choices
 
