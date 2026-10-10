@@ -65,6 +65,7 @@ class GroqProvider(AnyLLM):
 
     # The Groq SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
+    MAX_RETRIES_SUPPORT = "native"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 

@@ -64,6 +64,7 @@ class CohereProvider(AnyLLM):
     # The Cohere SDK carries a per-request timeout inside `request_options`, not as a top-level
     # keyword, so it is translated in _convert_completion_params.
     TIMEOUT_SUPPORT = "mapped"
+    MAX_RETRIES_SUPPORT = "native"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 

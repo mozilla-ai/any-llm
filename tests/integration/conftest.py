@@ -63,6 +63,11 @@ _OTARI_SKIPPED_TESTS: dict[str, str] = {
     "test_retrieve_batch_results_with_api_function": "batch endpoints return 404 on the hosted platform (otari-ai#1117)",
     "test_completion_with_image": "gateway returns 502 on multimodal image content (otari#183)",
     "test_completion_with_pdf": "gateway returns 502 on multimodal pdf content (otari#183)",
+    # Checked 2026-10-09: the hosted control plane answers 404 for /audio/transcriptions instead of
+    # forwarding it to the data plane the way it forwards /chat/completions.
+    "test_transcription_named_file_object": "hosted api.otari.ai returns 404 on /audio/transcriptions",
+    "test_transcription_bare_bytes": "hosted api.otari.ai returns 404 on /audio/transcriptions",
+    "test_transcription_path": "hosted api.otari.ai returns 404 on /audio/transcriptions",
 }
 
 

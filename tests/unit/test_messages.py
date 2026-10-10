@@ -13,9 +13,9 @@ import pytest
 from anthropic.types.beta import (
     BetaCompactionIterationUsage,
     BetaContainer,
-    BetaIterationsUsage,
     BetaMessage,
     BetaMessageDeltaUsage,
+    BetaMessageIterationUsage,
     BetaSkill,
     BetaStopReason,
     BetaUsage,
@@ -44,9 +44,11 @@ from any_llm.types.messages import (
     BetaDiagnostics,
     ContentBlock,
     ContentBlockDeltaEvent,
+    IterationsUsage,
     MessageContentBlock,
     MessageDeltaEvent,
     MessageDeltaUsage,
+    MessageIterationUsage,
     MessageResponse,
     MessagesParams,
     MessageStopEvent,
@@ -472,7 +474,7 @@ def test_message_usage_preserves_typed_beta_iterations() -> None:
 
     usage = MessageUsage.model_validate(sdk_usage, from_attributes=True)
 
-    assert MessageUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert MessageUsage.model_fields["iterations"].annotation == IterationsUsage | None
     assert usage.iterations is not None
     assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
     assert usage.model_dump()["iterations"][0]["type"] == "compaction"
@@ -496,10 +498,67 @@ def test_message_delta_usage_preserves_typed_beta_iterations() -> None:
 
     usage = MessageDeltaUsage.model_validate(sdk_usage, from_attributes=True)
 
-    assert MessageDeltaUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert MessageDeltaUsage.model_fields["iterations"].annotation == IterationsUsage | None
     assert usage.iterations is not None
     assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
     assert usage.model_dump()["iterations"][0]["type"] == "compaction"
+
+
+_MESSAGE_ITERATION_WITHOUT_MODEL: dict[str, Any] = {
+    "type": "message",
+    "input_tokens": 90,
+    "output_tokens": 10,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+}
+
+
+@pytest.mark.parametrize("usage_type", [MessageUsage, MessageDeltaUsage])
+def test_usage_accepts_a_message_iteration_without_model(usage_type: type[BaseModel]) -> None:
+    """The Messages API omits ``model`` on a ``message`` iteration that the SDK types require."""
+    usage = usage_type.model_validate(
+        {"input_tokens": 100, "output_tokens": 20, "iterations": [_MESSAGE_ITERATION_WITHOUT_MODEL]}
+    )
+
+    iteration = usage.iterations[0]  # type: ignore[attr-defined]
+    assert isinstance(iteration, MessageIterationUsage)
+    assert isinstance(iteration, BetaMessageIterationUsage)
+    assert iteration.model is None
+    assert iteration.input_tokens == 90
+
+
+@pytest.mark.parametrize(
+    ("sdk_usage_type", "usage_type"), [(BetaUsage, MessageUsage), (BetaMessageDeltaUsage, MessageDeltaUsage)]
+)
+def test_usage_accepts_an_sdk_message_iteration_without_model(
+    sdk_usage_type: type[BaseModel], usage_type: type[BaseModel]
+) -> None:
+    """The SDK builds responses without validation, so its iteration can lack ``model`` too."""
+    sdk_usage = sdk_usage_type.model_construct(
+        input_tokens=100,
+        output_tokens=20,
+        iterations=[BetaMessageIterationUsage.model_construct(**_MESSAGE_ITERATION_WITHOUT_MODEL)],
+    )
+
+    usage = usage_type.model_validate(sdk_usage, from_attributes=True)
+
+    iteration = usage.iterations[0]  # type: ignore[attr-defined]
+    assert isinstance(iteration, MessageIterationUsage)
+    assert iteration.model is None
+    assert iteration.output_tokens == 10
+
+
+def test_usage_keeps_the_model_of_a_message_iteration() -> None:
+    usage = MessageUsage.model_validate(
+        {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "iterations": [{**_MESSAGE_ITERATION_WITHOUT_MODEL, "model": "claude-opus-5"}],
+        }
+    )
+
+    assert usage.iterations is not None
+    assert usage.iterations[0].model == "claude-opus-5"  # type: ignore[union-attr]
 
 
 def test_message_response_preserves_beta_usage_speed_and_container_skills() -> None:

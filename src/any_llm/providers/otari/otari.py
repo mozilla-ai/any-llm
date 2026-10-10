@@ -234,6 +234,8 @@ class OtariProvider(BaseOpenAIProvider):
     SUPPORTS_RERANK = True
     SUPPORTS_MESSAGES_NATIVE = True
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING = True
+    # AsyncOtariClient replaces the inherited OpenAI client and takes no retry count.
+    MAX_RETRIES_SUPPORT = "unsupported"
 
     otari_client: Any
 
@@ -501,10 +503,11 @@ class OtariProvider(BaseOpenAIProvider):
 
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
-        file_bytes = params.file if isinstance(params.file, bytes) else params.file.read()
+        upload = params.resolve_file()
         result = await self.otari_client.transcription(
             model=params.model_id,
-            file=file_bytes,
+            file=upload.content,
+            filename=upload.filename,
             **api_kwargs,
         )
         # otari wraps the response: ``json`` for JSON formats, ``text`` for text/srt/vtt.

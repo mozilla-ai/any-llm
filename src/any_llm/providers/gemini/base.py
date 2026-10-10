@@ -200,6 +200,8 @@ class GoogleProvider(AnyLLM):
     # The genai SDK carries timeout on http_options (in milliseconds), not as a request keyword,
     # so it is translated in _convert_completion_params via _merge_timeout_into_http_options.
     TIMEOUT_SUPPORT = "mapped"
+    # genai retries only when http_options carries retry_options, so it is mapped in _apply_max_retries.
+    MAX_RETRIES_SUPPORT = "mapped"
 
     BUILT_IN_TOOLS: ClassVar[list[Any] | None] = [types.Tool]
 
@@ -227,6 +229,26 @@ class GoogleProvider(AnyLLM):
 
         if isinstance(http_options, types.HttpOptions) and http_options.timeout is None:
             http_options.timeout = timeout_ms
+
+    @override
+    def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
+        """Set ``http_options.retry_options`` unless the caller already configured one.
+
+        genai counts the first request as an attempt, so ``attempts`` is one more than
+        ``max_retries``. The caller's http_options is copied rather than mutated, since it
+        may be shared with other clients.
+        """
+        attempts = max_retries + 1
+        http_options = client_kwargs.get("http_options")
+
+        if http_options is None:
+            client_kwargs["http_options"] = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=attempts))
+        elif isinstance(http_options, dict):
+            client_kwargs["http_options"] = {"retry_options": {"attempts": attempts}, **http_options}
+        elif isinstance(http_options, types.HttpOptions) and http_options.retry_options is None:
+            client_kwargs["http_options"] = http_options.model_copy(
+                update={"retry_options": types.HttpRetryOptions(attempts=attempts)}
+            )
 
     @staticmethod
     @override
@@ -419,7 +441,7 @@ class GoogleProvider(AnyLLM):
 
         response: types.GenerateContentResponse = await self.client.aio.models.generate_content(**converted_kwargs)
 
-        response_dict = _convert_response_to_response_dict(response)
+        response_dict = _convert_response_to_response_dict(response, provider_name=self.PROVIDER_NAME)
         return self._convert_completion_response((response_dict, params.model_id))
 
     @override
