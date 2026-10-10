@@ -58,6 +58,10 @@ The same call works against the other providers by changing the model string, e.
 [Voyage's documentation](https://docs.voyageai.com/docs/reranker), or
 `"together:Salesforce/Llama-Rank-v1"` once a Together dedicated endpoint is running for it.
 
+Together rerank calls forward `timeout` to the SDK as a per-request override. Voyage
+forwards `api_base` (or `VOYAGE_API_BASE`) to the SDK's `base_url`; when neither is
+set, an existing `base_url` client argument or the SDK default is preserved.
+
 ## API Reference
 
 ### `rerank()` / `arerank()`
