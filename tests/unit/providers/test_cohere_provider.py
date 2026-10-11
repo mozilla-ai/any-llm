@@ -82,6 +82,49 @@ async def test_parallel_tool_calls_raises() -> None:
         )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n", [None, 1])
+async def test_single_completion_n_is_not_sent_to_chat(n: int | None) -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
+        )
+
+    assert "n" not in mock_chat.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_single_completion_n_is_not_sent_to_chat_stream() -> None:
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        if False:
+            yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+        result = await provider._acompletion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=1, stream=True)
+        )
+        assert [chunk async for chunk in result] == []
+
+    assert "n" not in mock_chat_stream.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_multiple_completions_n_raises() -> None:
+    provider = _mk_provider()
+
+    with pytest.raises(UnsupportedParameterError, match="'n' is not supported for cohere"):
+        await provider._acompletion(
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=2)
+        )
+
+
 def test_patch_messages_removes_name_from_tool_messages() -> None:
     """Test that _patch_messages removes 'name' field from tool messages."""
     messages: list[dict[str, Any]] = [
