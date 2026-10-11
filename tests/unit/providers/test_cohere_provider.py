@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from pydantic import BaseModel
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.cohere.utils import (
     _convert_cohere_embedding_response,
     _convert_response,
@@ -868,3 +868,25 @@ async def test_list_models_single_page_makes_one_call() -> None:
 
     assert [model.id for model in models] == ["embed-v4.0"]
     mock_list.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_list_models_raises_when_next_page_token_repeats() -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    stuck_page = "page-2"
+    pages = [
+        ListModelsResponse(models=[GetModelResponse(name="command-a-03-2025")], next_page_token=stuck_page),
+        ListModelsResponse(models=[GetModelResponse(name="rerank-v3.5")], next_page_token=stuck_page),
+    ]
+
+    with (
+        patch.object(provider.client.models, "list", autospec=True, side_effect=pages) as mock_list,
+        pytest.raises(ProviderError, match="page token"),
+    ):
+        await provider._alist_models()
+
+    assert mock_list.call_count == 2

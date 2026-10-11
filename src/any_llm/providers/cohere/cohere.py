@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -241,6 +241,9 @@ class CohereProvider(AnyLLM):
             models.extend(self._convert_list_models_response(page))
             if not page.next_page_token:
                 return models
+            if page.next_page_token == kwargs.get("page_token"):
+                msg = f"Cohere returned the requested page token {page.next_page_token!r} as the next page token."
+                raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
             kwargs["page_token"] = page.next_page_token
 
     @override
