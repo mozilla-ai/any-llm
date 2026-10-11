@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from pydantic import BaseModel
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.cohere.utils import (
     _convert_cohere_embedding_response,
     _convert_response,
@@ -831,3 +831,72 @@ def test_request_options_absent_when_timeout_not_requested() -> None:
     )
 
     assert "request_options" not in converted
+
+
+@pytest.mark.asyncio
+async def test_list_models_follows_next_page_token() -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    second_page = "page-2"
+    pages = [
+        ListModelsResponse(models=[GetModelResponse(name="command-a-03-2025")], next_page_token=second_page),
+        ListModelsResponse(models=[GetModelResponse(name="rerank-v3.5")], next_page_token=None),
+    ]
+
+    with patch.object(provider.client.models, "list", autospec=True, side_effect=pages) as mock_list:
+        models = await provider._alist_models(endpoint="chat", page_size=1)
+
+    assert [model.id for model in models] == ["command-a-03-2025", "rerank-v3.5"]
+    assert mock_list.call_args_list[0].kwargs == {"endpoint": "chat", "page_size": 1}
+    assert mock_list.call_args_list[1].kwargs == {"endpoint": "chat", "page_size": 1, "page_token": second_page}
+
+
+@pytest.mark.asyncio
+async def test_list_models_single_page_makes_one_call() -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    page = ListModelsResponse(models=[GetModelResponse(name="embed-v4.0")], next_page_token="")
+
+    with patch.object(provider.client.models, "list", autospec=True, return_value=page) as mock_list:
+        models = await provider._alist_models()
+
+    assert [model.id for model in models] == ["embed-v4.0"]
+    mock_list.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("start_token", "next_tokens", "requested_tokens"),
+    [
+        (None, ["page-2", "page-2"], [None, "page-2"]),
+        (None, ["page-2", "page-3", "page-2"], [None, "page-2", "page-3"]),
+        ("page-1", ["page-2", "page-1"], ["page-1", "page-2"]),
+    ],
+)
+async def test_list_models_raises_when_a_page_token_repeats(
+    start_token: str | None, next_tokens: list[str], requested_tokens: list[str | None]
+) -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    pages = [
+        ListModelsResponse(models=[GetModelResponse(name=f"model-{index}")], next_page_token=token)
+        for index, token in enumerate(next_tokens)
+    ]
+    kwargs = {} if start_token is None else {"page_token": start_token}
+
+    with (
+        patch.object(provider.client.models, "list", autospec=True, side_effect=pages) as mock_list,
+        pytest.raises(ProviderError, match="page token"),
+    ):
+        await provider._alist_models(**kwargs)
+
+    assert [call.kwargs.get("page_token") for call in mock_list.call_args_list] == requested_tokens

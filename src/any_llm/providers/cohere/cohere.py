@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -234,8 +234,19 @@ class CohereProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        model_list = await self.client.models.list(**kwargs)
-        return self._convert_list_models_response(model_list)
+        # Cohere pages the catalog (20 models per page by default), so follow next_page_token to the end.
+        models: list[Model] = []
+        requested_tokens = {kwargs.get("page_token")}
+        while True:
+            page = await self.client.models.list(**kwargs)
+            models.extend(self._convert_list_models_response(page))
+            if not page.next_page_token:
+                return models
+            if page.next_page_token in requested_tokens:
+                msg = f"Cohere returned the already requested page token {page.next_page_token!r} as the next page."
+                raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
+            requested_tokens.add(page.next_page_token)
+            kwargs["page_token"] = page.next_page_token
 
     @override
     async def _arerank(
