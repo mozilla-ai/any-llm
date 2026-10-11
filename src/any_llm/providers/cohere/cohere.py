@@ -76,7 +76,7 @@ class CohereProvider(AnyLLM):
         """Convert CompletionParams to kwargs for Cohere API."""
         converted_params = params.model_dump(
             exclude_none=True,
-            exclude={"model_id", "messages", "response_format", "stream", "stream_options", "reasoning_effort"},
+            exclude={"model_id", "messages", "response_format", "stream", "stream_options", "reasoning_effort", "n"},
         )
         if params.reasoning_effort != "auto":
             if params.reasoning_effort is None or params.reasoning_effort == "none":
@@ -213,6 +213,10 @@ class CohereProvider(AnyLLM):
         if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
+        # OpenAI clients send n=1 by default; Cohere has no `n` and always returns one completion.
+        if params.n not in (None, 1):
+            msg = "n"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME, "Cohere returns one completion per request.")
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
         patched_messages = _patch_messages(params.messages)
