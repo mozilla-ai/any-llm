@@ -243,6 +243,7 @@ class BaseOpenAIProvider(AnyLLM):
         params.messages = strip_extra_content(params.messages, keep_namespaces=("google",))
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
+        self._validate_model_capabilities(params, completion_kwargs)
 
         response_format = completion_kwargs.get("response_format")
         use_parse = is_structured_output_type(response_format)
