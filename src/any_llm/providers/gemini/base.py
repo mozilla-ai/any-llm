@@ -22,6 +22,7 @@ from any_llm.types.completion import (
     Reasoning,
     ReasoningEffort,
 )
+from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -411,6 +412,7 @@ class GoogleProvider(AnyLLM):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
+        encoding_format = pop_encoding_format(kwargs, self.PROVIDER_NAME)
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         result = await self.client.aio.models.embed_content(
             model=model,
@@ -418,7 +420,7 @@ class GoogleProvider(AnyLLM):
         )
 
         response_data = {"model": model, "result": result}
-        return self._convert_embedding_response(response_data)
+        return apply_encoding_format(self._convert_embedding_response(response_data), encoding_format)
 
     @override
     async def _acompletion(

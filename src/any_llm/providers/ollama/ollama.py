@@ -6,6 +6,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
+from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -331,12 +332,13 @@ class OllamaProvider(AnyLLM):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Generate embeddings using Ollama."""
+        encoding_format = pop_encoding_format(kwargs, self.PROVIDER_NAME)
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         response = await self.client.embed(
             model=model,
             **embedding_kwargs,
         )
-        return self._convert_embedding_response(response)
+        return apply_encoding_format(self._convert_embedding_response(response), encoding_format)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:

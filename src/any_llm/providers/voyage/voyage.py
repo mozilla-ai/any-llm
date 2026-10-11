@@ -7,6 +7,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
@@ -159,6 +160,7 @@ class VoyageProvider(AnyLLM):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
+        encoding_format = pop_encoding_format(kwargs, self.PROVIDER_NAME)
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
 
         result = await self.client.embed(
@@ -166,7 +168,7 @@ class VoyageProvider(AnyLLM):
             **embedding_kwargs,
         )
         response_data = {"model": model, "result": result}
-        return self._convert_embedding_response(response_data)
+        return apply_encoding_format(self._convert_embedding_response(response_data), encoding_format)
 
     @override
     async def _arerank(
