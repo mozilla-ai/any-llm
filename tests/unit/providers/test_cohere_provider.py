@@ -872,15 +872,15 @@ async def test_list_models_single_page_makes_one_call() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("start_token", "next_tokens", "expected_calls"),
+    ("start_token", "next_tokens", "requested_tokens"),
     [
-        (None, ["page-2", "page-2"], 2),
-        (None, ["page-2", "page-3", "page-2"], 3),
-        ("page-1", ["page-2", "page-1"], 2),
+        (None, ["page-2", "page-2"], [None, "page-2"]),
+        (None, ["page-2", "page-3", "page-2"], [None, "page-2", "page-3"]),
+        ("page-1", ["page-2", "page-1"], ["page-1", "page-2"]),
     ],
 )
 async def test_list_models_raises_when_a_page_token_repeats(
-    start_token: str | None, next_tokens: list[str], expected_calls: int
+    start_token: str | None, next_tokens: list[str], requested_tokens: list[str | None]
 ) -> None:
     pytest.importorskip("cohere")
     from cohere import ListModelsResponse
@@ -899,4 +899,4 @@ async def test_list_models_raises_when_a_page_token_repeats(
     ):
         await provider._alist_models(**kwargs)
 
-    assert mock_list.call_count == expected_calls
+    assert [call.kwargs.get("page_token") for call in mock_list.call_args_list] == requested_tokens
