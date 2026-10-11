@@ -831,3 +831,40 @@ def test_request_options_absent_when_timeout_not_requested() -> None:
     )
 
     assert "request_options" not in converted
+
+
+@pytest.mark.asyncio
+async def test_list_models_follows_next_page_token() -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    second_page = "page-2"
+    pages = [
+        ListModelsResponse(models=[GetModelResponse(name="command-a-03-2025")], next_page_token=second_page),
+        ListModelsResponse(models=[GetModelResponse(name="rerank-v3.5")], next_page_token=None),
+    ]
+
+    with patch.object(provider.client.models, "list", autospec=True, side_effect=pages) as mock_list:
+        models = await provider._alist_models(endpoint="chat", page_size=1)
+
+    assert [model.id for model in models] == ["command-a-03-2025", "rerank-v3.5"]
+    assert mock_list.call_args_list[0].kwargs == {"endpoint": "chat", "page_size": 1}
+    assert mock_list.call_args_list[1].kwargs == {"endpoint": "chat", "page_size": 1, "page_token": second_page}
+
+
+@pytest.mark.asyncio
+async def test_list_models_single_page_makes_one_call() -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    page = ListModelsResponse(models=[GetModelResponse(name="embed-v4.0")], next_page_token="")
+
+    with patch.object(provider.client.models, "list", autospec=True, return_value=page) as mock_list:
+        models = await provider._alist_models()
+
+    assert [model.id for model in models] == ["embed-v4.0"]
+    mock_list.assert_called_once_with()

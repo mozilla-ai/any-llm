@@ -234,8 +234,14 @@ class CohereProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        model_list = await self.client.models.list(**kwargs)
-        return self._convert_list_models_response(model_list)
+        # Cohere pages the catalog (20 models per page by default), so follow next_page_token to the end.
+        models: list[Model] = []
+        while True:
+            page = await self.client.models.list(**kwargs)
+            models.extend(self._convert_list_models_response(page))
+            if not page.next_page_token:
+                return models
+            kwargs["page_token"] = page.next_page_token
 
     @override
     async def _arerank(
