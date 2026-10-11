@@ -214,7 +214,7 @@ class CohereProvider(AnyLLM):
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
         # OpenAI clients send n=1 by default; Cohere has no `n` and always returns one completion.
-        if params.n is not None and params.n > 1:
+        if params.n not in (None, 1):
             msg = "n"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME, "Cohere returns one completion per request.")
 

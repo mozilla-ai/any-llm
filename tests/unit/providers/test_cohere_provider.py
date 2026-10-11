@@ -116,12 +116,13 @@ async def test_single_completion_n_is_not_sent_to_chat_stream() -> None:
 
 
 @pytest.mark.asyncio
-async def test_multiple_completions_n_raises() -> None:
+@pytest.mark.parametrize("n", [2, 0, -1])
+async def test_n_other_than_one_raises(n: int) -> None:
     provider = _mk_provider()
 
     with pytest.raises(UnsupportedParameterError, match="'n' is not supported for cohere"):
         await provider._acompletion(
-            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=2)
+            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
         )
 
 
