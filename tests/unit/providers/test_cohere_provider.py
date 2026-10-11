@@ -871,22 +871,32 @@ async def test_list_models_single_page_makes_one_call() -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_models_raises_when_next_page_token_repeats() -> None:
+@pytest.mark.parametrize(
+    ("start_token", "next_tokens", "expected_calls"),
+    [
+        (None, ["page-2", "page-2"], 2),
+        (None, ["page-2", "page-3", "page-2"], 3),
+        ("page-1", ["page-2", "page-1"], 2),
+    ],
+)
+async def test_list_models_raises_when_a_page_token_repeats(
+    start_token: str | None, next_tokens: list[str], expected_calls: int
+) -> None:
     pytest.importorskip("cohere")
     from cohere import ListModelsResponse
     from cohere.types import GetModelResponse
 
     provider = _mk_provider()
-    stuck_page = "page-2"
     pages = [
-        ListModelsResponse(models=[GetModelResponse(name="command-a-03-2025")], next_page_token=stuck_page),
-        ListModelsResponse(models=[GetModelResponse(name="rerank-v3.5")], next_page_token=stuck_page),
+        ListModelsResponse(models=[GetModelResponse(name=f"model-{index}")], next_page_token=token)
+        for index, token in enumerate(next_tokens)
     ]
+    kwargs = {} if start_token is None else {"page_token": start_token}
 
     with (
         patch.object(provider.client.models, "list", autospec=True, side_effect=pages) as mock_list,
         pytest.raises(ProviderError, match="page token"),
     ):
-        await provider._alist_models()
+        await provider._alist_models(**kwargs)
 
-    assert mock_list.call_count == 2
+    assert mock_list.call_count == expected_calls

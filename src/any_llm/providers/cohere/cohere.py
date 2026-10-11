@@ -236,14 +236,16 @@ class CohereProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         # Cohere pages the catalog (20 models per page by default), so follow next_page_token to the end.
         models: list[Model] = []
+        requested_tokens = {kwargs.get("page_token")}
         while True:
             page = await self.client.models.list(**kwargs)
             models.extend(self._convert_list_models_response(page))
             if not page.next_page_token:
                 return models
-            if page.next_page_token == kwargs.get("page_token"):
-                msg = f"Cohere returned the requested page token {page.next_page_token!r} as the next page token."
+            if page.next_page_token in requested_tokens:
+                msg = f"Cohere returned the already requested page token {page.next_page_token!r} as the next page."
                 raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
+            requested_tokens.add(page.next_page_token)
             kwargs["page_token"] = page.next_page_token
 
     @override
