@@ -268,6 +268,115 @@ def test_patch_messages_tool_after_tool_without_assistant_raises() -> None:
         _patch_messages(messages)
 
 
+_WEATHER_TOOL_CALLS: list[dict[str, Any]] = [
+    {"id": "call_1", "type": "function", "function": {"name": "weather", "arguments": '{"city":"Rome"}'}}
+]
+
+
+def _weather_history(assistant_message: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"role": "user", "content": "Weather in Rome?"},
+        assistant_message,
+        {"role": "tool", "tool_call_id": "call_1", "content": "sunny 32C"},
+    ]
+
+
+def test_patch_messages_assistant_tool_calls_without_content_key() -> None:
+    """An assistant message with tool_calls and no content key (as Haystack sends it) gets no tool_plan."""
+    result = _patch_messages(_weather_history({"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}))
+
+    assert result[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+@pytest.mark.parametrize("content", [None, "", []])
+def test_patch_messages_assistant_tool_calls_with_empty_content_omits_tool_plan(content: Any) -> None:
+    """Null or empty content is dropped rather than sent to Cohere as a null or empty tool_plan."""
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": content, "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+def test_patch_messages_assistant_tool_calls_with_text_content_parts() -> None:
+    """Text content parts are joined into a string tool_plan; non-text parts are dropped."""
+    content = [
+        {"type": "text", "text": "Checking "},
+        {"type": "refusal", "refusal": "n/a"},
+        {"type": "text", "text": "the weather."},
+    ]
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": content, "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_plan": "Checking the weather.", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+@pytest.mark.parametrize(
+    "malformed_part",
+    [{"type": "text"}, {"type": "text", "text": None}, {"type": "text", "text": 42}],
+    ids=["missing-text", "null-text", "non-string-text"],
+)
+def test_patch_messages_assistant_tool_calls_skips_malformed_text_parts(malformed_part: dict[str, Any]) -> None:
+    """A text part without a string `text` is skipped instead of raising."""
+    content = [malformed_part, {"type": "text", "text": "Checking the weather."}]
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": content, "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_plan": "Checking the weather.", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+def test_patch_messages_assistant_tool_calls_with_only_malformed_text_parts_omits_tool_plan() -> None:
+    """When no text part carries a string, tool_plan is omitted."""
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": [{"type": "text"}], "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+def test_patch_messages_assistant_tool_calls_with_content_does_not_mutate_input() -> None:
+    """The caller's message keeps its content; only the patched copy carries tool_plan."""
+    assistant_message = {"role": "assistant", "content": "Let me check.", "tool_calls": _WEATHER_TOOL_CALLS}
+
+    result = _patch_messages(_weather_history(assistant_message))
+
+    assert result[1] == {"role": "assistant", "tool_plan": "Let me check.", "tool_calls": _WEATHER_TOOL_CALLS}
+    assert assistant_message["content"] == "Let me check."
+
+
+@pytest.mark.asyncio
+async def test_completion_with_assistant_tool_calls_without_content() -> None:
+    """End-to-end: a second agent turn whose assistant message has no content reaches the Cohere client."""
+    pytest.importorskip("cohere")
+    from any_llm.providers.cohere.cohere import CohereProvider
+
+    provider = CohereProvider(api_key="test-api-key")
+    with (
+        patch.object(provider.client, "chat", new_callable=AsyncMock) as mock_chat,
+        patch.object(provider, "_convert_completion_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=_weather_history({"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}),
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "weather",
+                            "parameters": {"type": "object", "properties": {"city": {"type": "string"}}},
+                        },
+                    }
+                ],
+            )
+        )
+
+    sent_messages = mock_chat.call_args.kwargs["messages"]
+    assert sent_messages[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
 def test_preprocess_response_format_dataclass() -> None:
     from dataclasses import dataclass
 

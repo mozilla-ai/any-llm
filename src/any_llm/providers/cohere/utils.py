@@ -44,7 +44,8 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Patches messages for Cohere API compatibility.
 
     - Removes the 'name' field from tool messages.
-    - Converts 'content' to 'tool_plan' in assistant messages with tool_calls.
+    - Converts 'content' to 'tool_plan' in assistant messages with tool_calls, omitting it when
+      'content' is absent, null, or empty (OpenAI makes it optional alongside tool_calls).
     - Validates the message sequence.
     """
     patched_messages = []
@@ -60,9 +61,25 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 raise ValueError(msg)
             patched_message.pop("name", None)
         if patched_message.get("role") == "assistant" and patched_message.get("tool_calls"):
-            patched_message["tool_plan"] = patched_message.pop("content")
+            tool_plan = _tool_plan_from_content(patched_message.pop("content", None))
+            # Cohere's tool_plan is an optional string; the SDK would send None as null, so omit it.
+            if tool_plan:
+                patched_message["tool_plan"] = tool_plan
         patched_messages.append(patched_message)
     return patched_messages
+
+
+def _tool_plan_from_content(content: Any) -> str | None:
+    """Flatten an OpenAI assistant `content` (absent, null, a string, or text parts) into a tool_plan string."""
+    if isinstance(content, list):
+        return "".join(
+            part["text"]
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
+        )
+    if isinstance(content, str):
+        return content
+    return None
 
 
 def _create_openai_chunk_from_cohere_chunk(chunk: Any, model: str) -> ChatCompletionChunk:
