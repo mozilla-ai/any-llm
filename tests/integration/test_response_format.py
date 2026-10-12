@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from any_llm import AnyLLM, LLMProvider, ParsedChatCompletion
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.types.completion import ChatCompletion, ChatCompletionMessageFunctionToolCall
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
@@ -199,3 +200,71 @@ async def test_together_response_format_on_strict_model() -> None:
     parsed = result.choices[0].message.parsed
     assert isinstance(parsed, CityResponse)
     assert "paris" in parsed.city_name.lower()
+
+
+_COHERE_CITY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"city_name": {"type": "string"}},
+    "required": ["city_name"],
+    "additionalProperties": False,
+}
+
+
+@pytest.mark.asyncio
+async def test_cohere_openai_json_schema_response_format(provider_model_map: dict[LLMProvider, str]) -> None:
+    """Cohere answers 400 to the OpenAI json_schema shape unless the provider unwraps it."""
+    try:
+        llm = AnyLLM.create(LLMProvider.COHERE)
+        result = await llm.acompletion(
+            model=provider_model_map[LLMProvider.COHERE],
+            messages=[{"role": "user", "content": "What is the capital of France? Answer in JSON."}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "City", "strict": True, "schema": _COHERE_CITY_SCHEMA},
+            },
+            stream=False,
+        )
+    except MissingApiKeyError:
+        if LLMProvider.COHERE in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip("Cohere API key not provided, skipping")
+
+    assert isinstance(result, ChatCompletion)
+    assert result.choices[0].message.content is not None
+    assert "paris" in json.loads(result.choices[0].message.content)["city_name"].lower()
+
+
+@pytest.mark.asyncio
+async def test_cohere_strict_function_tool(provider_model_map: dict[LLMProvider, str]) -> None:
+    """Cohere answers 400 to `strict` inside a function definition; it takes `strict_tools` instead."""
+    tool = {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather for a city.",
+            "strict": True,
+            "parameters": _COHERE_CITY_SCHEMA,
+        },
+    }
+    try:
+        llm = AnyLLM.create(LLMProvider.COHERE)
+        result = await llm.acompletion(
+            model=provider_model_map[LLMProvider.COHERE],
+            messages=[{"role": "user", "content": "What is the weather in Paris?"}],
+            tools=[tool],
+            # Cohere's own value; the provider passes tool_choice through unchanged.
+            tool_choice="REQUIRED",
+            stream=False,
+        )
+    except MissingApiKeyError:
+        if LLMProvider.COHERE in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip("Cohere API key not provided, skipping")
+
+    assert isinstance(result, ChatCompletion)
+    tool_calls = result.choices[0].message.tool_calls
+    assert tool_calls
+    tool_call = tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageFunctionToolCall)
+    assert tool_call.function.name == "get_weather"
+    assert "paris" in json.loads(tool_call.function.arguments)["city_name"].lower()
