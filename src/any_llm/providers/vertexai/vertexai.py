@@ -182,6 +182,11 @@ class VertexaiProvider(GoogleProvider):
         return self._partner_provider
 
     @override
+    def _supports_completion_n(self, model: str) -> bool:
+        # Partner models go through Vertex's OpenAI-compatible endpoint, which accepts n.
+        return _is_partner_model(model)
+
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,

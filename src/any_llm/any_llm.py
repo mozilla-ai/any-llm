@@ -844,7 +844,7 @@ class AnyLLM(FilesMixin, ABC):
             max_tokens=max_tokens,
             response_format=response_format,
             stream=stream,
-            n=self._validate_n(n),
+            n=self._validate_n(n, model),
             stop=stop,
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
@@ -886,10 +886,14 @@ class AnyLLM(FilesMixin, ABC):
 
         return result
 
-    def _validate_n(self, n: int | None) -> int | None:
+    def _supports_completion_n(self, model: str) -> bool:
+        """Whether ``model`` can return more than one choice; override when it varies by model."""
+        return self.SUPPORTS_COMPLETION_N
+
+    def _validate_n(self, n: int | None, model: str) -> int | None:
         if n is None or n == 1:
             return None
-        if not self.SUPPORTS_COMPLETION_N:
+        if not self._supports_completion_n(model):
             parameter_name = "n"
             additional_message = f"{self.PROVIDER_NAME} returns one choice per request; omit n or set it to 1."
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
