@@ -312,6 +312,30 @@ def test_patch_messages_assistant_tool_calls_with_text_content_parts() -> None:
     assert result[1] == {"role": "assistant", "tool_plan": "Checking the weather.", "tool_calls": _WEATHER_TOOL_CALLS}
 
 
+@pytest.mark.parametrize(
+    "malformed_part",
+    [{"type": "text"}, {"type": "text", "text": None}, {"type": "text", "text": 42}],
+    ids=["missing-text", "null-text", "non-string-text"],
+)
+def test_patch_messages_assistant_tool_calls_skips_malformed_text_parts(malformed_part: dict[str, Any]) -> None:
+    """A text part without a string `text` is skipped instead of raising."""
+    content = [malformed_part, {"type": "text", "text": "Checking the weather."}]
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": content, "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_plan": "Checking the weather.", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+def test_patch_messages_assistant_tool_calls_with_only_malformed_text_parts_omits_tool_plan() -> None:
+    """When no text part carries a string, tool_plan is omitted."""
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": [{"type": "text"}], "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
 def test_patch_messages_assistant_tool_calls_with_content_does_not_mutate_input() -> None:
     """The caller's message keeps its content; only the patched copy carries tool_plan."""
     assistant_message = {"role": "assistant", "content": "Let me check.", "tool_calls": _WEATHER_TOOL_CALLS}

@@ -72,7 +72,11 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _tool_plan_from_content(content: Any) -> str | None:
     """Flatten an OpenAI assistant `content` (absent, null, a string, or text parts) into a tool_plan string."""
     if isinstance(content, list):
-        return "".join(part["text"] for part in content if isinstance(part, dict) and part.get("type") == "text")
+        return "".join(
+            part["text"]
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
+        )
     if isinstance(content, str):
         return content
     return None
