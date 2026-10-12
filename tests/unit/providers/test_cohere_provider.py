@@ -69,6 +69,37 @@ async def test_stream_with_response_format_passes_to_chat_stream() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streamed_chunks_carry_requested_model_id() -> None:
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        yield _mock_content_delta_chunk("Hello")
+        yield _mock_content_delta_chunk(" there")
+        yield _mock_message_end_chunk("COMPLETE")
+
+    provider.client.chat_stream = Mock(return_value=_stream())
+    result = await provider._acompletion(
+        CompletionParams(
+            model_id="command-r7b-12-2024",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+        )
+    )
+    collected = [chunk async for chunk in result]
+
+    assert len(collected) == 3
+    assert {chunk.model for chunk in collected} == {"command-r7b-12-2024"}
+
+
+def test_convert_completion_chunk_response_without_model_reports_unknown() -> None:
+    provider = _mk_provider()
+
+    result = provider._convert_completion_chunk_response(_mock_content_delta_chunk("Hi"))
+
+    assert result.model == "unknown"
+
+
+@pytest.mark.asyncio
 async def test_parallel_tool_calls_raises() -> None:
     provider = _mk_provider()
 
@@ -378,7 +409,7 @@ def test_streaming_tool_call_start_uses_chunk_index() -> None:
     chunk.delta.message.tool_calls.function = Mock()
     chunk.delta.message.tool_calls.function.name = "get_weather"
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     tool_calls = result.choices[0].delta.tool_calls
     assert tool_calls is not None
@@ -399,7 +430,7 @@ def test_streaming_tool_call_delta_uses_chunk_index() -> None:
     chunk.delta.message.tool_calls.function = Mock()
     chunk.delta.message.tool_calls.function.arguments = '{"partial'
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     tool_calls = result.choices[0].delta.tool_calls
     assert tool_calls is not None
@@ -458,6 +489,16 @@ def test_convert_response_tool_call_without_tool_calls_reports_stop() -> None:
     assert result.choices[0].finish_reason == "stop"
 
 
+def _mock_content_delta_chunk(text: str) -> Mock:
+    chunk = Mock()
+    chunk.type = "content-delta"
+    chunk.delta = Mock()
+    chunk.delta.message = Mock()
+    chunk.delta.message.content = Mock()
+    chunk.delta.message.content.text = text
+    return chunk
+
+
 def _mock_message_end_chunk(finish_reason: Any) -> Mock:
     chunk = Mock()
     chunk.type = "message-end"
@@ -469,13 +510,13 @@ def _mock_message_end_chunk(finish_reason: Any) -> Mock:
 
 def test_streaming_message_end_maps_max_tokens_to_length() -> None:
     """Streaming: the terminal chunk must surface truncation instead of a plain stop."""
-    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("MAX_TOKENS"))
+    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("MAX_TOKENS"), "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "length"
 
 
 def test_streaming_message_end_maps_tool_call_to_tool_calls() -> None:
-    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("TOOL_CALL"))
+    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("TOOL_CALL"), "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "tool_calls"
 
@@ -485,7 +526,7 @@ def test_streaming_message_end_without_delta_falls_back_to_stop() -> None:
     chunk.type = "message-end"
     chunk.delta = None
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "stop"
 
@@ -497,7 +538,7 @@ def test_streaming_message_end_still_reports_usage() -> None:
     chunk.delta.usage.tokens.input_tokens = 12
     chunk.delta.usage.tokens.output_tokens = 8
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "stop"
     assert result.usage is not None
@@ -518,7 +559,7 @@ def test_streaming_tool_call_index_defaults_to_zero_when_none() -> None:
     chunk.delta.message.tool_calls.function = Mock()
     chunk.delta.message.tool_calls.function.name = "search"
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     assert result.choices[0].delta.tool_calls[0].index == 0  # type: ignore[index]
 

@@ -65,13 +65,16 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return patched_messages
 
 
-def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
-    """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format."""
+def _create_openai_chunk_from_cohere_chunk(chunk: Any, model: str) -> ChatCompletionChunk:
+    """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format.
+
+    Cohere's stream events carry no model id, so ``model`` is the id the request was made with.
+    """
     chunk_dict: dict[str, Any] = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
         "created": 0,
-        "model": "cohere-model",
+        "model": model,
         "choices": [],
         "usage": None,
     }
