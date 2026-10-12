@@ -114,6 +114,46 @@ async def test_parallel_tool_calls_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_named_tool_choice_raises() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'tool_choice' is not supported for cohere"),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather in Rome?"}],
+                tools=[{"type": "function", "function": {"name": "weather", "parameters": {"type": "object"}}}],
+                tool_choice={"type": "function", "function": {"name": "weather"}},
+            )
+        )
+
+    mock_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_choice", ["required", "none"])
+async def test_string_tool_choice_is_sent_to_chat(tool_choice: str) -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                tool_choice=tool_choice,
+            )
+        )
+
+    assert mock_chat.call_args.kwargs["tool_choice"] == tool_choice
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("n", [None, 1])
 async def test_single_completion_n_is_not_sent_to_chat(n: int | None) -> None:
     provider = _mk_provider()

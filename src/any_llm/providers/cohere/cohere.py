@@ -279,6 +279,12 @@ class CohereProvider(AnyLLM):
             kwargs["tools"], strict_tools = self._convert_tools(params.tools)
             if strict_tools:
                 kwargs.setdefault("strict_tools", True)
+        # Cohere's tool_choice is only REQUIRED or NONE; it cannot name a tool.
+        if isinstance(params.tool_choice, dict):
+            msg = "tool_choice"
+            raise UnsupportedParameterError(
+                msg, self.PROVIDER_NAME, "Cohere accepts only 'required' or 'none', not a named tool."
+            )
         if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
