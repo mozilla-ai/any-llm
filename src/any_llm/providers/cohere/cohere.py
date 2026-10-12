@@ -184,7 +184,7 @@ class CohereProvider(AnyLLM):
         self.client = cohere.AsyncClientV2(api_key=api_key, **kwargs)
 
     async def _stream_completion_async(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
+        self, model: str, messages: list[dict[str, Any]], *, thinking_from_reasoning_effort: bool, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
         cohere_stream = self.client.chat_stream(
             model=model,
@@ -192,8 +192,28 @@ class CohereProvider(AnyLLM):
             **kwargs,
         )
 
-        async for chunk in cohere_stream:
-            yield self._convert_completion_chunk_response(chunk, model=model)
+        try:
+            async for chunk in cohere_stream:
+                yield self._convert_completion_chunk_response(chunk, model=model)
+        except cohere.BadRequestError as e:
+            self._raise_if_thinking_unsupported(e, thinking_from_reasoning_effort)
+            raise
+
+    def _raise_if_thinking_unsupported(
+        self, error: cohere.BadRequestError, thinking_from_reasoning_effort: bool
+    ) -> None:
+        """Report Cohere's rejection of `thinking` as the `reasoning_effort` the caller sent.
+
+        Only some Cohere models accept `thinking`, and Cohere's error names the translated field,
+        which the caller never sent.
+        """
+        body = error.body
+        message = body.get("message", "") if isinstance(body, dict) else str(body)
+        if thinking_from_reasoning_effort and "`thinking` parameter is not supported" in str(message):
+            msg = "reasoning_effort"
+            raise UnsupportedParameterError(
+                msg, self.PROVIDER_NAME, "This Cohere model does not support reasoning."
+            ) from error
 
     @staticmethod
     def _preprocess_response_format(response_format: type | dict[str, Any]) -> dict[str, Any]:
@@ -260,6 +280,12 @@ class CohereProvider(AnyLLM):
             kwargs["tools"], strict_tools = self._convert_tools(params.tools)
             if strict_tools:
                 kwargs.setdefault("strict_tools", True)
+        # Cohere's tool_choice is only REQUIRED or NONE; it cannot name a tool.
+        if isinstance(params.tool_choice, dict):
+            msg = "tool_choice"
+            raise UnsupportedParameterError(
+                msg, self.PROVIDER_NAME, "Cohere accepts only 'required' or 'none', not a named tool."
+            )
         if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
@@ -270,19 +296,25 @@ class CohereProvider(AnyLLM):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
         patched_messages = _patch_messages(params.messages)
+        thinking_from_reasoning_effort = params.reasoning_effort != "auto" and "thinking" not in kwargs
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
                 patched_messages,
+                thinking_from_reasoning_effort=thinking_from_reasoning_effort,
                 **completion_kwargs,
             )
 
-        response = await self.client.chat(
-            model=params.model_id,
-            messages=patched_messages,  # type: ignore[arg-type]
-            **completion_kwargs,
-        )
+        try:
+            response = await self.client.chat(
+                model=params.model_id,
+                messages=patched_messages,  # type: ignore[arg-type]
+                **completion_kwargs,
+            )
+        except cohere.BadRequestError as e:
+            self._raise_if_thinking_unsupported(e, thinking_from_reasoning_effort)
+            raise
 
         return self._convert_completion_response(response, model=params.model_id)
 

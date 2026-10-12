@@ -4,6 +4,7 @@ from typing import Any, Literal
 from cohere import V2ChatResponse
 from cohere.types import ListModelsResponse as CohereListModelsResponse
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -47,9 +48,14 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     - Converts 'content' to 'tool_plan' in assistant messages with tool_calls, omitting it when
       'content' is absent, null, or empty (OpenAI makes it optional alongside tool_calls).
     - Validates the message sequence.
+    - Refuses file content parts, which Cohere's chat ignores instead of rejecting.
     """
     patched_messages = []
     for i, message in enumerate(messages):
+        content = message.get("content")
+        if isinstance(content, list) and any(isinstance(part, dict) and part.get("type") == "file" for part in content):
+            msg = "file content"
+            raise UnsupportedParameterError(msg, "cohere", "Cohere chat accepts text and image_url content parts only.")
         patched_message = message.copy()
         if patched_message.get("role") == "tool":
             # Walk backwards past sibling tool messages to find the assistant message

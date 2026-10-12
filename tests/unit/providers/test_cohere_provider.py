@@ -114,6 +114,46 @@ async def test_parallel_tool_calls_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_named_tool_choice_raises() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'tool_choice' is not supported for cohere"),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather in Rome?"}],
+                tools=[{"type": "function", "function": {"name": "weather", "parameters": {"type": "object"}}}],
+                tool_choice={"type": "function", "function": {"name": "weather"}},
+            )
+        )
+
+    mock_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_choice", ["required", "none"])
+async def test_string_tool_choice_is_sent_to_chat(tool_choice: str) -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                tool_choice=tool_choice,
+            )
+        )
+
+    assert mock_chat.call_args.kwargs["tool_choice"] == tool_choice
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("n", [None, 1])
 async def test_single_completion_n_is_not_sent_to_chat(n: int | None) -> None:
     provider = _mk_provider()
@@ -621,6 +661,90 @@ async def test_reasoning_effort_mapped_to_thinking(
                 assert call_kwargs["thinking"] == expected_thinking
 
 
+_THINKING_UNSUPPORTED_BODY = {
+    "message": "invalid request: `thinking` parameter is not supported with the specified model."
+}
+
+
+@pytest.mark.asyncio
+async def test_unsupported_thinking_is_reported_as_reasoning_effort() -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+    error = BadRequestError(body=_THINKING_UNSUPPORTED_BODY)
+
+    with (
+        patch.object(provider.client, "chat", autospec=True, side_effect=error),
+        pytest.raises(UnsupportedParameterError, match="'reasoning_effort' is not supported for cohere") as exc_info,
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="minimal",
+            )
+        )
+
+    assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.asyncio
+async def test_unsupported_thinking_is_reported_as_reasoning_effort_when_streaming() -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        raise BadRequestError(body=_THINKING_UNSUPPORTED_BODY)
+        yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()):
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="minimal",
+                stream=True,
+            )
+        )
+        with pytest.raises(UnsupportedParameterError, match="'reasoning_effort' is not supported for cohere"):
+            [chunk async for chunk in result]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "reasoning_effort", "kwargs"),
+    [
+        ({"message": "invalid request: something else is wrong."}, "minimal", {}),
+        ({"message": "invalid request: tools are not supported while thinking is enabled."}, "minimal", {}),
+        (_THINKING_UNSUPPORTED_BODY, "auto", {"thinking": {"type": "enabled", "token_budget": 256}}),
+        (_THINKING_UNSUPPORTED_BODY, "minimal", {"thinking": {"type": "enabled", "token_budget": 256}}),
+    ],
+)
+async def test_other_bad_requests_are_not_reported_as_reasoning_effort(
+    body: dict[str, Any], reasoning_effort: ReasoningEffort, kwargs: dict[str, Any]
+) -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+    error = BadRequestError(body=body)
+
+    with (
+        patch.object(provider.client, "chat", autospec=True, side_effect=error),
+        pytest.raises(BadRequestError) as exc_info,
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            **kwargs,
+        )
+
+    assert exc_info.value is error
+
+
 def _mock_tool_call(tool_id: str, name: str, arguments: str) -> Mock:
     """Create a mock Cohere ToolCallV2."""
     tc = Mock()
@@ -1061,6 +1185,47 @@ def test_patch_messages_preserves_multimodal_user_content() -> None:
     assert len(result[0]["content"]) == 2
     assert result[0]["content"][0] == {"type": "text", "text": "What is in this image?"}
     assert result[0]["content"][1] == {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}
+
+
+def test_patch_messages_rejects_file_content() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this document."},
+                {
+                    "type": "file",
+                    "file": {"filename": "report.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK"},
+                },
+            ],
+        },
+    ]
+
+    with pytest.raises(UnsupportedParameterError, match="'file content' is not supported for cohere"):
+        _patch_messages(messages)
+
+
+@pytest.mark.asyncio
+async def test_completion_with_file_content_raises_before_calling_chat() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'file content' is not supported for cohere"),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [{"type": "file", "file": {"file_id": "file-abc123"}}],
+                    }
+                ],
+            )
+        )
+
+    mock_chat.assert_not_called()
 
 
 def test_patch_messages_preserves_base64_image_content() -> None:
