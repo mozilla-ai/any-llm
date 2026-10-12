@@ -294,6 +294,171 @@ def test_preprocess_response_format_unsupported_raises() -> None:
         provider._preprocess_response_format("invalid")
 
 
+_CITY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"name": {"type": "string"}},
+    "required": ["name"],
+    "additionalProperties": False,
+}
+
+
+def test_preprocess_response_format_unwraps_openai_json_schema() -> None:
+    provider = _mk_provider()
+
+    result = provider._preprocess_response_format(
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "City", "description": "A city", "strict": True, "schema": _CITY_SCHEMA},
+        }
+    )
+
+    assert result == {"type": "json_object", "schema": _CITY_SCHEMA}
+
+
+@pytest.mark.parametrize("json_schema", [None, "City", {"name": "City"}, {"name": "City", "schema": "not-a-dict"}])
+def test_preprocess_response_format_json_schema_without_schema_raises(json_schema: Any) -> None:
+    provider = _mk_provider()
+
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        provider._preprocess_response_format({"type": "json_schema", "json_schema": json_schema})
+
+
+@pytest.mark.parametrize(
+    "response_format",
+    [{"type": "json_object"}, {"type": "text"}, {"type": "json_object", "schema": _CITY_SCHEMA}],
+)
+def test_preprocess_response_format_passes_cohere_shapes_through(response_format: dict[str, Any]) -> None:
+    provider = _mk_provider()
+
+    assert provider._preprocess_response_format(response_format) == response_format
+
+
+@pytest.mark.asyncio
+async def test_openai_json_schema_response_format_reaches_chat_as_json_object() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Name a city"}],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "City", "strict": True, "schema": _CITY_SCHEMA},
+                },
+            )
+        )
+
+    assert mock_chat.call_args.kwargs["response_format"] == {"type": "json_object", "schema": _CITY_SCHEMA}
+
+
+def _function_tool(name: str, strict: bool | None = None) -> dict[str, Any]:
+    function: dict[str, Any] = {"name": name, "description": f"{name} tool", "parameters": _CITY_SCHEMA}
+    if strict is not None:
+        function["strict"] = strict
+    return {"type": "function", "function": function}
+
+
+@pytest.mark.parametrize(
+    ("strict_flags", "expected_strict_tools"),
+    [
+        ([True], True),
+        ([True, True], True),
+        ([True, False], False),
+        ([True, None], False),
+        ([False], False),
+        ([None], False),
+    ],
+)
+def test_convert_tools_strips_strict_and_reports_all_strict(
+    strict_flags: list[bool | None], expected_strict_tools: bool
+) -> None:
+    provider = _mk_provider()
+    tools = [_function_tool(f"tool_{i}", strict) for i, strict in enumerate(strict_flags)]
+
+    converted, strict_tools = provider._convert_tools(tools)
+
+    assert strict_tools is expected_strict_tools
+    assert converted == [_function_tool(f"tool_{i}") for i in range(len(strict_flags))]
+    assert tools[0]["function"].get("strict") == strict_flags[0]
+
+
+def test_convert_tools_leaves_non_function_tools_alone() -> None:
+    provider = _mk_provider()
+    other_tool = {"type": "other", "name": "x"}
+
+    converted, strict_tools = provider._convert_tools([other_tool])
+
+    assert converted == [other_tool]
+    assert strict_tools is False
+
+
+@pytest.mark.asyncio
+async def test_strict_tools_sent_when_every_tool_is_strict() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather?"}],
+                tools=[_function_tool("get_city", strict=True)],
+            )
+        )
+
+    assert mock_chat.call_args.kwargs["tools"] == [_function_tool("get_city")]
+    assert mock_chat.call_args.kwargs["strict_tools"] is True
+
+
+@pytest.mark.asyncio
+async def test_strict_tools_not_sent_for_non_strict_tools() -> None:
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        if False:
+            yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather?"}],
+                tools=[_function_tool("get_city", strict=False)],
+                stream=True,
+            )
+        )
+        assert [chunk async for chunk in result] == []
+
+    assert mock_chat_stream.call_args.kwargs["tools"] == [_function_tool("get_city")]
+    assert "strict_tools" not in mock_chat_stream.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_explicit_strict_tools_kwarg_wins() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather?"}],
+                tools=[_function_tool("get_city", strict=True)],
+            ),
+            strict_tools=False,
+        )
+
+    assert mock_chat.call_args.kwargs["strict_tools"] is False
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("reasoning_effort", "expected_thinking"),

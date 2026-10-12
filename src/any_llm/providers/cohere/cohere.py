@@ -197,15 +197,49 @@ class CohereProvider(AnyLLM):
 
     @staticmethod
     def _preprocess_response_format(response_format: type | dict[str, Any]) -> dict[str, Any]:
+        """Convert a response_format to the shape Cohere's v2 chat endpoint accepts.
+
+        Cohere takes `{"type": "json_object", "schema": ...}` (or no schema for plain JSON mode)
+        and `{"type": "text"}`. The OpenAI `{"type": "json_schema", "json_schema": {...}}` shape
+        is unwrapped into that, dropping `name`, `description` and `strict`: Cohere has no
+        equivalent for them, and it validates whatever sits under `json_schema` as the schema
+        itself, so passing the OpenAI shape through is a 400. Other dicts pass through.
+
+        See https://docs.cohere.com/docs/structured-outputs
+        """
         if is_structured_output_type(response_format):
             return {"type": "json_object", "schema": get_json_schema(response_format)}
-        # can either be json schema already in dict
-        # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
-        # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
         if isinstance(response_format, dict):
+            if response_format.get("type") == "json_schema":
+                json_schema = response_format.get("json_schema")
+                schema = json_schema.get("schema") if isinstance(json_schema, dict) else None
+                if not isinstance(schema, dict):
+                    msg = "response_format of type 'json_schema' must carry a schema under json_schema.schema"
+                    raise ValueError(msg)
+                return {"type": "json_object", "schema": schema}
             return response_format
         msg = f"Unsupported response_format: {response_format}"
         raise ValueError(msg)
+
+    @staticmethod
+    def _convert_tools(tools: list[dict[str, Any] | Any]) -> tuple[list[dict[str, Any] | Any], bool]:
+        """Strip OpenAI's per-function `strict` flag and report whether every function tool set it.
+
+        Cohere rejects `strict` inside a function definition and instead takes one request-level
+        `strict_tools` flag. It is only turned on when every function tool asked for strict mode,
+        because it applies to all tools at once and Cohere's strict mode rejects tools with no
+        required parameter, which a non-strict OpenAI tool may well be.
+        """
+        converted: list[dict[str, Any] | Any] = []
+        strict_flags: list[bool] = []
+        for tool in tools:
+            if isinstance(tool, dict) and isinstance(tool.get("function"), dict):
+                function = dict(tool["function"])
+                strict_flags.append(function.pop("strict", None) is True)
+                converted.append({**tool, "function": function})
+            else:
+                converted.append(tool)
+        return converted, bool(strict_flags) and all(strict_flags)
 
     @override
     async def _acompletion(
@@ -213,6 +247,10 @@ class CohereProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format is not None:
             kwargs["response_format"] = self._preprocess_response_format(params.response_format)
+        if params.tools:
+            kwargs["tools"], strict_tools = self._convert_tools(params.tools)
+            if strict_tools:
+                kwargs.setdefault("strict_tools", True)
         if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
