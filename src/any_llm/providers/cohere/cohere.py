@@ -110,7 +110,8 @@ class CohereProvider(AnyLLM):
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Cohere chunk response to OpenAI format."""
-        return _create_openai_chunk_from_cohere_chunk(response)
+        model = kwargs.get("model", "unknown")
+        return _create_openai_chunk_from_cohere_chunk(response, model)
 
     @staticmethod
     @override
@@ -192,7 +193,7 @@ class CohereProvider(AnyLLM):
         )
 
         async for chunk in cohere_stream:
-            yield self._convert_completion_chunk_response(chunk)
+            yield self._convert_completion_chunk_response(chunk, model=model)
 
     @staticmethod
     def _preprocess_response_format(response_format: type | dict[str, Any]) -> dict[str, Any]:
