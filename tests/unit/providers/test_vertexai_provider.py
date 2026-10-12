@@ -8,7 +8,7 @@ import pytest
 from google.genai import types
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.gemini.base import GoogleProvider
 from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.providers.vertexai.vertexai import (
@@ -463,3 +463,24 @@ async def test_vertexai_partner_token_error_propagates(genai_client: MagicMock) 
         provider = VertexaiProvider()
         with pytest.raises(RuntimeError, match="Could not resolve API token"):
             await provider._acompletion(params)
+
+
+@pytest.mark.asyncio
+async def test_vertexai_partner_model_forwards_n(genai_client: MagicMock) -> None:
+    provider = VertexaiProvider()
+    with patch.object(_VertexaiPartnerProvider, "_acompletion", AsyncMock(return_value=MagicMock())) as partner:
+        await provider.acompletion(model=QWEN_MODEL, messages=[{"role": "user", "content": "Hi"}], n=2)
+
+    assert partner.call_args.args[0].n == 2
+
+
+@pytest.mark.asyncio
+async def test_vertexai_gemini_model_refuses_n(genai_client: MagicMock) -> None:
+    provider = VertexaiProvider()
+    with (
+        patch.object(GoogleProvider, "_acompletion", AsyncMock()) as gemini,
+        pytest.raises(UnsupportedParameterError, match="'n' is not supported for vertexai"),
+    ):
+        await provider.acompletion(model="gemini-2.5-flash", messages=[{"role": "user", "content": "Hi"}], n=2)
+
+    gemini.assert_not_awaited()

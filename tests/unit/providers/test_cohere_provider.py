@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from pydantic import BaseModel
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.cohere.utils import (
     _convert_cohere_embedding_response,
     _convert_response,
@@ -69,6 +69,37 @@ async def test_stream_with_response_format_passes_to_chat_stream() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streamed_chunks_carry_requested_model_id() -> None:
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        yield _mock_content_delta_chunk("Hello")
+        yield _mock_content_delta_chunk(" there")
+        yield _mock_message_end_chunk("COMPLETE")
+
+    provider.client.chat_stream = Mock(return_value=_stream())
+    result = await provider._acompletion(
+        CompletionParams(
+            model_id="command-r7b-12-2024",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+        )
+    )
+    collected = [chunk async for chunk in result]
+
+    assert len(collected) == 3
+    assert {chunk.model for chunk in collected} == {"command-r7b-12-2024"}
+
+
+def test_convert_completion_chunk_response_without_model_reports_unknown() -> None:
+    provider = _mk_provider()
+
+    result = provider._convert_completion_chunk_response(_mock_content_delta_chunk("Hi"))
+
+    assert result.model == "unknown"
+
+
+@pytest.mark.asyncio
 async def test_parallel_tool_calls_raises() -> None:
     provider = _mk_provider()
 
@@ -80,6 +111,91 @@ async def test_parallel_tool_calls_raises() -> None:
                 parallel_tool_calls=False,
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_named_tool_choice_raises() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'tool_choice' is not supported for cohere"),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather in Rome?"}],
+                tools=[{"type": "function", "function": {"name": "weather", "parameters": {"type": "object"}}}],
+                tool_choice={"type": "function", "function": {"name": "weather"}},
+            )
+        )
+
+    mock_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_choice", ["required", "none"])
+async def test_string_tool_choice_is_sent_to_chat(tool_choice: str) -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                tool_choice=tool_choice,
+            )
+        )
+
+    assert mock_chat.call_args.kwargs["tool_choice"] == tool_choice
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n", [None, 1])
+async def test_single_completion_n_is_not_sent_to_chat(n: int | None) -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider.acompletion(model="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
+
+    assert "n" not in mock_chat.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_single_completion_n_is_not_sent_to_chat_stream() -> None:
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        if False:
+            yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+        result = await provider.acompletion(
+            model="model-id", messages=[{"role": "user", "content": "Hello"}], n=1, stream=True
+        )
+        assert [chunk async for chunk in result] == []
+
+    assert "n" not in mock_chat_stream.call_args.kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n", [2, 0, -1])
+async def test_n_other_than_one_raises(n: int) -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'n' is not supported for cohere"),
+    ):
+        await provider.acompletion(model="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
+
+    mock_chat.assert_not_called()
 
 
 def test_patch_messages_removes_name_from_tool_messages() -> None:
@@ -193,6 +309,115 @@ def test_patch_messages_tool_after_tool_without_assistant_raises() -> None:
         _patch_messages(messages)
 
 
+_WEATHER_TOOL_CALLS: list[dict[str, Any]] = [
+    {"id": "call_1", "type": "function", "function": {"name": "weather", "arguments": '{"city":"Rome"}'}}
+]
+
+
+def _weather_history(assistant_message: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"role": "user", "content": "Weather in Rome?"},
+        assistant_message,
+        {"role": "tool", "tool_call_id": "call_1", "content": "sunny 32C"},
+    ]
+
+
+def test_patch_messages_assistant_tool_calls_without_content_key() -> None:
+    """An assistant message with tool_calls and no content key (as Haystack sends it) gets no tool_plan."""
+    result = _patch_messages(_weather_history({"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}))
+
+    assert result[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+@pytest.mark.parametrize("content", [None, "", []])
+def test_patch_messages_assistant_tool_calls_with_empty_content_omits_tool_plan(content: Any) -> None:
+    """Null or empty content is dropped rather than sent to Cohere as a null or empty tool_plan."""
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": content, "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+def test_patch_messages_assistant_tool_calls_with_text_content_parts() -> None:
+    """Text content parts are joined into a string tool_plan; non-text parts are dropped."""
+    content = [
+        {"type": "text", "text": "Checking "},
+        {"type": "refusal", "refusal": "n/a"},
+        {"type": "text", "text": "the weather."},
+    ]
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": content, "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_plan": "Checking the weather.", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+@pytest.mark.parametrize(
+    "malformed_part",
+    [{"type": "text"}, {"type": "text", "text": None}, {"type": "text", "text": 42}],
+    ids=["missing-text", "null-text", "non-string-text"],
+)
+def test_patch_messages_assistant_tool_calls_skips_malformed_text_parts(malformed_part: dict[str, Any]) -> None:
+    """A text part without a string `text` is skipped instead of raising."""
+    content = [malformed_part, {"type": "text", "text": "Checking the weather."}]
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": content, "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_plan": "Checking the weather.", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+def test_patch_messages_assistant_tool_calls_with_only_malformed_text_parts_omits_tool_plan() -> None:
+    """When no text part carries a string, tool_plan is omitted."""
+    result = _patch_messages(
+        _weather_history({"role": "assistant", "content": [{"type": "text"}], "tool_calls": _WEATHER_TOOL_CALLS})
+    )
+
+    assert result[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
+def test_patch_messages_assistant_tool_calls_with_content_does_not_mutate_input() -> None:
+    """The caller's message keeps its content; only the patched copy carries tool_plan."""
+    assistant_message = {"role": "assistant", "content": "Let me check.", "tool_calls": _WEATHER_TOOL_CALLS}
+
+    result = _patch_messages(_weather_history(assistant_message))
+
+    assert result[1] == {"role": "assistant", "tool_plan": "Let me check.", "tool_calls": _WEATHER_TOOL_CALLS}
+    assert assistant_message["content"] == "Let me check."
+
+
+@pytest.mark.asyncio
+async def test_completion_with_assistant_tool_calls_without_content() -> None:
+    """End-to-end: a second agent turn whose assistant message has no content reaches the Cohere client."""
+    pytest.importorskip("cohere")
+    from any_llm.providers.cohere.cohere import CohereProvider
+
+    provider = CohereProvider(api_key="test-api-key")
+    with (
+        patch.object(provider.client, "chat", new_callable=AsyncMock) as mock_chat,
+        patch.object(provider, "_convert_completion_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=_weather_history({"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}),
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "weather",
+                            "parameters": {"type": "object", "properties": {"city": {"type": "string"}}},
+                        },
+                    }
+                ],
+            )
+        )
+
+    sent_messages = mock_chat.call_args.kwargs["messages"]
+    assert sent_messages[1] == {"role": "assistant", "tool_calls": _WEATHER_TOOL_CALLS}
+
+
 def test_preprocess_response_format_dataclass() -> None:
     from dataclasses import dataclass
 
@@ -217,6 +442,179 @@ def test_preprocess_response_format_unsupported_raises() -> None:
 
     with pytest.raises(ValueError, match="Unsupported response_format"):
         provider._preprocess_response_format("invalid")
+
+
+_CITY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"name": {"type": "string"}},
+    "required": ["name"],
+    "additionalProperties": False,
+}
+
+
+def test_preprocess_response_format_unwraps_openai_json_schema() -> None:
+    provider = _mk_provider()
+
+    result = provider._preprocess_response_format(
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "City", "description": "A city", "strict": True, "schema": _CITY_SCHEMA},
+        }
+    )
+
+    assert result == {"type": "json_object", "schema": _CITY_SCHEMA}
+
+
+@pytest.mark.parametrize("json_schema", [None, "City", {"name": "City"}, {"name": "City", "schema": "not-a-dict"}])
+def test_preprocess_response_format_json_schema_without_schema_raises(json_schema: Any) -> None:
+    provider = _mk_provider()
+
+    with pytest.raises(ValueError, match=r"json_schema\.schema"):
+        provider._preprocess_response_format({"type": "json_schema", "json_schema": json_schema})
+
+
+@pytest.mark.parametrize(
+    "response_format",
+    [{"type": "json_object"}, {"type": "text"}, {"type": "json_object", "schema": _CITY_SCHEMA}],
+)
+def test_preprocess_response_format_passes_cohere_shapes_through(response_format: dict[str, Any]) -> None:
+    provider = _mk_provider()
+
+    assert provider._preprocess_response_format(response_format) == response_format
+
+
+@pytest.mark.asyncio
+async def test_openai_json_schema_response_format_reaches_chat_as_json_object() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Name a city"}],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "City", "strict": True, "schema": _CITY_SCHEMA},
+                },
+            )
+        )
+
+    assert mock_chat.call_args.kwargs["response_format"] == {"type": "json_object", "schema": _CITY_SCHEMA}
+
+
+def _function_tool(name: str, strict: bool | None = None) -> dict[str, Any]:
+    function: dict[str, Any] = {"name": name, "description": f"{name} tool", "parameters": _CITY_SCHEMA}
+    if strict is not None:
+        function["strict"] = strict
+    return {"type": "function", "function": function}
+
+
+@pytest.mark.parametrize(
+    ("strict_flags", "expected_strict_tools"),
+    [
+        ([True], True),
+        ([True, True], True),
+        ([False, None], False),
+        ([False], False),
+        ([None], False),
+    ],
+)
+def test_convert_tools_strips_strict_and_reports_all_strict(
+    strict_flags: list[bool | None], expected_strict_tools: bool
+) -> None:
+    provider = _mk_provider()
+    tools = [_function_tool(f"tool_{i}", strict) for i, strict in enumerate(strict_flags)]
+
+    converted, strict_tools = provider._convert_tools(tools)
+
+    assert strict_tools is expected_strict_tools
+    assert converted == [_function_tool(f"tool_{i}") for i in range(len(strict_flags))]
+    assert tools[0]["function"].get("strict") == strict_flags[0]
+
+
+@pytest.mark.parametrize("strict_flags", [[True, False], [True, None], [None, True]])
+def test_convert_tools_rejects_mixed_strictness(strict_flags: list[bool | None]) -> None:
+    provider = _mk_provider()
+    tools = [_function_tool(f"tool_{i}", strict) for i, strict in enumerate(strict_flags)]
+
+    with pytest.raises(UnsupportedParameterError, match="all be strict or all non-strict"):
+        provider._convert_tools(tools)
+
+
+def test_convert_tools_leaves_non_function_tools_alone() -> None:
+    provider = _mk_provider()
+    other_tool = {"type": "other", "name": "x"}
+
+    converted, strict_tools = provider._convert_tools([other_tool])
+
+    assert converted == [other_tool]
+    assert strict_tools is False
+
+
+@pytest.mark.asyncio
+async def test_strict_tools_sent_when_every_tool_is_strict() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather?"}],
+                tools=[_function_tool("get_city", strict=True)],
+            )
+        )
+
+    assert mock_chat.call_args.kwargs["tools"] == [_function_tool("get_city")]
+    assert mock_chat.call_args.kwargs["strict_tools"] is True
+
+
+@pytest.mark.asyncio
+async def test_strict_tools_not_sent_for_non_strict_tools() -> None:
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        if False:
+            yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather?"}],
+                tools=[_function_tool("get_city", strict=False)],
+                stream=True,
+            )
+        )
+        assert [chunk async for chunk in result] == []
+
+    assert mock_chat_stream.call_args.kwargs["tools"] == [_function_tool("get_city")]
+    assert "strict_tools" not in mock_chat_stream.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_explicit_strict_tools_kwarg_wins() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Weather?"}],
+                tools=[_function_tool("get_city", strict=True)],
+            ),
+            strict_tools=False,
+        )
+
+    assert mock_chat.call_args.kwargs["strict_tools"] is False
 
 
 @pytest.mark.asyncio
@@ -262,6 +660,90 @@ async def test_reasoning_effort_mapped_to_thinking(
                 assert "thinking" not in call_kwargs
             else:
                 assert call_kwargs["thinking"] == expected_thinking
+
+
+_THINKING_UNSUPPORTED_BODY = {
+    "message": "invalid request: `thinking` parameter is not supported with the specified model."
+}
+
+
+@pytest.mark.asyncio
+async def test_unsupported_thinking_is_reported_as_reasoning_effort() -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+    error = BadRequestError(body=_THINKING_UNSUPPORTED_BODY)
+
+    with (
+        patch.object(provider.client, "chat", autospec=True, side_effect=error),
+        pytest.raises(UnsupportedParameterError, match="'reasoning_effort' is not supported for cohere") as exc_info,
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="minimal",
+            )
+        )
+
+    assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.asyncio
+async def test_unsupported_thinking_is_reported_as_reasoning_effort_when_streaming() -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        raise BadRequestError(body=_THINKING_UNSUPPORTED_BODY)
+        yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()):
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="minimal",
+                stream=True,
+            )
+        )
+        with pytest.raises(UnsupportedParameterError, match="'reasoning_effort' is not supported for cohere"):
+            [chunk async for chunk in result]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "reasoning_effort", "kwargs"),
+    [
+        ({"message": "invalid request: something else is wrong."}, "minimal", {}),
+        ({"message": "invalid request: tools are not supported while thinking is enabled."}, "minimal", {}),
+        (_THINKING_UNSUPPORTED_BODY, "auto", {"thinking": {"type": "enabled", "token_budget": 256}}),
+        (_THINKING_UNSUPPORTED_BODY, "minimal", {"thinking": {"type": "enabled", "token_budget": 256}}),
+    ],
+)
+async def test_other_bad_requests_are_not_reported_as_reasoning_effort(
+    body: dict[str, Any], reasoning_effort: ReasoningEffort, kwargs: dict[str, Any]
+) -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+    error = BadRequestError(body=body)
+
+    with (
+        patch.object(provider.client, "chat", autospec=True, side_effect=error),
+        pytest.raises(BadRequestError) as exc_info,
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            **kwargs,
+        )
+
+    assert exc_info.value is error
 
 
 def _mock_tool_call(tool_id: str, name: str, arguments: str) -> Mock:
@@ -334,7 +816,7 @@ def test_streaming_tool_call_start_uses_chunk_index() -> None:
     chunk.delta.message.tool_calls.function = Mock()
     chunk.delta.message.tool_calls.function.name = "get_weather"
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     tool_calls = result.choices[0].delta.tool_calls
     assert tool_calls is not None
@@ -355,7 +837,7 @@ def test_streaming_tool_call_delta_uses_chunk_index() -> None:
     chunk.delta.message.tool_calls.function = Mock()
     chunk.delta.message.tool_calls.function.arguments = '{"partial'
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     tool_calls = result.choices[0].delta.tool_calls
     assert tool_calls is not None
@@ -414,6 +896,16 @@ def test_convert_response_tool_call_without_tool_calls_reports_stop() -> None:
     assert result.choices[0].finish_reason == "stop"
 
 
+def _mock_content_delta_chunk(text: str) -> Mock:
+    chunk = Mock()
+    chunk.type = "content-delta"
+    chunk.delta = Mock()
+    chunk.delta.message = Mock()
+    chunk.delta.message.content = Mock()
+    chunk.delta.message.content.text = text
+    return chunk
+
+
 def _mock_message_end_chunk(finish_reason: Any) -> Mock:
     chunk = Mock()
     chunk.type = "message-end"
@@ -425,13 +917,13 @@ def _mock_message_end_chunk(finish_reason: Any) -> Mock:
 
 def test_streaming_message_end_maps_max_tokens_to_length() -> None:
     """Streaming: the terminal chunk must surface truncation instead of a plain stop."""
-    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("MAX_TOKENS"))
+    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("MAX_TOKENS"), "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "length"
 
 
 def test_streaming_message_end_maps_tool_call_to_tool_calls() -> None:
-    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("TOOL_CALL"))
+    result = _create_openai_chunk_from_cohere_chunk(_mock_message_end_chunk("TOOL_CALL"), "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "tool_calls"
 
@@ -441,7 +933,7 @@ def test_streaming_message_end_without_delta_falls_back_to_stop() -> None:
     chunk.type = "message-end"
     chunk.delta = None
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "stop"
 
@@ -453,7 +945,7 @@ def test_streaming_message_end_still_reports_usage() -> None:
     chunk.delta.usage.tokens.input_tokens = 12
     chunk.delta.usage.tokens.output_tokens = 8
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     assert result.choices[0].finish_reason == "stop"
     assert result.usage is not None
@@ -474,7 +966,7 @@ def test_streaming_tool_call_index_defaults_to_zero_when_none() -> None:
     chunk.delta.message.tool_calls.function = Mock()
     chunk.delta.message.tool_calls.function.name = "search"
 
-    result = _create_openai_chunk_from_cohere_chunk(chunk)
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
     assert result.choices[0].delta.tool_calls[0].index == 0  # type: ignore[index]
 
@@ -696,6 +1188,47 @@ def test_patch_messages_preserves_multimodal_user_content() -> None:
     assert result[0]["content"][1] == {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}
 
 
+def test_patch_messages_rejects_file_content() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this document."},
+                {
+                    "type": "file",
+                    "file": {"filename": "report.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK"},
+                },
+            ],
+        },
+    ]
+
+    with pytest.raises(UnsupportedParameterError, match="'file content' is not supported for cohere"):
+        _patch_messages(messages)
+
+
+@pytest.mark.asyncio
+async def test_completion_with_file_content_raises_before_calling_chat() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'file content' is not supported for cohere"),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [{"type": "file", "file": {"file_id": "file-abc123"}}],
+                    }
+                ],
+            )
+        )
+
+    mock_chat.assert_not_called()
+
+
 def test_patch_messages_preserves_base64_image_content() -> None:
     """Verify _patch_messages preserves data URI image content blocks."""
     data_uri = "data:image/png;base64,iVBORw0KGgoAAAANS"
@@ -831,3 +1364,72 @@ def test_request_options_absent_when_timeout_not_requested() -> None:
     )
 
     assert "request_options" not in converted
+
+
+@pytest.mark.asyncio
+async def test_list_models_follows_next_page_token() -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    second_page = "page-2"
+    pages = [
+        ListModelsResponse(models=[GetModelResponse(name="command-a-03-2025")], next_page_token=second_page),
+        ListModelsResponse(models=[GetModelResponse(name="rerank-v3.5")], next_page_token=None),
+    ]
+
+    with patch.object(provider.client.models, "list", autospec=True, side_effect=pages) as mock_list:
+        models = await provider._alist_models(endpoint="chat", page_size=1)
+
+    assert [model.id for model in models] == ["command-a-03-2025", "rerank-v3.5"]
+    assert mock_list.call_args_list[0].kwargs == {"endpoint": "chat", "page_size": 1}
+    assert mock_list.call_args_list[1].kwargs == {"endpoint": "chat", "page_size": 1, "page_token": second_page}
+
+
+@pytest.mark.asyncio
+async def test_list_models_single_page_makes_one_call() -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    page = ListModelsResponse(models=[GetModelResponse(name="embed-v4.0")], next_page_token="")
+
+    with patch.object(provider.client.models, "list", autospec=True, return_value=page) as mock_list:
+        models = await provider._alist_models()
+
+    assert [model.id for model in models] == ["embed-v4.0"]
+    mock_list.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("start_token", "next_tokens", "requested_tokens"),
+    [
+        (None, ["page-2", "page-2"], [None, "page-2"]),
+        (None, ["page-2", "page-3", "page-2"], [None, "page-2", "page-3"]),
+        ("page-1", ["page-2", "page-1"], ["page-1", "page-2"]),
+    ],
+)
+async def test_list_models_raises_when_a_page_token_repeats(
+    start_token: str | None, next_tokens: list[str], requested_tokens: list[str | None]
+) -> None:
+    pytest.importorskip("cohere")
+    from cohere import ListModelsResponse
+    from cohere.types import GetModelResponse
+
+    provider = _mk_provider()
+    pages = [
+        ListModelsResponse(models=[GetModelResponse(name=f"model-{index}")], next_page_token=token)
+        for index, token in enumerate(next_tokens)
+    ]
+    kwargs = {} if start_token is None else {"page_token": start_token}
+
+    with (
+        patch.object(provider.client.models, "list", autospec=True, side_effect=pages) as mock_list,
+        pytest.raises(ProviderError, match="page token"),
+    ):
+        await provider._alist_models(**kwargs)
+
+    assert [call.kwargs.get("page_token") for call in mock_list.call_args_list] == requested_tokens

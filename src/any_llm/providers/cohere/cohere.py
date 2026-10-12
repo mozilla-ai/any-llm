@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
+from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -109,7 +110,8 @@ class CohereProvider(AnyLLM):
     @override
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         """Convert Cohere chunk response to OpenAI format."""
-        return _create_openai_chunk_from_cohere_chunk(response)
+        model = kwargs.get("model", "unknown")
+        return _create_openai_chunk_from_cohere_chunk(response, model)
 
     @staticmethod
     @override
@@ -142,10 +144,11 @@ class CohereProvider(AnyLLM):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
+        encoding_format = pop_encoding_format(kwargs, self.PROVIDER_NAME)
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         result = await self.client.embed(model=model, **embedding_kwargs)
         response_data = {"model": model, "result": result}
-        return self._convert_embedding_response(response_data)
+        return apply_encoding_format(self._convert_embedding_response(response_data), encoding_format)
 
     @staticmethod
     @override
@@ -181,7 +184,7 @@ class CohereProvider(AnyLLM):
         self.client = cohere.AsyncClientV2(api_key=api_key, **kwargs)
 
     async def _stream_completion_async(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
+        self, model: str, messages: list[dict[str, Any]], *, thinking_from_reasoning_effort: bool, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
         cohere_stream = self.client.chat_stream(
             model=model,
@@ -189,20 +192,83 @@ class CohereProvider(AnyLLM):
             **kwargs,
         )
 
-        async for chunk in cohere_stream:
-            yield self._convert_completion_chunk_response(chunk)
+        try:
+            async for chunk in cohere_stream:
+                yield self._convert_completion_chunk_response(chunk, model=model)
+        except cohere.BadRequestError as e:
+            self._raise_if_thinking_unsupported(e, thinking_from_reasoning_effort)
+            raise
+
+    def _raise_if_thinking_unsupported(
+        self, error: cohere.BadRequestError, thinking_from_reasoning_effort: bool
+    ) -> None:
+        """Report Cohere's rejection of `thinking` as the `reasoning_effort` the caller sent.
+
+        Only some Cohere models accept `thinking`, and Cohere's error names the translated field,
+        which the caller never sent.
+        """
+        body = error.body
+        message = body.get("message", "") if isinstance(body, dict) else str(body)
+        if thinking_from_reasoning_effort and "`thinking` parameter is not supported" in str(message):
+            msg = "reasoning_effort"
+            raise UnsupportedParameterError(
+                msg, self.PROVIDER_NAME, "This Cohere model does not support reasoning."
+            ) from error
 
     @staticmethod
     def _preprocess_response_format(response_format: type | dict[str, Any]) -> dict[str, Any]:
+        """Convert a response_format to the shape Cohere's v2 chat endpoint accepts.
+
+        Cohere takes `{"type": "json_object", "schema": ...}` (or no schema for plain JSON mode)
+        and `{"type": "text"}`. The OpenAI `{"type": "json_schema", "json_schema": {...}}` shape
+        is unwrapped into that, dropping `name`, `description` and `strict`: Cohere has no
+        equivalent for them, and it validates whatever sits under `json_schema` as the schema
+        itself, so passing the OpenAI shape through is a 400. Other dicts pass through.
+
+        See https://docs.cohere.com/docs/structured-outputs
+        """
         if is_structured_output_type(response_format):
             return {"type": "json_object", "schema": get_json_schema(response_format)}
-        # can either be json schema already in dict
-        # or {"type": "json_object"} to just generate *a* JSON (JSON mode)
-        # see docs here: https://docs.cohere.com/docs/structured-outputs#json-mode
         if isinstance(response_format, dict):
+            if response_format.get("type") == "json_schema":
+                json_schema = response_format.get("json_schema")
+                schema = json_schema.get("schema") if isinstance(json_schema, dict) else None
+                if not isinstance(schema, dict):
+                    msg = "response_format of type 'json_schema' must carry a schema under json_schema.schema"
+                    raise ValueError(msg)
+                return {"type": "json_object", "schema": schema}
             return response_format
         msg = f"Unsupported response_format: {response_format}"
         raise ValueError(msg)
+
+    @classmethod
+    def _convert_tools(cls, tools: list[dict[str, Any] | Any]) -> tuple[list[dict[str, Any] | Any], bool]:
+        """Strip OpenAI's per-function `strict` flag and report whether the function tools set it.
+
+        Cohere rejects `strict` inside a function definition and instead takes one request-level
+        `strict_tools` flag that applies to every tool. A mix of strict and non-strict function
+        tools therefore has no faithful mapping: turning `strict_tools` off would drop the
+        guarantee the strict tools asked for, and turning it on would impose strict mode (which
+        rejects tools with no required parameter) on tools that did not ask for it.
+        """
+        converted: list[dict[str, Any] | Any] = []
+        strict_flags: list[bool] = []
+        for tool in tools:
+            if isinstance(tool, dict) and isinstance(tool.get("function"), dict):
+                function = dict(tool["function"])
+                strict_flags.append(function.pop("strict", None) is True)
+                converted.append({**tool, "function": function})
+            else:
+                converted.append(tool)
+        if any(strict_flags) and not all(strict_flags):
+            msg = "strict"
+            raise UnsupportedParameterError(
+                msg,
+                cls.PROVIDER_NAME,
+                "Cohere applies strict mode to all tools of a request, so function tools must all be strict or all"
+                " non-strict.",
+            )
+        return converted, any(strict_flags)
 
     @override
     async def _acompletion(
@@ -210,32 +276,59 @@ class CohereProvider(AnyLLM):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         if params.response_format is not None:
             kwargs["response_format"] = self._preprocess_response_format(params.response_format)
+        if params.tools:
+            kwargs["tools"], strict_tools = self._convert_tools(params.tools)
+            if strict_tools:
+                kwargs.setdefault("strict_tools", True)
+        # Cohere's tool_choice is only REQUIRED or NONE; it cannot name a tool.
+        if isinstance(params.tool_choice, dict):
+            msg = "tool_choice"
+            raise UnsupportedParameterError(
+                msg, self.PROVIDER_NAME, "Cohere accepts only 'required' or 'none', not a named tool."
+            )
         if params.parallel_tool_calls is not None:
             msg = "parallel_tool_calls"
             raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
         patched_messages = _patch_messages(params.messages)
+        thinking_from_reasoning_effort = params.reasoning_effort != "auto" and "thinking" not in kwargs
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
                 patched_messages,
+                thinking_from_reasoning_effort=thinking_from_reasoning_effort,
                 **completion_kwargs,
             )
 
-        response = await self.client.chat(
-            model=params.model_id,
-            messages=patched_messages,  # type: ignore[arg-type]
-            **completion_kwargs,
-        )
+        try:
+            response = await self.client.chat(
+                model=params.model_id,
+                messages=patched_messages,  # type: ignore[arg-type]
+                **completion_kwargs,
+            )
+        except cohere.BadRequestError as e:
+            self._raise_if_thinking_unsupported(e, thinking_from_reasoning_effort)
+            raise
 
         return self._convert_completion_response(response, model=params.model_id)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        model_list = await self.client.models.list(**kwargs)
-        return self._convert_list_models_response(model_list)
+        # Cohere pages the catalog (20 models per page by default), so follow next_page_token to the end.
+        models: list[Model] = []
+        requested_tokens = {kwargs.get("page_token")}
+        while True:
+            page = await self.client.models.list(**kwargs)
+            models.extend(self._convert_list_models_response(page))
+            if not page.next_page_token:
+                return models
+            if page.next_page_token in requested_tokens:
+                msg = f"Cohere returned the already requested page token {page.next_page_token!r} as the next page."
+                raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
+            requested_tokens.add(page.next_page_token)
+            kwargs["page_token"] = page.next_page_token
 
     @override
     async def _arerank(

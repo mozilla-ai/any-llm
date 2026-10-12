@@ -4,6 +4,7 @@ from typing import Any, Literal
 from cohere import V2ChatResponse
 from cohere.types import ListModelsResponse as CohereListModelsResponse
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -44,11 +45,17 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Patches messages for Cohere API compatibility.
 
     - Removes the 'name' field from tool messages.
-    - Converts 'content' to 'tool_plan' in assistant messages with tool_calls.
+    - Converts 'content' to 'tool_plan' in assistant messages with tool_calls, omitting it when
+      'content' is absent, null, or empty (OpenAI makes it optional alongside tool_calls).
     - Validates the message sequence.
+    - Refuses file content parts, which Cohere's chat ignores instead of rejecting.
     """
     patched_messages = []
     for i, message in enumerate(messages):
+        content = message.get("content")
+        if isinstance(content, list) and any(isinstance(part, dict) and part.get("type") == "file" for part in content):
+            msg = "file content"
+            raise UnsupportedParameterError(msg, "cohere", "Cohere chat accepts text and image_url content parts only.")
         patched_message = message.copy()
         if patched_message.get("role") == "tool":
             # Walk backwards past sibling tool messages to find the assistant message
@@ -60,18 +67,37 @@ def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 raise ValueError(msg)
             patched_message.pop("name", None)
         if patched_message.get("role") == "assistant" and patched_message.get("tool_calls"):
-            patched_message["tool_plan"] = patched_message.pop("content")
+            tool_plan = _tool_plan_from_content(patched_message.pop("content", None))
+            # Cohere's tool_plan is an optional string; the SDK would send None as null, so omit it.
+            if tool_plan:
+                patched_message["tool_plan"] = tool_plan
         patched_messages.append(patched_message)
     return patched_messages
 
 
-def _create_openai_chunk_from_cohere_chunk(chunk: Any) -> ChatCompletionChunk:
-    """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format."""
+def _tool_plan_from_content(content: Any) -> str | None:
+    """Flatten an OpenAI assistant `content` (absent, null, a string, or text parts) into a tool_plan string."""
+    if isinstance(content, list):
+        return "".join(
+            part["text"]
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
+        )
+    if isinstance(content, str):
+        return content
+    return None
+
+
+def _create_openai_chunk_from_cohere_chunk(chunk: Any, model: str) -> ChatCompletionChunk:
+    """Convert Cohere streaming chunk to OpenAI ChatCompletionChunk format.
+
+    Cohere's stream events carry no model id, so ``model`` is the id the request was made with.
+    """
     chunk_dict: dict[str, Any] = {
         "id": f"chatcmpl-{hash(str(chunk))}",
         "object": "chat.completion.chunk",
         "created": 0,
-        "model": "cohere-model",
+        "model": model,
         "choices": [],
         "usage": None,
     }
