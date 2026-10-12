@@ -313,3 +313,34 @@ async def test_replayed_reasoning_content_sent_as_reasoning(stream: bool) -> Non
 
         sent = mock_client.chat.completions.create.call_args[1]["messages"]
         assert sent[1] == {"role": "assistant", "content": None, "tool_calls": tool_calls, "reasoning": "need the tool"}
+
+
+def test_convert_chunk_keeps_every_choice() -> None:
+    from unittest.mock import Mock
+
+    def make_choice(index: int, content: str) -> Mock:
+        choice = Mock()
+        choice.index = index
+        choice.finish_reason = None
+        choice.delta = Mock(content=content, role=None, tool_calls=None, reasoning=None)
+        return choice
+
+    mock_chunk = Mock(id="chunk-id", model="llama-3.3-70b", created=1, usage=None)
+    mock_chunk.choices = [make_choice(0, "first"), make_choice(1, "second")]
+
+    result = _create_openai_chunk_from_cerebras_chunk(mock_chunk)
+
+    assert [(choice.index, choice.delta.content) for choice in result.choices] == [(0, "first"), (1, "second")]
+
+
+def test_convert_chunk_without_choices_keeps_one_empty_choice() -> None:
+    from unittest.mock import Mock
+
+    mock_chunk = Mock(id="chunk-id", model="llama-3.3-70b", created=1, usage=None)
+    mock_chunk.choices = []
+
+    result = _create_openai_chunk_from_cerebras_chunk(mock_chunk)
+
+    assert len(result.choices) == 1
+    assert result.choices[0].index == 0
+    assert result.choices[0].delta.content is None

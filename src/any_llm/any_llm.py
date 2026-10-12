@@ -141,6 +141,14 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
     """Whether Messages structured output can be streamed by this provider."""
 
+    SUPPORTS_COMPLETION_N: bool = False
+    """Whether the provider can return more than one choice per request (OpenAI's ``n``).
+
+    ``n=1`` is OpenAI's default, so it is dropped for every provider before conversion. Any
+    other value reaches only a provider that sets this flag, and is rejected elsewhere rather
+    than silently answered with a single choice.
+    """
+
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
 
@@ -836,7 +844,7 @@ class AnyLLM(FilesMixin, ABC):
             max_tokens=max_tokens,
             response_format=response_format,
             stream=stream,
-            n=n,
+            n=self._validate_n(n, model),
             stop=stop,
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
@@ -877,6 +885,19 @@ class AnyLLM(FilesMixin, ABC):
             return parsed_completion
 
         return result
+
+    def _supports_completion_n(self, model: str) -> bool:
+        """Whether ``model`` can return more than one choice; override when it varies by model."""
+        return self.SUPPORTS_COMPLETION_N
+
+    def _validate_n(self, n: int | None, model: str) -> int | None:
+        if n is None or n == 1:
+            return None
+        if not self._supports_completion_n(model):
+            parameter_name = "n"
+            additional_message = f"{self.PROVIDER_NAME} returns one choice per request; omit n or set it to 1."
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+        return n
 
     def _validate_prompt_cache_key(self, prompt_cache_key: str | None) -> None:
         if prompt_cache_key is not None and self.PROMPT_CACHE_KEY_SUPPORT == "unsupported":

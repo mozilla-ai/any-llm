@@ -162,9 +162,7 @@ async def test_single_completion_n_is_not_sent_to_chat(n: int | None) -> None:
         patch.object(provider.client, "chat", autospec=True) as mock_chat,
         patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
     ):
-        await provider._acompletion(
-            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
-        )
+        await provider.acompletion(model="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
 
     assert "n" not in mock_chat.call_args.kwargs
 
@@ -178,8 +176,8 @@ async def test_single_completion_n_is_not_sent_to_chat_stream() -> None:
             yield None
 
     with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
-        result = await provider._acompletion(
-            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=1, stream=True)
+        result = await provider.acompletion(
+            model="model-id", messages=[{"role": "user", "content": "Hello"}], n=1, stream=True
         )
         assert [chunk async for chunk in result] == []
 
@@ -191,10 +189,13 @@ async def test_single_completion_n_is_not_sent_to_chat_stream() -> None:
 async def test_n_other_than_one_raises(n: int) -> None:
     provider = _mk_provider()
 
-    with pytest.raises(UnsupportedParameterError, match="'n' is not supported for cohere"):
-        await provider._acompletion(
-            CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
-        )
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'n' is not supported for cohere"),
+    ):
+        await provider.acompletion(model="model-id", messages=[{"role": "user", "content": "Hello"}], n=n)
+
+    mock_chat.assert_not_called()
 
 
 def test_patch_messages_removes_name_from_tool_messages() -> None:

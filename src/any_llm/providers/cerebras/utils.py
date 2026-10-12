@@ -40,12 +40,10 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
         "usage": None,
     }
 
-    delta: dict[str, Any] = {}
-    finish_reason = None
-
-    choices = getattr(chunk, "choices", None)
-    if choices and len(choices) > 0:
-        choice = choices[0]
+    choice_dicts: list[dict[str, Any]] = []
+    # With n > 1 a chunk carries one choice per completion, so each keeps its own index.
+    for position, choice in enumerate(getattr(chunk, "choices", None) or []):
+        delta: dict[str, Any] = {}
         finish_reason = getattr(choice, "finish_reason", None)
 
         choice_delta = getattr(choice, "delta", None)
@@ -80,6 +78,16 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
             if reasoning_content:
                 delta["reasoning"] = {"content": reasoning_content}
 
+        index = getattr(choice, "index", None)
+        choice_dicts.append(
+            {
+                "index": index if isinstance(index, int) else position,
+                "delta": delta,
+                "finish_reason": finish_reason,
+                "logprobs": None,
+            }
+        )
+
     usage = getattr(chunk, "usage", None)
     if usage:
         chunk_dict["usage"] = {
@@ -88,14 +96,7 @@ def _create_openai_chunk_from_cerebras_chunk(chunk: ChatChunkResponse) -> ChatCo
             "total_tokens": getattr(usage, "total_tokens", None) or 0,
         }
 
-    choice_dict = {
-        "index": 0,
-        "delta": delta,
-        "finish_reason": finish_reason,
-        "logprobs": None,
-    }
-
-    chunk_dict["choices"] = [choice_dict]
+    chunk_dict["choices"] = choice_dicts or [{"index": 0, "delta": {}, "finish_reason": None, "logprobs": None}]
 
     return ChatCompletionChunk.model_validate(chunk_dict)
 
