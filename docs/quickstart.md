@@ -96,6 +96,39 @@ print(response.choices[0].message.content)
 
 **Finding model names:** Check the [providers page](providers.md) for provider IDs, or use the [`list_models`](api/list-models.md) API to see available models for your provider.
 
+### Closing a Provider
+
+An `AnyLLM` instance keeps its SDK client, and that client's open connections, between calls.
+When you make async calls on an event loop that ends before your program does, for example by
+calling `asyncio.run()` once per job, close the provider before the loop ends. Use it as an
+async context manager, or await `aclose()`:
+
+```python
+import asyncio
+
+from any_llm import AnyLLM
+
+
+async def main() -> None:
+    async with AnyLLM.create("mistral") as llm:
+        response = await llm.acompletion(
+            model="mistral-small-latest",
+            messages=[{"role": "user", "content": "Hello!"}],
+        )
+        print(response.choices[0].message.content)
+
+
+asyncio.run(main())
+```
+
+A provider that is not closed has its client shut down whenever it is garbage collected, which
+can happen while a later loop is running and then fails with `RuntimeError: Event loop is
+closed`. Calling `aclose()` more than once is safe; do not make requests with a provider after
+closing it. Each SDK client is closed the way its SDK closes it, so an HTTP client you passed in
+the client arguments (such as `http_client`) may be closed too. Providers that keep no async
+client between calls (`bedrock`, `lmstudio`, `sagemaker`, `voyage`, `watsonx`) have nothing to
+close.
+
 ## Custom OpenAI-compatible Endpoints
 
 If your gateway or server speaks the OpenAI API but is not one of the [supported providers](providers.md), point any-llm at it directly with `AnyLLM.create_openai_compatible`. The provider reports the name you give it rather than reporting itself as `openai`, and is used exactly like any other provider instance:

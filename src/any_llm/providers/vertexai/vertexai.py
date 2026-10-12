@@ -187,6 +187,16 @@ class VertexaiProvider(GoogleProvider):
         return _is_partner_model(model)
 
     @override
+    async def aclose(self) -> None:
+        await super().aclose()
+        # A caller's http_options.httpx_async_client is shared with the partner client, and genai
+        # leaves that client for the caller to close, so the partner client is left open with it.
+        if self._partner_provider is not None and not (self._http_options and self._http_options.httpx_async_client):
+            await self._partner_provider.aclose()
+        if self._mistral_client is not None:
+            await self._mistral_client.close()
+
+    @override
     async def _acompletion(
         self,
         params: CompletionParams,

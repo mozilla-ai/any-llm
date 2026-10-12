@@ -155,6 +155,11 @@ class HuggingfaceProvider(AnyLLM):
             **kwargs,
         )
 
+    @override
+    async def aclose(self) -> None:
+        await self.client.close()  # type: ignore[no-untyped-call]
+        await self.responses_client.close()
+
     async def _stream_completion_async(
         self,
         **kwargs: Any,

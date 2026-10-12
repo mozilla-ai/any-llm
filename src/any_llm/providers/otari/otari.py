@@ -340,6 +340,10 @@ class OtariProvider(BaseOpenAIProvider):
         self.client = self.otari_client
         self.platform_mode = self.otari_client.platform_mode
 
+    @override
+    async def aclose(self) -> None:
+        await self.otari_client.close()
+
     @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:

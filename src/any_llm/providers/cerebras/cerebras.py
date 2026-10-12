@@ -103,6 +103,10 @@ class CerebrasProvider(AnyLLM):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = cerebras.AsyncCerebras(api_key=api_key, **kwargs)
 
+    @override
+    async def aclose(self) -> None:
+        await self.client.close()
+
     async def _stream_completion_async(
         self,
         model: str,

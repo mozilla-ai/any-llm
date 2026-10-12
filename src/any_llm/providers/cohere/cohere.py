@@ -183,6 +183,11 @@ class CohereProvider(AnyLLM):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = cohere.AsyncClientV2(api_key=api_key, **kwargs)
 
+    @override
+    async def aclose(self) -> None:
+        # The Cohere client has no close method; leaving its async context closes its HTTP client.
+        await self.client.__aexit__(None, None, None)  # type: ignore[no-untyped-call]
+
     async def _stream_completion_async(
         self, model: str, messages: list[dict[str, Any]], *, thinking_from_reasoning_effort: bool, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
