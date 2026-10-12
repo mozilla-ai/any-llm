@@ -184,7 +184,7 @@ class CohereProvider(AnyLLM):
         self.client = cohere.AsyncClientV2(api_key=api_key, **kwargs)
 
     async def _stream_completion_async(
-        self, model: str, messages: list[dict[str, Any]], **kwargs: Any
+        self, model: str, messages: list[dict[str, Any]], *, thinking_from_reasoning_effort: bool, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
         cohere_stream = self.client.chat_stream(
             model=model,
@@ -192,8 +192,27 @@ class CohereProvider(AnyLLM):
             **kwargs,
         )
 
-        async for chunk in cohere_stream:
-            yield self._convert_completion_chunk_response(chunk, model=model)
+        try:
+            async for chunk in cohere_stream:
+                yield self._convert_completion_chunk_response(chunk, model=model)
+        except cohere.BadRequestError as e:
+            self._raise_if_thinking_unsupported(e, thinking_from_reasoning_effort)
+            raise
+
+    def _raise_if_thinking_unsupported(
+        self, error: cohere.BadRequestError, thinking_from_reasoning_effort: bool
+    ) -> None:
+        """Report Cohere's rejection of `thinking` as the `reasoning_effort` the caller sent.
+
+        Only some Cohere models accept `thinking`, and Cohere's error names the translated field,
+        which the caller never sent.
+        """
+        body = str(error.body)
+        if thinking_from_reasoning_effort and "thinking" in body and "not supported" in body:
+            msg = "reasoning_effort"
+            raise UnsupportedParameterError(
+                msg, self.PROVIDER_NAME, "This Cohere model does not support reasoning."
+            ) from error
 
     @staticmethod
     def _preprocess_response_format(response_format: type | dict[str, Any]) -> dict[str, Any]:
@@ -270,19 +289,25 @@ class CohereProvider(AnyLLM):
 
         completion_kwargs = self._convert_completion_params(params, **kwargs)
         patched_messages = _patch_messages(params.messages)
+        thinking_from_reasoning_effort = params.reasoning_effort != "auto" and "thinking" not in kwargs
 
         if params.stream:
             return self._stream_completion_async(
                 params.model_id,
                 patched_messages,
+                thinking_from_reasoning_effort=thinking_from_reasoning_effort,
                 **completion_kwargs,
             )
 
-        response = await self.client.chat(
-            model=params.model_id,
-            messages=patched_messages,  # type: ignore[arg-type]
-            **completion_kwargs,
-        )
+        try:
+            response = await self.client.chat(
+                model=params.model_id,
+                messages=patched_messages,  # type: ignore[arg-type]
+                **completion_kwargs,
+            )
+        except cohere.BadRequestError as e:
+            self._raise_if_thinking_unsupported(e, thinking_from_reasoning_effort)
+            raise
 
         return self._convert_completion_response(response, model=params.model_id)
 

@@ -621,6 +621,89 @@ async def test_reasoning_effort_mapped_to_thinking(
                 assert call_kwargs["thinking"] == expected_thinking
 
 
+_THINKING_UNSUPPORTED_BODY = {
+    "message": "invalid request: `thinking` parameter is not supported with the specified model."
+}
+
+
+@pytest.mark.asyncio
+async def test_unsupported_thinking_is_reported_as_reasoning_effort() -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+    error = BadRequestError(body=_THINKING_UNSUPPORTED_BODY)
+
+    with (
+        patch.object(provider.client, "chat", autospec=True, side_effect=error),
+        pytest.raises(UnsupportedParameterError, match="'reasoning_effort' is not supported for cohere") as exc_info,
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="minimal",
+            )
+        )
+
+    assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.asyncio
+async def test_unsupported_thinking_is_reported_as_reasoning_effort_when_streaming() -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        raise BadRequestError(body=_THINKING_UNSUPPORTED_BODY)
+        yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()):
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="minimal",
+                stream=True,
+            )
+        )
+        with pytest.raises(UnsupportedParameterError, match="'reasoning_effort' is not supported for cohere"):
+            [chunk async for chunk in result]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "reasoning_effort", "kwargs"),
+    [
+        ({"message": "invalid request: something else is wrong."}, "minimal", {}),
+        (_THINKING_UNSUPPORTED_BODY, "auto", {"thinking": {"type": "enabled", "token_budget": 256}}),
+        (_THINKING_UNSUPPORTED_BODY, "minimal", {"thinking": {"type": "enabled", "token_budget": 256}}),
+    ],
+)
+async def test_other_bad_requests_are_not_reported_as_reasoning_effort(
+    body: dict[str, Any], reasoning_effort: ReasoningEffort, kwargs: dict[str, Any]
+) -> None:
+    from cohere import BadRequestError
+
+    provider = _mk_provider()
+    error = BadRequestError(body=body)
+
+    with (
+        patch.object(provider.client, "chat", autospec=True, side_effect=error),
+        pytest.raises(BadRequestError) as exc_info,
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+            ),
+            **kwargs,
+        )
+
+    assert exc_info.value is error
+
+
 def _mock_tool_call(tool_id: str, name: str, arguments: str) -> Mock:
     """Create a mock Cohere ToolCallV2."""
     tc = Mock()
