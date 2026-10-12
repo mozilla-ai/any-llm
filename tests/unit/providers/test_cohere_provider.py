@@ -367,8 +367,7 @@ def _function_tool(name: str, strict: bool | None = None) -> dict[str, Any]:
     [
         ([True], True),
         ([True, True], True),
-        ([True, False], False),
-        ([True, None], False),
+        ([False, None], False),
         ([False], False),
         ([None], False),
     ],
@@ -384,6 +383,15 @@ def test_convert_tools_strips_strict_and_reports_all_strict(
     assert strict_tools is expected_strict_tools
     assert converted == [_function_tool(f"tool_{i}") for i in range(len(strict_flags))]
     assert tools[0]["function"].get("strict") == strict_flags[0]
+
+
+@pytest.mark.parametrize("strict_flags", [[True, False], [True, None], [None, True]])
+def test_convert_tools_rejects_mixed_strictness(strict_flags: list[bool | None]) -> None:
+    provider = _mk_provider()
+    tools = [_function_tool(f"tool_{i}", strict) for i, strict in enumerate(strict_flags)]
+
+    with pytest.raises(UnsupportedParameterError, match="all be strict or all non-strict"):
+        provider._convert_tools(tools)
 
 
 def test_convert_tools_leaves_non_function_tools_alone() -> None:

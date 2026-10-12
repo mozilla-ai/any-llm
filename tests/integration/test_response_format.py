@@ -252,6 +252,8 @@ async def test_cohere_strict_function_tool(provider_model_map: dict[LLMProvider,
             model=provider_model_map[LLMProvider.COHERE],
             messages=[{"role": "user", "content": "What is the weather in Paris?"}],
             tools=[tool],
+            # Cohere's own value; the provider passes tool_choice through unchanged.
+            tool_choice="REQUIRED",
             stream=False,
         )
     except MissingApiKeyError:

@@ -221,14 +221,15 @@ class CohereProvider(AnyLLM):
         msg = f"Unsupported response_format: {response_format}"
         raise ValueError(msg)
 
-    @staticmethod
-    def _convert_tools(tools: list[dict[str, Any] | Any]) -> tuple[list[dict[str, Any] | Any], bool]:
-        """Strip OpenAI's per-function `strict` flag and report whether every function tool set it.
+    @classmethod
+    def _convert_tools(cls, tools: list[dict[str, Any] | Any]) -> tuple[list[dict[str, Any] | Any], bool]:
+        """Strip OpenAI's per-function `strict` flag and report whether the function tools set it.
 
         Cohere rejects `strict` inside a function definition and instead takes one request-level
-        `strict_tools` flag. It is only turned on when every function tool asked for strict mode,
-        because it applies to all tools at once and Cohere's strict mode rejects tools with no
-        required parameter, which a non-strict OpenAI tool may well be.
+        `strict_tools` flag that applies to every tool. A mix of strict and non-strict function
+        tools therefore has no faithful mapping: turning `strict_tools` off would drop the
+        guarantee the strict tools asked for, and turning it on would impose strict mode (which
+        rejects tools with no required parameter) on tools that did not ask for it.
         """
         converted: list[dict[str, Any] | Any] = []
         strict_flags: list[bool] = []
@@ -239,7 +240,15 @@ class CohereProvider(AnyLLM):
                 converted.append({**tool, "function": function})
             else:
                 converted.append(tool)
-        return converted, bool(strict_flags) and all(strict_flags)
+        if any(strict_flags) and not all(strict_flags):
+            msg = "strict"
+            raise UnsupportedParameterError(
+                msg,
+                cls.PROVIDER_NAME,
+                "Cohere applies strict mode to all tools of a request, so function tools must all be strict or all"
+                " non-strict.",
+            )
+        return converted, any(strict_flags)
 
     @override
     async def _acompletion(
