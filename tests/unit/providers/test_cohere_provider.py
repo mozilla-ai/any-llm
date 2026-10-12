@@ -716,6 +716,7 @@ async def test_unsupported_thinking_is_reported_as_reasoning_effort_when_streami
     ("body", "reasoning_effort", "kwargs"),
     [
         ({"message": "invalid request: something else is wrong."}, "minimal", {}),
+        ({"message": "invalid request: tools are not supported while thinking is enabled."}, "minimal", {}),
         (_THINKING_UNSUPPORTED_BODY, "auto", {"thinking": {"type": "enabled", "token_budget": 256}}),
         (_THINKING_UNSUPPORTED_BODY, "minimal", {"thinking": {"type": "enabled", "token_budget": 256}}),
     ],

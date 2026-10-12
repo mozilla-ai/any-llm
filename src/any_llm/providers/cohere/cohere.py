@@ -207,8 +207,9 @@ class CohereProvider(AnyLLM):
         Only some Cohere models accept `thinking`, and Cohere's error names the translated field,
         which the caller never sent.
         """
-        body = str(error.body)
-        if thinking_from_reasoning_effort and "thinking" in body and "not supported" in body:
+        body = error.body
+        message = body.get("message", "") if isinstance(body, dict) else str(body)
+        if thinking_from_reasoning_effort and "`thinking` parameter is not supported" in str(message):
             msg = "reasoning_effort"
             raise UnsupportedParameterError(
                 msg, self.PROVIDER_NAME, "This Cohere model does not support reasoning."
