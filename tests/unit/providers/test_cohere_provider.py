@@ -1186,6 +1186,47 @@ def test_patch_messages_preserves_multimodal_user_content() -> None:
     assert result[0]["content"][1] == {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}
 
 
+def test_patch_messages_rejects_file_content() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this document."},
+                {
+                    "type": "file",
+                    "file": {"filename": "report.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK"},
+                },
+            ],
+        },
+    ]
+
+    with pytest.raises(UnsupportedParameterError, match="'file content' is not supported for cohere"):
+        _patch_messages(messages)
+
+
+@pytest.mark.asyncio
+async def test_completion_with_file_content_raises_before_calling_chat() -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        pytest.raises(UnsupportedParameterError, match="'file content' is not supported for cohere"),
+    ):
+        await provider._acompletion(
+            CompletionParams(
+                model_id="command-r7b-12-2024",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [{"type": "file", "file": {"file_id": "file-abc123"}}],
+                    }
+                ],
+            )
+        )
+
+    mock_chat.assert_not_called()
+
+
 def test_patch_messages_preserves_base64_image_content() -> None:
     """Verify _patch_messages preserves data URI image content blocks."""
     data_uri = "data:image/png;base64,iVBORw0KGgoAAAANS"
