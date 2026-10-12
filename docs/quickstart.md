@@ -135,6 +135,10 @@ for chunk in completion(
     output += chunk_content
 ```
 
+## Multiple Choices
+
+`n` asks for more than one choice in a single completion. `n=1` is OpenAI's default, so any-llm drops it before the request reaches any provider, and clients that always send it (Haystack's `OpenAIChatGenerator`, for example) work everywhere. Any other value is forwarded only to providers that can return several choices: the OpenAI-compatible providers, `cerebras`, `huggingface`, `mistral`, `together` and `watsonx` (`deepseek` drops `n`, like the other fields its API does not define). The rest raise `UnsupportedParameterError` naming `n` instead of silently returning one choice.
+
 ## Reasoning
 
 For [providers that support reasoning](providers.md), you can request thinking traces alongside the response using `reasoning_effort`:

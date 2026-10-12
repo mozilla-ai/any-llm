@@ -54,6 +54,8 @@ class GroqProvider(AnyLLM):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
+    # The SDK accepts n, but Groq's API answers any value other than 1 with HTTP 400.
+    SUPPORTS_COMPLETION_N = False
     SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False

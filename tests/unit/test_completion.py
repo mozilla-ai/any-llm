@@ -17,6 +17,7 @@ from any_llm import AnyLLM
 from any_llm.api import acompletion, aresponses, completion, responses
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -170,6 +171,43 @@ async def test_acompletion_rejects_prompt_cache_key_for_unsupported_provider() -
         )
 
     client.converse.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("supports_n", [True, False])
+@pytest.mark.parametrize("n", [None, 1])
+async def test_acompletion_drops_default_n_for_every_provider(n: int | None, supports_n: bool) -> None:
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    provider.SUPPORTS_COMPLETION_N = supports_n
+    with patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac:
+        await provider.acompletion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}], n=n)
+
+    assert mock_ac.call_args.args[0].n is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n", [2, 0, -1])
+async def test_acompletion_rejects_n_for_provider_without_multiple_choices(n: int) -> None:
+    provider = AnyLLM.create("openai", api_key="sk-test")
+    provider.SUPPORTS_COMPLETION_N = False
+    with (
+        patch.object(provider, "_acompletion", new=AsyncMock()) as mock_ac,
+        pytest.raises(UnsupportedParameterError, match="'n' is not supported for openai") as exc_info,
+    ):
+        await provider.acompletion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}], n=n)
+
+    assert exc_info.value.parameter_name == "n"
+    mock_ac.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_acompletion_forwards_n_to_provider_with_multiple_choices() -> None:
+    provider = OpenaiProvider(api_key="sk-test")
+    assert provider.SUPPORTS_COMPLETION_N
+    with patch.object(provider.client.chat.completions, "create", new=AsyncMock()) as mock_create:
+        await provider.acompletion(model="gpt-4", messages=[{"role": "user", "content": "Hi"}], n=2)
+
+    assert mock_create.call_args.kwargs["n"] == 2
 
 
 def _signed_tool_call_message() -> ChatCompletionMessage:

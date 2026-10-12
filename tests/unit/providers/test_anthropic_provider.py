@@ -2280,3 +2280,49 @@ async def test_stream_usage_reaches_openai_style_consumer() -> None:
     assert finish_reasons == ["stop"]
     assert usage is not None
     assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (13, 5, 18)
+
+
+@pytest.mark.asyncio
+async def test_default_n_is_not_sent_to_messages_create() -> None:
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider.acompletion(model="model-id", messages=[{"role": "user", "content": "Hello"}], n=1)
+
+    mock_anthropic.return_value.messages.create.assert_awaited_once()
+    assert "n" not in mock_anthropic.return_value.messages.create.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_default_n_is_not_sent_to_messages_stream() -> None:
+    async def empty_events() -> AsyncIterator[Any]:
+        if False:
+            yield None
+
+    @asynccontextmanager
+    async def empty_stream() -> AsyncIterator[AsyncIterator[Any]]:
+        yield empty_events()
+
+    with mock_anthropic_provider() as mock_anthropic:
+        mock_anthropic.return_value.messages.stream = Mock(return_value=empty_stream())
+        provider = AnthropicProvider(api_key="test-api-key")
+        stream = cast(
+            "AsyncIterator[Any]",
+            await provider.acompletion(
+                model="model-id", messages=[{"role": "user", "content": "Hello"}], n=1, stream=True
+            ),
+        )
+        async for _ in stream:
+            pass
+
+    mock_anthropic.return_value.messages.stream.assert_called_once()
+    assert "n" not in mock_anthropic.return_value.messages.stream.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_n_greater_than_one_raises_before_calling_anthropic() -> None:
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        with pytest.raises(UnsupportedParameterError, match="'n' is not supported for anthropic"):
+            await provider.acompletion(model="model-id", messages=[{"role": "user", "content": "Hello"}], n=2)
+
+    mock_anthropic.return_value.messages.create.assert_not_called()
