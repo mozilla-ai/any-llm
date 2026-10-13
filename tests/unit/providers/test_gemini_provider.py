@@ -1609,6 +1609,21 @@ def test_google_provider_preserves_images_on_completion_message() -> None:
     assert result.choices[0].message.images[0].image_url.url == "data:image/png;base64,iVBORw=="
 
 
+def test_convert_response_keeps_an_empty_text_answer() -> None:
+    """Gemini 3 answers a conversation ending on an assistant turn with one empty text part and STOP.
+
+    That is an answer, so it is a choice with empty content, as OpenAI-compatible APIs return it,
+    not a response without choices.
+    """
+    response = _make_gemini_response([types.Part(text="")], types.FinishReason.STOP)
+
+    response_dict = _convert_response_to_response_dict(response)
+
+    assert len(response_dict["choices"]) == 1
+    assert response_dict["choices"][0]["message"]["content"] == ""
+    assert response_dict["choices"][0]["finish_reason"] == "stop"
+
+
 def test_convert_response_without_content_and_terminal_reason_has_no_choices() -> None:
     response_dict = _convert_response_to_response_dict(_make_gemini_response(None, types.FinishReason.STOP))
 
