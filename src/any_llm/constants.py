@@ -58,6 +58,7 @@ class LLMProvider(StrEnum):
     HUGGINGFACE = "huggingface"
     INCEPTION = "inception"
     KENARI = "kenari"
+    LINER = "liner"
     LLAMA = "llama"
     LMSTUDIO = "lmstudio"
     LLAMAFILE = "llamafile"
