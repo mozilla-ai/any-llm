@@ -1,8 +1,10 @@
 """Tests for the Bedrock provider's native Messages path for Claude models."""
 
 import base64
+import copy
 import io
 import json
+import logging
 import struct
 import zlib
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
@@ -187,6 +189,185 @@ async def test_claude_context_management_carries_its_inferred_beta() -> None:
     body = _sent_body(client.invoke_model)
     assert body["context_management"] == context_management
     assert body["anthropic_beta"] == ["context-management-2025-06-27"]
+
+
+@pytest.mark.asyncio
+async def test_claude_betas_bedrock_does_not_support_are_dropped(caplog: pytest.LogCaptureFixture) -> None:
+    provider, client = _custom_client_provider(_CLAUDE_MESSAGE)
+
+    with caplog.at_level(logging.DEBUG, logger="any_llm"):
+        await provider.amessages(
+            model=CLAUDE_MODEL,
+            messages=_THINKING_HISTORY,
+            max_tokens=64,
+            betas=["code-execution-2025-08-25", "interleaved-thinking-2025-05-14", "files-api-2025-04-14"],
+        )
+
+    assert _sent_body(client.invoke_model)["anthropic_beta"] == ["interleaved-thinking-2025-05-14"]
+    assert "'code-execution-2025-08-25'" in caplog.text
+    assert "'files-api-2025-04-14'" in caplog.text
+    assert "interleaved-thinking" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_claude_request_with_only_unsupported_betas_sends_no_beta_field() -> None:
+    provider, client = _custom_client_provider(_CLAUDE_MESSAGE)
+
+    await provider.amessages(model=CLAUDE_MODEL, messages=_THINKING_HISTORY, max_tokens=64, betas=["skills-2025-10-02"])
+
+    assert "anthropic_beta" not in _sent_body(client.invoke_model)
+
+
+_AUTO_CACHE = {"type": "ephemeral", "ttl": "1h"}
+
+
+@pytest.mark.parametrize(
+    ("request_fields", "expected_fields"),
+    [
+        pytest.param(
+            {"messages": [{"role": "user", "content": "Hi"}]},
+            {"messages": [{"role": "user", "content": [{"type": "text", "text": "Hi", "cache_control": _AUTO_CACHE}]}]},
+            id="string-content",
+        ),
+        pytest.param(
+            {
+                "messages": [
+                    {"role": "user", "content": "Hi"},
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "Hello"},
+                            {"type": "thinking", "thinking": "Hm.", "signature": "sig"},
+                            {"type": "redacted_thinking", "data": "opaque"},
+                            {"type": "text", "text": ""},
+                        ],
+                    },
+                ]
+            },
+            {
+                "messages": [
+                    {"role": "user", "content": "Hi"},
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "Hello", "cache_control": _AUTO_CACHE},
+                            {"type": "thinking", "thinking": "Hm.", "signature": "sig"},
+                            {"type": "redacted_thinking", "data": "opaque"},
+                            {"type": "text", "text": ""},
+                        ],
+                    },
+                ]
+            },
+            id="skips-blocks-that-cannot-be-cached",
+        ),
+        pytest.param(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Hi", "cache_control": {"type": "ephemeral"}}],
+                    }
+                ]
+            },
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Hi", "cache_control": {"type": "ephemeral"}}],
+                    }
+                ]
+            },
+            id="keeps-an-explicit-breakpoint",
+        ),
+        pytest.param(
+            {"messages": [{"role": "user", "content": ""}], "system": "Be terse."},
+            {
+                "messages": [{"role": "user", "content": ""}],
+                "system": [{"type": "text", "text": "Be terse.", "cache_control": _AUTO_CACHE}],
+            },
+            id="falls-back-to-system",
+        ),
+        pytest.param(
+            {
+                "messages": [{"role": "user", "content": ""}],
+                "tools": [
+                    {"name": "a", "input_schema": {"type": "object"}},
+                    {"name": "b", "input_schema": {"type": "object"}, "defer_loading": True},
+                ],
+            },
+            {
+                "messages": [{"role": "user", "content": ""}],
+                "tools": [
+                    {"name": "a", "input_schema": {"type": "object"}, "cache_control": _AUTO_CACHE},
+                    {"name": "b", "input_schema": {"type": "object"}, "defer_loading": True},
+                ],
+            },
+            id="falls-back-to-tools",
+        ),
+        pytest.param(
+            {"messages": [{"role": "user", "content": ""}]},
+            {"messages": [{"role": "user", "content": ""}]},
+            id="nothing-cacheable",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_claude_top_level_cache_control_moves_to_the_last_cacheable_block(
+    request_fields: dict[str, Any], expected_fields: dict[str, Any]
+) -> None:
+    provider, client = _custom_client_provider(_CLAUDE_MESSAGE)
+    sent_fields = copy.deepcopy(request_fields)
+
+    await provider.amessages(model=CLAUDE_MODEL, max_tokens=64, cache_control=_AUTO_CACHE, **sent_fields)
+
+    assert _sent_body(client.invoke_model) == {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 64,
+        **expected_fields,
+    }
+    assert sent_fields == request_fields
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.asyncio
+async def test_claude_container_is_refused(stream: bool) -> None:
+    provider, client = _custom_client_provider(_CLAUDE_MESSAGE)
+
+    with pytest.raises(UnsupportedParameterError, match="'container' is not supported for bedrock"):
+        await provider.amessages(
+            model=CLAUDE_MODEL, messages=_THINKING_HISTORY, max_tokens=64, container="cntr_1", stream=stream
+        )
+
+    client.invoke_model.assert_not_called()
+    client.invoke_model_with_response_stream.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_claude_stream_sends_the_same_body_as_a_plain_request() -> None:
+    client = Mock()
+    client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(_CLAUDE_MESSAGE).encode()))}
+    client.invoke_model_with_response_stream.return_value = {"body": _FakeEventStream(_CLAUDE_STREAM)}
+    provider = BedrockProvider(client=client)
+    request: dict[str, Any] = {
+        "model": CLAUDE_MODEL,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 64,
+        "cache_control": {"type": "ephemeral"},
+        "metadata": {"user_id": "user-1"},
+        "betas": ["context-1m-2025-08-07", "web-fetch-2025-09-10"],
+    }
+
+    await provider.amessages(**request)
+    stream = await provider.amessages(**request, stream=True)
+    assert isinstance(stream, AsyncIterator)
+    _ = [event async for event in stream]
+
+    body = _sent_body(client.invoke_model)
+    assert _sent_body(client.invoke_model_with_response_stream) == body
+    assert body["anthropic_beta"] == ["context-1m-2025-08-07"]
+    assert body["metadata"] == {"user_id": "user-1"}
+    assert body["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in body
 
 
 @pytest.mark.parametrize(
