@@ -1,6 +1,14 @@
+import json
+from typing import Any
 from unittest.mock import Mock
 
-from any_llm.providers.fireworks.utils import extract_reasoning_from_response
+import httpx
+import pytest
+from openai import DEFAULT_TIMEOUT
+
+from any_llm.exceptions import ModelNotFoundError, UnsupportedParameterError
+from any_llm.providers.fireworks import FireworksProvider
+from any_llm.providers.fireworks.utils import convert_fireworks_rerank_response, extract_reasoning_from_response
 from any_llm.types.completion import Reasoning
 from any_llm.types.responses import Response
 
@@ -200,3 +208,151 @@ def test_extract_reasoning_from_response_leaves_a_trailing_tool_call_alone() -> 
 
     assert result.reasoning is None
     assert result.output[0].type == "function_call"
+
+
+RERANK_MODEL = "accounts/fireworks/models/qwen3-reranker-8b"
+
+
+def _fireworks_with_transport(handler: httpx.MockTransport, **kwargs: Any) -> FireworksProvider:
+    """Build a provider whose OpenAI client sends every request to `handler`."""
+    return FireworksProvider(
+        api_key="test-key",
+        api_base="https://fireworks.test/inference/v1",
+        http_client=httpx.AsyncClient(transport=handler),
+        **kwargs,
+    )
+
+
+def test_fireworks_supports_rerank() -> None:
+    """Fireworks advertises rerank support."""
+    assert FireworksProvider.SUPPORTS_RERANK is True
+
+
+def test_convert_rerank_params_defaults() -> None:
+    """Only model, query, documents and return_documents=False are sent by default."""
+    params = FireworksProvider._convert_rerank_params(RERANK_MODEL, "q", ["a", "b"])
+    assert params == {"model": RERANK_MODEL, "query": "q", "documents": ["a", "b"], "return_documents": False}
+
+
+def test_convert_rerank_params_passes_top_n_task_and_return_documents() -> None:
+    """top_n, task and an explicit return_documents pass through."""
+    params = FireworksProvider._convert_rerank_params(
+        RERANK_MODEL, "q", ["a"], top_n=1, task="Find the answer", return_documents=True
+    )
+    assert params["top_n"] == 1
+    assert params["task"] == "Find the answer"
+    assert params["return_documents"] is True
+
+
+def test_convert_rerank_params_drops_none_top_n() -> None:
+    """A None top_n is not sent."""
+    params = FireworksProvider._convert_rerank_params(RERANK_MODEL, "q", ["a"], top_n=None)
+    assert "top_n" not in params
+
+
+def test_convert_rerank_params_rejects_max_tokens_per_doc() -> None:
+    """max_tokens_per_doc has no Fireworks equivalent."""
+    with pytest.raises(UnsupportedParameterError):
+        FireworksProvider._convert_rerank_params(RERANK_MODEL, "q", ["a"], max_tokens_per_doc=16)
+
+
+def test_convert_rerank_params_ignores_none_max_tokens_per_doc() -> None:
+    """A None max_tokens_per_doc is accepted and not sent."""
+    params = FireworksProvider._convert_rerank_params(RERANK_MODEL, "q", ["a"], max_tokens_per_doc=None)
+    assert "max_tokens_per_doc" not in params
+
+
+def test_convert_fireworks_rerank_response_sorts_and_maps_usage() -> None:
+    """Results are sorted by score, the ID stays None and usage is mapped."""
+    result = convert_fireworks_rerank_response(
+        {
+            "object": "list",
+            "model": RERANK_MODEL,
+            "data": [
+                {"index": 0, "relevance_score": 0.1, "document": "a"},
+                {"index": 1, "relevance_score": 0.9},
+            ],
+            "usage": {"prompt_tokens": 12, "total_tokens": 12},
+        }
+    )
+    assert result.id is None
+    assert result.model == RERANK_MODEL
+    assert [(r.index, r.relevance_score) for r in result.results] == [(1, 0.9), (0, 0.1)]
+    assert result.usage is not None
+    assert result.usage.total_tokens == 12
+
+
+def test_convert_fireworks_rerank_response_without_usage() -> None:
+    """A response without usage converts with usage=None."""
+    result = convert_fireworks_rerank_response({"model": RERANK_MODEL, "data": []})
+    assert result.results == []
+    assert result.usage is None
+
+
+@pytest.mark.asyncio
+async def test_arerank_posts_to_fireworks_rerank_endpoint() -> None:
+    """arerank sends the converted body to <api_base>/rerank with the bearer key."""
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "model": RERANK_MODEL,
+                "data": [{"index": 1, "relevance_score": 0.8}, {"index": 0, "relevance_score": 0.2}],
+                "usage": {"prompt_tokens": 20, "total_tokens": 20},
+            },
+        )
+
+    provider = _fireworks_with_transport(httpx.MockTransport(respond))
+    result = await provider.arerank(RERANK_MODEL, "capital of France", ["Berlin", "Paris"], top_n=2)
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "https://fireworks.test/inference/v1/rerank"
+    assert request.headers["Authorization"] == "Bearer test-key"
+    assert json.loads(request.content) == {
+        "model": RERANK_MODEL,
+        "query": "capital of France",
+        "documents": ["Berlin", "Paris"],
+        "return_documents": False,
+        "top_n": 2,
+    }
+    assert result.model == RERANK_MODEL
+    assert [r.index for r in result.results] == [1, 0]
+    assert result.usage is not None
+    assert result.usage.total_tokens == 20
+
+
+@pytest.mark.asyncio
+async def test_arerank_maps_provider_errors() -> None:
+    """A Fireworks 404 surfaces as ModelNotFoundError with unified exceptions."""
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": {"message": "Model not found"}})
+
+    provider = _fireworks_with_transport(httpx.MockTransport(respond), unified_exceptions=True)
+    with pytest.raises(ModelNotFoundError):
+        await provider.arerank("accounts/fireworks/models/nope", "q", ["a"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("request_timeout", [None, 3.0])
+async def test_arerank_forwards_per_request_timeout(request_timeout: float | None) -> None:
+    """A per-request timeout reaches the HTTP request and stays out of the body."""
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"object": "list", "model": RERANK_MODEL, "data": []})
+
+    provider = _fireworks_with_transport(httpx.MockTransport(respond))
+    kwargs: dict[str, Any] = {} if request_timeout is None else {"timeout": request_timeout}
+    await provider.arerank(RERANK_MODEL, "q", ["a"], **kwargs)
+
+    assert "timeout" not in json.loads(requests[0].content)
+    read_timeout = requests[0].extensions["timeout"]["read"]
+    assert read_timeout == (request_timeout if request_timeout is not None else DEFAULT_TIMEOUT.read)
