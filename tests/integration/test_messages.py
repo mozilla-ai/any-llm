@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncIterator, Iterator
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 import pytest
@@ -10,7 +10,14 @@ from pydantic import BaseModel
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
-from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedMessage, ToolUseBlock
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    MessageResponse,
+    MessageStreamEvent,
+    ParsedMessage,
+    ThinkingBlock,
+    ToolUseBlock,
+)
 from tests.constants import EXPECTED_PROVIDERS, LOCAL_PROVIDERS
 
 
@@ -255,3 +262,100 @@ async def test_messages_tool_result_is_error(
         raise
     assert isinstance(result, MessageResponse)
     assert len(result.content) >= 1
+
+
+# Long enough to clear the 4096-token minimum Claude Haiku 4.5 needs before it caches a prefix.
+_CACHEABLE_SYSTEM_PROMPT = "You are a weather assistant. Answer in one short sentence. " * 500
+
+
+def _skip_without_bedrock_credentials(exc: Exception) -> NoReturn:
+    # boto3 raises these itself (not MissingApiKeyError) when ambient AWS credentials are missing.
+    if type(exc).__name__ in {"NoCredentialsError", "PartialCredentialsError", "NoRegionError"}:
+        pytest.skip(f"bedrock AWS credentials not available, skipping: {exc}")
+    raise exc
+
+
+@pytest.mark.asyncio
+async def test_messages_bedrock_claude_keeps_cache_control_thinking_and_betas(
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """A signed thinking block must come back with its tool call, which the Converse bridge could not carry."""
+    if provider != LLMProvider.BEDROCK:
+        pytest.skip("Targets the native Messages path for Claude models on Bedrock")
+
+    request: dict[str, Any] = {
+        "model": provider_reasoning_model_map[provider],
+        "max_tokens": 2048,
+        "system": [{"type": "text", "text": _CACHEABLE_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        "thinking": {"type": "enabled", "budget_tokens": 1024},
+        "tools": [_WEATHER_TOOL],
+        "betas": ["interleaved-thinking-2025-05-14"],
+        "metadata": {"user_id": "any-llm-integration"},
+    }
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "What is the weather in Paris? Use the get_weather tool."},
+    ]
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        first = await llm.amessages(messages=messages, **request)
+        assert isinstance(first, MessageResponse)
+        thinking = next((block for block in first.content if isinstance(block, ThinkingBlock)), None)
+        tool_use = next((block for block in first.content if isinstance(block, ToolUseBlock)), None)
+        assert thinking is not None, f"Expected a thinking block, got: {first.content}"
+        assert thinking.signature
+        assert tool_use is not None, f"Expected a get_weather tool call, got: {first.content}"
+        assert (first.usage.cache_creation_input_tokens or 0) + (first.usage.cache_read_input_tokens or 0) > 0
+
+        messages.append(
+            {"role": "assistant", "content": [block.model_dump(exclude_none=True) for block in first.content]}
+        )
+        messages.append(
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": "Sunny, 21C"}]}
+        )
+        second = await llm.amessages(messages=messages, **request)
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except Exception as exc:
+        _skip_without_bedrock_credentials(exc)
+
+    assert isinstance(second, MessageResponse)
+    assert (second.usage.cache_read_input_tokens or 0) > 0
+
+
+@pytest.mark.asyncio
+async def test_messages_bedrock_claude_streams_signed_thinking(
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    if provider != LLMProvider.BEDROCK:
+        pytest.skip("Targets the native Messages path for Claude models on Bedrock")
+
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        stream = await llm.amessages(
+            model=provider_reasoning_model_map[provider],
+            messages=[{"role": "user", "content": "What is 17 * 23?"}],
+            max_tokens=2048,
+            thinking={"type": "enabled", "budget_tokens": 1024},
+            stream=True,
+        )
+        assert isinstance(stream, AsyncIterator)
+        events = [event async for event in stream]
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except Exception as exc:
+        _skip_without_bedrock_credentials(exc)
+
+    assert events[0].type == "message_start"
+    assert events[-1].type == "message_stop"
+    assert any(
+        isinstance(event, ContentBlockDeltaEvent) and event.delta.type == "signature_delta" and event.delta.signature
+        for event in events
+    )

@@ -18,8 +18,23 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
 )
 from any_llm.logging import logger
+from any_llm.providers.anthropic.base import _messages_betas
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStopEvent,
+    MessageStreamEvent,
+)
 from any_llm.types.model import Model
+
+# Outside the guarded block below: it needs no AWS SDK, and the per-model Messages answer must
+# work on the class even when boto3 is not installed.
+from .utils import _is_anthropic_model
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -44,6 +59,20 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 
     from any_llm.types.batch import Batch, BatchResult
+    from any_llm.types.messages import MessagesParams, ParsedBetaMessage, ParsedMessage
+
+# Claude's Messages body on Bedrock carries the API version and the betas in the body itself,
+# since InvokeModel has no Anthropic headers.
+_ANTHROPIC_BEDROCK_VERSION = "bedrock-2023-05-31"
+
+_MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
+    "message_start": MessageStartEvent,
+    "message_delta": MessageDeltaEvent,
+    "message_stop": MessageStopEvent,
+    "content_block_start": ContentBlockStartEvent,
+    "content_block_delta": ContentBlockDeltaEvent,
+    "content_block_stop": ContentBlockStopEvent,
+}
 
 
 class BedrockProvider(AnyLLM):
@@ -64,6 +93,8 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
+    # Claude models only, see `serves_messages_natively`.
+    SUPPORTS_MESSAGES_NATIVE = True
 
     # boto3's Converse API has no per-request timeout, so it is translated into a per-timeout
     # boto3 client in _completion via _client_for_timeout. A caller-supplied `client=` can't be
@@ -349,6 +380,73 @@ class BedrockProvider(AnyLLM):
                     self._timeout_clients.pop(next(iter(self._timeout_clients)))
                 self._timeout_clients[timeout] = cached
             return cached
+
+    @classmethod
+    @override
+    def serves_messages_natively(cls, model: str) -> bool:
+        """Claude models take Bedrock's Anthropic Messages body; every other model uses the bridge."""
+        return _is_anthropic_model(model)
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
+        """Send a Claude model's request to Bedrock as an Anthropic Messages body via InvokeModel.
+
+        This keeps `cache_control`, thinking blocks with their signatures, and betas, which the
+        Converse bridge drops. Other models, and `output_format` (which Converse emulates with a
+        forced tool call), still use the bridge. Extra keyword arguments go to InvokeModel, as
+        they go to Converse on the bridge.
+        """
+        if params.output_format is not None or not self.serves_messages_natively(params.model):
+            return await super()._amessages(params, **kwargs)
+
+        client = self._client_for_timeout(kwargs.pop("timeout", None))
+        # Anthropic's service_tier values mean nothing to Bedrock, whose own tiers are a separate
+        # InvokeModel parameter; the Converse bridge drops it too.
+        body = params.model_dump(
+            exclude_none=True, exclude={"model", "stream", "betas", "output_format", "service_tier"}
+        )
+        body["anthropic_version"] = _ANTHROPIC_BEDROCK_VERSION
+        betas = _messages_betas(params)
+        if betas:
+            body["anthropic_beta"] = betas
+        request = {
+            "modelId": params.model,
+            "body": json.dumps(body),
+            "contentType": "application/json",
+            "accept": "application/json",
+            **kwargs,
+        }
+
+        if params.stream:
+            response = await asyncio.to_thread(client.invoke_model_with_response_stream, **request)
+            return self._stream_native_messages(response["body"])
+
+        response = await asyncio.to_thread(self._invoke_native_messages, client, request)
+        return MessageResponse.model_validate(response)
+
+    @staticmethod
+    def _invoke_native_messages(client: Any, request: dict[str, Any]) -> Any:
+        response = client.invoke_model(**request)
+        return json.loads(response["body"].read())
+
+    @staticmethod
+    async def _stream_native_messages(event_stream: Any) -> AsyncIterator[MessageStreamEvent]:
+        """Yield the Anthropic stream events inside a Bedrock response stream.
+
+        Reading the stream blocks, so each event is read off the event loop. Bedrock raises its
+        error events from the read itself, so every event that arrives here is a chunk.
+        """
+        events = iter(event_stream)
+        try:
+            while (event := await asyncio.to_thread(next, events, None)) is not None:
+                payload = json.loads(event["chunk"]["bytes"])
+                event_model = _MESSAGE_STREAM_EVENT_TYPES.get(payload["type"])
+                if event_model is not None:
+                    yield event_model.model_validate(payload)
+        finally:
+            event_stream.close()
 
     @override
     async def _aembedding(
