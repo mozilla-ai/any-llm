@@ -1624,9 +1624,19 @@ def test_provider_metadata_messages_native() -> None:
     assert otari_meta.messages is True
     assert otari_meta.messages_native is True
 
+    bedrock_meta = AnyLLM.get_provider_class("bedrock").get_provider_metadata()
+    assert bedrock_meta.messages is True
+    assert bedrock_meta.messages_native is True
+
     openai_meta = AnyLLM.get_provider_class("openai").get_provider_metadata()
     assert openai_meta.messages is True
     assert openai_meta.messages_native is False
+
+
+def test_serves_messages_natively_defaults_to_the_provider_flag() -> None:
+    """A provider that does not answer per model answers with SUPPORTS_MESSAGES_NATIVE for every model."""
+    assert AnyLLM.get_provider_class("anthropic").serves_messages_natively("claude-haiku-4-5") is True
+    assert AnyLLM.get_provider_class("openai").serves_messages_natively("gpt-5-nano") is False
 
 
 def test_sync_messages_returns_message_response() -> None:

@@ -136,7 +136,10 @@ class AnyLLM(FilesMixin, ABC):
 
     SUPPORTS_MESSAGES_NATIVE: bool = False
     """Whether the provider implements `_amessages` against a real Anthropic Messages
-    endpoint, rather than inheriting the Messages-to-Completions bridge."""
+    endpoint, rather than inheriting the Messages-to-Completions bridge.
+
+    A provider that serves only some of its models natively sets this and answers per model
+    in `serves_messages_natively`."""
 
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
     """Whether Messages structured output can be streamed by this provider."""
@@ -603,6 +606,19 @@ class AnyLLM(FilesMixin, ABC):
             messages_native=cls.SUPPORTS_MESSAGES_NATIVE,
             class_name=cls.__name__,
         )
+
+    @classmethod
+    def serves_messages_natively(cls, model: str) -> bool:
+        """Whether this provider serves `model` through a real Anthropic Messages endpoint.
+
+        Only those requests keep what the Messages-to-Completions bridge cannot carry, such as
+        `betas` and `context_management`.
+
+        Args:
+            model: The provider's own model id, without a ``provider:`` prefix.
+
+        """
+        return cls.SUPPORTS_MESSAGES_NATIVE
 
     @abstractmethod
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
