@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from openai import AsyncStream
 from openresponses_types import ResponseResource
@@ -11,6 +11,9 @@ from any_llm.types.rerank import RerankResponse
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 
 from .utils import convert_fireworks_rerank_response, extract_reasoning_from_response
+
+if TYPE_CHECKING:
+    from openai._types import RequestOptions
 
 
 class FireworksProvider(BaseOpenAIProvider):
@@ -85,11 +88,16 @@ class FireworksProvider(BaseOpenAIProvider):
         documents: list[str],
         **kwargs: Any,
     ) -> RerankResponse:
+        """Rerank `documents` against `query` with the Fireworks `/rerank` endpoint."""
         # The OpenAI SDK has no rerank resource, so post through its client to keep the
-        # provider's auth, base URL, retries and error mapping.
+        # provider's auth, base URL, retries and error mapping. A per-request timeout is a
+        # request option there, not a body field.
+        timeout = kwargs.pop("timeout", None)
+        options: RequestOptions = {"timeout": timeout} if timeout is not None else {}
         response = await self.client.post(
             "/rerank",
             body=self._convert_rerank_params(model, query, documents, **kwargs),
             cast_to=dict[str, Any],
+            options=options,
         )
         return self._convert_rerank_response(response)
