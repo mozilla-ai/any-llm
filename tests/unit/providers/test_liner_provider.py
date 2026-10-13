@@ -145,6 +145,9 @@ async def test_completion_flattens_text_parts() -> None:
         ([{"role": "tool", "content": "42", "tool_call_id": "c-1"}], UnsupportedParameterError),
         ([{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "x"}}]}], UnsupportedParameterError),
         ([{"role": "assistant", "content": None}], UnsupportedParameterError),
+        ([{"role": "user", "content": [{"type": "text"}]}], UnsupportedParameterError),
+        ([{"role": "user", "content": [{"type": "text", "text": 42}]}], UnsupportedParameterError),
+        ([*MESSAGES, {"role": "assistant", "content": "A browser."}], UnsupportedParameterError),
     ],
 )
 async def test_completion_refuses_messages_liner_cannot_take(messages: list[Any], error: type[Exception]) -> None:
@@ -216,12 +219,31 @@ async def test_stream_converts_events_to_chunks() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_raises_on_an_error_event() -> None:
-    body = 'data:{"type":"text-delta","delta":"Fire"}\ndata:{"type":"error","errorText":"agent failed"}\n'
+    error = {"code": "DOWNSTREAM_ERROR", "message": "Upstream service temporarily unavailable", "retryable": True}
+    body = (
+        'data:{"type":"text-delta","delta":"Fire"}\n'
+        f'data:{{"type":"data-error","id":"data-error-1","data":{json.dumps(error)}}}\n'
+        "data:[DONE]\n"
+    )
     provider = _provider(lambda _request: httpx.Response(200, text=body))
 
     stream = await provider.acompletion(model="quick-answer", messages=MESSAGES, stream=True)
-    with pytest.raises(ProviderError, match="agent failed"):
+    with pytest.raises(ProviderError, match="Upstream service temporarily unavailable") as exc_info:
         [chunk async for chunk in stream]
+
+    assert exc_info.value.code == "DOWNSTREAM_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_stream_raises_on_an_error_event_without_details() -> None:
+    body = 'data:{"type":"data-error","id":"data-error-1"}\ndata:[DONE]\n'
+    provider = _provider(lambda _request: httpx.Response(200, text=body))
+
+    stream = await provider.acompletion(model="quick-answer", messages=MESSAGES, stream=True)
+    with pytest.raises(ProviderError, match="unknown error") as exc_info:
+        [chunk async for chunk in stream]
+
+    assert exc_info.value.code is None
 
 
 @pytest.mark.asyncio

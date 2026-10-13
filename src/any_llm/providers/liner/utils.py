@@ -32,8 +32,10 @@ _REFERENCE_FIELDS = {
 def _text_content(content: Any, role: str) -> str:
     if isinstance(content, str):
         return content
-    if isinstance(content, list) and all(isinstance(part, dict) and part.get("type") == "text" for part in content):
-        return "\n".join(str(part.get("text", "")) for part in content)
+    if isinstance(content, list) and all(
+        isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str) for part in content
+    ):
+        return "\n".join(part["text"] for part in content)
     msg = "messages"
     raise UnsupportedParameterError(msg, PROVIDER_NAME, f"Liner accepts text content only, in a '{role}' message.")
 
@@ -49,6 +51,9 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
                 msg, PROVIDER_NAME, f"Liner accepts only user and assistant messages, not '{role}'."
             )
         converted.append({"role": role, "content": _text_content(message.get("content"), role)})
+    if converted and converted[-1]["role"] != "user":
+        msg = "messages"
+        raise UnsupportedParameterError(msg, PROVIDER_NAME, "Liner needs the conversation to end with a user message.")
     return converted
 
 
@@ -107,9 +112,14 @@ FORWARDED_EVENTS = frozenset({"text-delta", "data-search-references", "finish"})
 
 
 def _raise_if_error_event(event: dict[str, Any]) -> None:
-    if event.get("type") == "error":
-        msg = f"Liner stream error: {event.get('errorText') or 'unknown error'}"
-        raise ProviderError(msg, provider_name=PROVIDER_NAME)
+    """Raise the failure Liner reports inside a stream that already answered 200."""
+    if event.get("type") != "data-error":
+        return
+    data = event.get("data")
+    error = data if isinstance(data, dict) else {}
+    code = error.get("code") if isinstance(error.get("code"), str) else None
+    msg = f"Liner stream error: {error.get('message') or 'unknown error'}"
+    raise ProviderError(msg, provider_name=PROVIDER_NAME, code=code)
 
 
 def _convert_event(event: dict[str, Any], model: str, chunk_id: str, *, first: bool) -> ChatCompletionChunk:
