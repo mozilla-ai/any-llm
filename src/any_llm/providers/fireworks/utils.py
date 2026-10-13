@@ -2,6 +2,7 @@
 from typing import Any
 
 from any_llm.types.completion import Reasoning
+from any_llm.types.rerank import RerankResponse, RerankResult, RerankUsage
 from any_llm.types.responses import Response
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
@@ -39,3 +40,20 @@ def extract_reasoning_from_response(response: Response) -> Response:
     response.output[-1].content[0].text = message["content"]
 
     return response
+
+
+def convert_fireworks_rerank_response(response: dict[str, Any]) -> RerankResponse:
+    """Convert a Fireworks `/rerank` JSON body to a normalized RerankResponse.
+
+    Fireworks returns no response ID, so `RerankResponse.id` stays None.
+    """
+    results = [RerankResult(index=item["index"], relevance_score=item["relevance_score"]) for item in response["data"]]
+    # Defensive: Fireworks returns sorted but re-sort to guarantee the docstring contract
+    results.sort(key=lambda r: r.relevance_score, reverse=True)
+
+    usage = response.get("usage")
+    return RerankResponse(
+        model=response.get("model"),
+        results=results,
+        usage=RerankUsage(total_tokens=usage.get("total_tokens")) if usage is not None else None,
+    )

@@ -198,6 +198,7 @@ def embedding_provider_model_map() -> dict[LLMProvider, str]:
 def rerank_provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.COHERE: "rerank-v3.5",
+        LLMProvider.FIREWORKS: "accounts/fireworks/models/qwen3-reranker-8b",
         # rerank-3/rerank-3-lite are still in preview; 2.5-lite is the current GA latency model.
         LLMProvider.VOYAGE: "rerank-2.5-lite",
         # together intentionally omitted: Together serves no rerank model on its serverless tier
