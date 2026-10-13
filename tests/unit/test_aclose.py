@@ -4,6 +4,7 @@ import json
 import sys
 import threading
 from collections.abc import Iterator
+from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -35,9 +36,13 @@ def _create_kwargs(provider: LLMProvider) -> dict[str, Any]:
     if provider == LLMProvider.VERTEXAI:
         kwargs["project"] = "test-project"
         kwargs["location"] = "test-location"
+    if provider == LLMProvider.VERTEXAIANTHROPIC:
+        kwargs["project_id"] = "test-project"
+        kwargs["region"] = "test-location"
     return kwargs
 
 
+@pytest.mark.parametrize("provider", list(LLMProvider), ids=lambda provider: provider.value)
 def test_every_provider_that_holds_an_async_client_overrides_aclose(provider: LLMProvider) -> None:
     provider_class = AnyLLM.get_provider_class(provider)
 
@@ -47,6 +52,7 @@ def test_every_provider_that_holds_an_async_client_overrides_aclose(provider: LL
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("provider", list(LLMProvider), ids=lambda provider: provider.value)
 async def test_aclose_can_be_called_twice_on_every_provider(provider: LLMProvider) -> None:
     if provider == LLMProvider.SAGEMAKER:
         pytest.skip("sagemaker requires AWS credentials on instantiation")
@@ -242,19 +248,31 @@ async def test_huggingface_closes_both_of_its_clients() -> None:
 
 @pytest.mark.asyncio
 async def test_azure_closes_its_chat_and_embeddings_clients() -> None:
+    from azure.core.pipeline.transport import AioHttpTransport
+
     from any_llm.providers.azure import AzureProvider
 
     llm = AnyLLM.create("azure", api_key="test_key", api_base="https://test.example.com")
     assert isinstance(llm, AzureProvider)
 
-    with (
-        patch.object(llm.chat_client, "close", new=AsyncMock()) as close_chat,
-        patch.object(llm.embeddings_client, "close", new=AsyncMock()) as close_embeddings,
-    ):
+    chat_transport = llm.chat_client._client._pipeline._transport
+    embeddings_transport = llm.embeddings_client._client._pipeline._transport
+    assert isinstance(chat_transport, AioHttpTransport)
+    assert isinstance(embeddings_transport, AioHttpTransport)
+    try:
+        await chat_transport.open()
+        await embeddings_transport.open()
+        chat_session = chat_transport.session
+        embeddings_session = embeddings_transport.session
+        assert chat_session is not None
+        assert embeddings_session is not None
+
         await llm.aclose()
 
-    close_chat.assert_awaited_once()
-    close_embeddings.assert_awaited_once()
+        assert chat_session.closed
+        assert embeddings_session.closed
+    finally:
+        await llm.aclose()
 
 
 @pytest.mark.asyncio
@@ -270,6 +288,129 @@ async def test_xai_closes_and_forgets_the_client_for_the_running_loop() -> None:
 
     xai_client.close.assert_awaited_once()
     assert llm._clients_by_loop == {}
+
+
+@pytest.mark.asyncio
+async def test_xai_close_does_not_construct_an_unused_client() -> None:
+    from any_llm.providers.xai.xai import XaiProvider
+
+    with patch("any_llm.providers.xai.xai.XaiAsyncClient") as create_client:
+        llm = XaiProvider(api_key="test-api-key")
+        await llm.aclose()
+        await llm.aclose()
+
+    create_client.assert_not_called()
+    assert llm._clients_by_loop == {}
+
+
+@pytest.mark.asyncio
+async def test_xai_close_preserves_clients_for_other_usable_loops() -> None:
+    from any_llm.providers.xai.xai import XaiProvider
+
+    other_loop = asyncio.new_event_loop()
+    closed_loop = asyncio.new_event_loop()
+    closed_loop.close()
+    current_client = MagicMock(close=AsyncMock())
+    other_client = MagicMock(close=AsyncMock())
+    closed_client = MagicMock(close=AsyncMock())
+    llm = XaiProvider(api_key="test-api-key")
+    llm._clients_by_loop = {
+        asyncio.get_running_loop(): current_client,
+        other_loop: other_client,
+        closed_loop: closed_client,
+    }
+    try:
+        await llm.aclose()
+
+        current_client.close.assert_awaited_once()
+        closed_client._api_channel._channel.close.assert_called_once()
+        closed_client._management_channel._channel.close.assert_called_once()
+        other_client.close.assert_not_awaited()
+        other_client._api_channel._channel.close.assert_not_called()
+        other_client._management_channel._channel.close.assert_not_called()
+        assert llm._clients_by_loop == {other_loop: other_client}
+    finally:
+        other_loop.close()
+
+
+@pytest.mark.asyncio
+async def test_async_context_exit_propagates_cleanup_errors() -> None:
+    llm = AnyLLM.create("openai", api_key="test_key")
+    assert isinstance(llm, BaseOpenAIProvider)
+    try:
+        with patch.object(llm, "aclose", new=AsyncMock(side_effect=RuntimeError("cleanup failed"))) as close:
+            with pytest.raises(RuntimeError, match="cleanup failed"):
+                async with llm:
+                    pass
+        close.assert_awaited_once()
+    finally:
+        await llm.client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_name", ["azure", "huggingface", "meta", "vertexai"])
+async def test_aclose_attempts_all_clients_when_one_close_fails(provider_name: str) -> None:
+    from any_llm.providers.azure import AzureProvider
+    from any_llm.providers.huggingface import HuggingfaceProvider
+    from any_llm.providers.meta import MetaProvider
+    from any_llm.providers.vertexai import VertexaiProvider
+    from any_llm.providers.vertexai.mistral import create_mistral_client
+
+    llm = AnyLLM.create(provider_name, **_create_kwargs(LLMProvider(provider_name)))
+    first_client: Any
+    other_clients: list[Any]
+    if isinstance(llm, AzureProvider):
+        first_client, first_method = llm.chat_client, "close"
+        other_clients = [llm.embeddings_client]
+    elif isinstance(llm, HuggingfaceProvider):
+        first_client, first_method = llm.client, "close"
+        other_clients = [llm.responses_client]
+    elif isinstance(llm, MetaProvider):
+        first_client, first_method = llm.client, "close"
+        other_clients = [llm._anthropic_client]
+    else:
+        assert isinstance(llm, VertexaiProvider)
+        first_client, first_method = llm.client.aio, "aclose"
+        other_clients = [llm._get_partner_provider().client]
+        llm._mistral_client = create_mistral_client(project="test-project", location="test-location")
+        other_clients.append(llm._mistral_client)
+
+    original_close = getattr(first_client, first_method)
+    try:
+        with ExitStack() as stack:
+            other_closes = [
+                stack.enter_context(patch.object(client, "close", new=AsyncMock(wraps=client.close)))
+                for client in other_clients
+            ]
+            stack.enter_context(
+                patch.object(first_client, first_method, new=AsyncMock(side_effect=RuntimeError("cleanup failed")))
+            )
+            with pytest.raises(RuntimeError, match="cleanup failed"):
+                await llm.aclose()
+            for close in other_closes:
+                close.assert_awaited_once()
+    finally:
+        await original_close()
+        for client in other_clients:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_vertexai_closes_mistral_after_partner_cleanup_fails() -> None:
+    from any_llm.providers.vertexai import VertexaiProvider
+    from any_llm.providers.vertexai.mistral import create_mistral_client
+
+    llm = VertexaiProvider(project="test-project", location="test-location")
+    partner = llm._get_partner_provider()
+    llm._mistral_client = create_mistral_client(project="test-project", location="test-location")
+    try:
+        with patch.object(partner, "aclose", new=AsyncMock(side_effect=RuntimeError("partner cleanup failed"))):
+            with pytest.raises(RuntimeError, match="partner cleanup failed"):
+                await llm.aclose()
+        assert llm.client._api_client._async_httpx_client.is_closed
+        assert llm._mistral_client.is_closed()
+    finally:
+        await llm.aclose()
 
 
 class _ChatCompletionHandler(BaseHTTPRequestHandler):

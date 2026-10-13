@@ -612,7 +612,7 @@ class AnyLLM(FilesMixin, ABC):
         raise NotImplementedError(msg)
 
     async def aclose(self) -> None:
-        """Close the async SDK clients this provider holds, releasing their connections.
+        """Close SDK clients that hold async connections between requests.
 
         Await this, or use the provider as an async context manager, before the event loop that
         ran its async calls closes. A client left to the garbage collector is shut down on
@@ -621,8 +621,8 @@ class AnyLLM(FilesMixin, ABC):
 
         It is safe to call more than once. Do not make further requests with a closed provider.
         Each SDK client is closed the way the SDK closes it, so an HTTP client passed in through
-        the provider's client arguments may be closed with it. Providers that hold no async
-        client between calls have nothing to close.
+        the provider's client arguments may be closed with it. Providers without persistent
+        async transports have nothing to close.
         """
 
     async def __aenter__(self) -> Self:

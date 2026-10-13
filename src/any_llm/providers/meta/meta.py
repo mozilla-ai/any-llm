@@ -113,8 +113,10 @@ class MetaProvider(BaseOpenAIProvider):
 
     @override
     async def aclose(self) -> None:
-        await super().aclose()
-        await self._anthropic_client.close()
+        try:
+            await super().aclose()
+        finally:
+            await self._anthropic_client.close()
 
     @override
     async def _amessages(

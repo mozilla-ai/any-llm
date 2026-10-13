@@ -125,9 +125,14 @@ A provider that is not closed has its client shut down whenever it is garbage co
 can happen while a later loop is running and then fails with `RuntimeError: Event loop is
 closed`. Calling `aclose()` more than once is safe; do not make requests with a provider after
 closing it. Each SDK client is closed the way its SDK closes it, so an HTTP client you passed in
-the client arguments (such as `http_client`) may be closed too. Providers that keep no async
-client between calls (`bedrock`, `lmstudio`, `sagemaker`, `voyage`, `watsonx`) have nothing to
+the client arguments (such as `http_client`) may be closed too. Providers without persistent
+async transports (`bedrock`, `lmstudio`, `sagemaker`, `voyage`, `watsonx`) have nothing to
 close.
+
+Consume streaming responses before leaving the context or calling `aclose()`.
+xAI keeps a separate client for each event loop. Its `aclose()` closes the current loop's
+client and releases clients whose loops have already closed; clients for other usable loops
+remain open and must be closed on their own loop.
 
 ## Custom OpenAI-compatible Endpoints
 

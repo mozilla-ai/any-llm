@@ -591,7 +591,7 @@ print(f"Supports responses: {meta.responses}")
     parts.append("### `aclose()`")
     parts.append("")
     parts.append(
-        "Close the async SDK clients this provider holds. Await it, or use the provider as an async context "
+        "Close SDK clients that hold async connections between requests. Await it, or use the provider as an async context "
         "manager, before the event loop that ran its async calls closes. It is safe to call more than once. "
         "See [Closing a Provider](../quickstart.md#closing-a-provider)."
     )
