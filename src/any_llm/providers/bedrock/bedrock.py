@@ -402,7 +402,11 @@ class BedrockProvider(AnyLLM):
             return await super()._amessages(params, **kwargs)
 
         client = self._client_for_timeout(kwargs.pop("timeout", None))
-        body = params.model_dump(exclude_none=True, exclude={"model", "stream", "betas", "output_format"})
+        # Anthropic's service_tier values mean nothing to Bedrock, whose own tiers are a separate
+        # InvokeModel parameter; the Converse bridge drops it too.
+        body = params.model_dump(
+            exclude_none=True, exclude={"model", "stream", "betas", "output_format", "service_tier"}
+        )
         body["anthropic_version"] = _ANTHROPIC_BEDROCK_VERSION
         betas = _messages_betas(params)
         if betas:

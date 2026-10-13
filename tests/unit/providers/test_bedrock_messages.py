@@ -131,6 +131,7 @@ async def test_claude_request_sends_the_anthropic_body_with_cache_control_thinki
         max_tokens=2048,
         thinking={"type": "enabled", "budget_tokens": 1024},
         betas=["interleaved-thinking-2025-05-14"],
+        service_tier="auto",
         guardrailIdentifier="gr-1",
     )
 
