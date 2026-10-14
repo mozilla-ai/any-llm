@@ -247,7 +247,12 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
         The result of the coroutine execution
 
     """
-    running_loop = _reject_running_loop_if_needed(allow_running_loop)
+    try:
+        running_loop = _reject_running_loop_if_needed(allow_running_loop)
+    except RuntimeError:
+        # Callers build the coroutine before this check, so close it to avoid a "never awaited" warning.
+        coro.close()
+        raise
     runner_loop = _get_runner_loop()
 
     if running_loop is runner_loop:
