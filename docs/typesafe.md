@@ -69,3 +69,18 @@ print(result)
 ```
 
 `list_models` only works against the hosted API, because the SDK expects its response shape.
+
+## Errors
+
+With `unified_exceptions=True`, TypeSafe errors are classified from the SDK's exception types before the
+shared status and message rules run:
+
+- A caller mistake the SDK catches before sending anything, such as an empty `questions` mapping, a
+  `Score` with no criteria, or a state that cannot be encoded as JSON, raises `InvalidRequestError`.
+- A 400 or 422 raises `InvalidRequestError`, whatever the question names in its message say.
+- A response that does not match your `response_model` raises `InvalidRequestError`.
+- A response the SDK cannot read with its own models raises `ProviderError`. Its `status_code` is the
+  status the server sent, usually 200.
+
+Everything else, such as rate limits, authentication failures, and timeouts, follows the
+[shared rules](api/exceptions.md).

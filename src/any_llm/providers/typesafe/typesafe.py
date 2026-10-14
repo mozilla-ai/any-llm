@@ -4,26 +4,35 @@ import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.constants import INSIDE_NOTEBOOK
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import AnyLLMError, InvalidRequestError, MissingApiKeyError, ProviderError
 from any_llm.types.model import Model
 from any_llm.utils.aio import run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 try:
-    from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy
+    from typesafe_sdk import (
+        AsyncTypeSafeClient,
+        ListModelsResponse,
+        RetryPolicy,
+        SystemOneResponse,
+        TypeSafeAPIResponseValidationError,
+        TypeSafeBadRequestError,
+        TypeSafeError,
+        TypeSafeUnprocessableEntityError,
+    )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from typesafe_sdk import JSONContent, ListModelsResponse, Question, SystemOneResponse
+    from typesafe_sdk import JSONContent, Question
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 
@@ -118,15 +127,45 @@ class TypesafeProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_list_models_response(response: ListModelsResponse) -> Sequence[Model]:
-        return [
-            Model(
-                id=model.name,
-                created=int(datetime.fromisoformat(model.release_date).replace(tzinfo=UTC).timestamp()),
-                object="model",
-                owned_by=TypesafeProvider.PROVIDER_NAME,
+        models = []
+        for model in response.models:
+            # The SDK types release_date as a plain string, so a malformed date gets this far.
+            try:
+                released = datetime.fromisoformat(model.release_date)
+            except ValueError as error:
+                msg = f"TypeSafe returned an invalid release_date {model.release_date!r} for model {model.name!r}"
+                raise ProviderError(msg, provider_name=TypesafeProvider.PROVIDER_NAME) from error
+            models.append(
+                Model(
+                    id=model.name,
+                    created=int(released.replace(tzinfo=UTC).timestamp()),
+                    object="model",
+                    owned_by=TypesafeProvider.PROVIDER_NAME,
+                )
             )
-            for model in response.models
-        ]
+        return models
+
+    @staticmethod
+    @override
+    def _classify_exception(exception: Exception) -> type[AnyLLMError] | None:
+        if isinstance(exception, TypeSafeAPIResponseValidationError):
+            # The SDK raises this both for a 200 that fails its own response model (a server fault) and
+            # for one that fails the caller's `response_model` (a mismatch no retry can fix). The pydantic
+            # error it chains names the model that failed.
+            cause = exception.__cause__
+            if isinstance(cause, ValidationError) and cause.title not in {
+                SystemOneResponse.__name__,
+                ListModelsResponse.__name__,
+            }:
+                return InvalidRequestError
+            return ProviderError
+        if isinstance(exception, (TypeSafeBadRequestError, TypeSafeUnprocessableEntityError)):
+            # The message lists the caller's question names, which must not pick the class.
+            return InvalidRequestError
+        if type(exception) is TypeSafeError:
+            # The SDK raises the base class for caller mistakes it catches before sending anything.
+            return InvalidRequestError
+        return None
 
     @override
     def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
