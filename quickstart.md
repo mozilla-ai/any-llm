@@ -311,8 +311,8 @@ its SDK's native setting:
 | `gemini`, `vertexai` | `http_options.retry_options.attempts`, set to `max_retries + 1` (`vertexai` partner and Mistral models pass `max_retries` to their OpenAI SDK client) |
 | `voyage` | `max_retries` on the SDK client, set to `max_retries + 1` because the SDK counts the first request |
 
-The other providers (`azure`, `bedrock`, `huggingface`, `lmstudio`, `mistral`, `ollama`,
-`otari`, `sagemaker`, `watsonx`, `xai`) raise `UnsupportedParameterError` for `max_retries`,
+The other providers (`azure`, `bedrock`, `huggingface`, `liner`, `lmstudio`, `mistral`,
+`ollama`, `otari`, `sagemaker`, `watsonx`, `xai`) raise `UnsupportedParameterError` for `max_retries`,
 because their SDK has no single retry count to set. Configure retries for them through the
 SDK's own options in `client_args`, for example `retry_config` for Mistral or a botocore
 `Config` for Bedrock. For `gemini` and `vertexai`, `retry_options` that you pass in
