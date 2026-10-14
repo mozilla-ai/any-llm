@@ -664,7 +664,9 @@ def _convert_response_to_response_dict(
                     images.append(image)
                 if audio_blob := _inline_audio_blob(part):
                     audio_blobs.append(audio_blob)
-                if part.text:
+                # An empty text part is still an answer: Gemini 3 answers a conversation
+                # that ends on an assistant turn with "" and STOP.
+                if part.text is not None:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
@@ -673,7 +675,13 @@ def _convert_response_to_response_dict(
         # Truncated or filtered responses produce a choice even without content or tool
         # calls, e.g. a thinking model that spent the whole max_output_tokens budget on
         # reasoning, so callers see the terminal reason instead of an empty choices list.
-        if tool_calls_list or text_content or images or audio or mapped_finish_reason in ("length", "content_filter"):
+        if (
+            tool_calls_list
+            or text_content is not None
+            or images
+            or audio
+            or mapped_finish_reason in ("length", "content_filter")
+        ):
             choices.append(
                 {
                     "message": {

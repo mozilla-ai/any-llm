@@ -58,6 +58,8 @@ def test_max_retries_reaches_client_or_is_rejected(provider: LLMProvider) -> Non
         assert captured_kwargs["max_retries"] == 3
     elif provider == LLMProvider.VOYAGE:
         assert captured_kwargs["max_retries"] == 4
+    elif provider == LLMProvider.TYPESAFE:
+        assert captured_kwargs["retry"].max_retries == 3
     else:
         assert "max_retries" not in captured_kwargs
         assert captured_kwargs["http_options"].retry_options.attempts == 4
@@ -70,6 +72,7 @@ def test_omitted_max_retries_leaves_client_kwargs_unchanged(provider: LLMProvide
 
     assert "max_retries" not in captured_kwargs
     assert "http_options" not in captured_kwargs
+    assert "retry" not in captured_kwargs
 
 
 @pytest.mark.parametrize("max_retries", [-1, True, 1.5, "2"])

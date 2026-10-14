@@ -91,6 +91,9 @@ _STATUS_ERROR_CLASSES: dict[int, type[AnyLLMError]] = {
 _REJECTED_REQUEST_STATUSES = frozenset({400, 422})
 
 
+_URL_PATTERN = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+
+
 def _classify_by_message(exc_text: str) -> type[AnyLLMError]:
     """First matching pattern in the ordered table, else ProviderError."""
     for pattern, error_class in _ERROR_PATTERNS:
@@ -139,9 +142,11 @@ class _ErrorMetadata(NamedTuple):
 
 def _extract_status_code(exception: Exception) -> int | None:
     """Read the HTTP status off the exception, or off its attached response."""
-    status_code = getattr(exception, "status_code", None)
-    if isinstance(status_code, int) and not isinstance(status_code, bool):
-        return status_code
+    # Most SDKs spell it status_code; some (aiohttp, typesafe-sdk) spell it status
+    for name in ("status_code", "status"):
+        status_code = getattr(exception, name, None)
+        if isinstance(status_code, int) and not isinstance(status_code, bool):
+            return status_code
 
     response = getattr(exception, "response", None)
     if response is not None:
@@ -207,24 +212,27 @@ def _extract_error_metadata(exception: Exception) -> _ErrorMetadata:
 
 
 def _extract_retry_after(exception: Exception) -> str | None:
-    """Read the ``Retry-After`` header off the exception's attached response.
+    """Read the ``Retry-After`` header off the exception or its attached response.
 
     Returned verbatim, because the header is either a number of seconds or an
     HTTP-date and normalizing it would throw away the caller's ability to tell
     the two apart. ``httpx.Headers`` lookups are case-insensitive, but a plain
     dict is not, so both spellings are tried.
     """
-    headers = getattr(getattr(exception, "response", None), "headers", None)
-    get_header = getattr(headers, "get", None)
-    if not callable(get_header):
-        return None
+    for headers in (
+        getattr(exception, "headers", None),
+        getattr(getattr(exception, "response", None), "headers", None),
+    ):
+        get_header = getattr(headers, "get", None)
+        if not callable(get_header):
+            continue
 
-    for name in ("retry-after", "Retry-After"):
-        value = get_header(name)
-        if isinstance(value, str):
-            return value
-        if isinstance(value, int) and not isinstance(value, bool):
-            return str(value)
+        for name in ("retry-after", "Retry-After"):
+            value = get_header(name)
+            if isinstance(value, str):
+                return value
+            if isinstance(value, int) and not isinstance(value, bool):
+                return str(value)
 
     return None
 
@@ -254,7 +262,10 @@ def convert_exception(
     if isinstance(exception, AnyLLMError):
         return exception
 
-    exc_text = f"{type(exception).__name__.lower()} {str(exception).lower()}"
+    # URLs are dropped because some SDKs prefix the request endpoint, and a hostname such as
+    # "safety-api" or "auth-proxy" must not decide the class.
+    message = _URL_PATTERN.sub("", str(exception))
+    exc_text = f"{type(exception).__name__.lower()} {message.lower()}"
     metadata = _extract_error_metadata(exception)
     error_class = _classify(exc_text, metadata.status_code)
 

@@ -180,6 +180,7 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         ("mistral", "mistralai"),
         ("ollama", "ollama"),
         ("together", "together"),
+        ("typesafe", "typesafe_sdk"),
         ("voyage", "voyageai"),
         ("watsonx", "ibm_watsonx_ai"),
         ("xai", "xai_sdk"),
