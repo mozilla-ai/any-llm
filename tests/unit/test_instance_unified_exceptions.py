@@ -6,10 +6,22 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from any_llm import AnyLLM
-from any_llm.exceptions import AuthenticationError
+from any_llm.exceptions import AuthenticationError, ProviderError
 from any_llm.providers.openai import OpenaiProvider
 from any_llm.providers.openai.custom import OpenAICompatibleProvider
 from any_llm.types.completion import ChatCompletionChunk
+from any_llm.types.files import AsyncFileDownload
+
+
+def _failing_download(error: Exception) -> Any:
+    """An ``_adownload_file`` replacement that fails before yielding the download."""
+
+    @asynccontextmanager
+    async def failing_download(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        raise error
+        yield  # pragma: no cover
+
+    return failing_download
 
 
 @pytest.mark.parametrize("enabled", [True, False, None])
@@ -134,13 +146,7 @@ async def test_download_file_honors_instance_option(monkeypatch: pytest.MonkeyPa
     with patch.object(OpenaiProvider, "_init_client"):
         provider = AnyLLM.create("openai", api_key="test", unified_exceptions=enabled)
     original = RuntimeError("Invalid API key")
-
-    @asynccontextmanager
-    async def failing_download(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
-        raise original
-        yield  # pragma: no cover
-
-    monkeypatch.setattr(provider, "_adownload_file", failing_download)
+    monkeypatch.setattr(provider, "_adownload_file", _failing_download(original))
 
     if enabled:
         with pytest.raises(AuthenticationError):
@@ -154,3 +160,38 @@ async def test_download_file_honors_instance_option(monkeypatch: pytest.MonkeyPa
             async with provider.adownload_file("file-1"):
                 pass  # pragma: no cover
         assert error.value is original
+
+
+@pytest.mark.asyncio
+async def test_download_file_asks_the_provider_to_classify(monkeypatch: pytest.MonkeyPatch) -> None:
+    with patch.object(OpenaiProvider, "_init_client"):
+        provider = AnyLLM.create("openai", api_key="test", unified_exceptions=True)
+    original = RuntimeError("Invalid API key")
+
+    async def failing_chunks() -> AsyncIterator[bytes]:
+        raise original
+        yield  # pragma: no cover
+
+    @asynccontextmanager
+    async def failing_read(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        yield AsyncFileDownload(status_code=200, headers={}, chunks=failing_chunks())
+
+    monkeypatch.setattr(provider, "_classify_exception", lambda _exc: ProviderError)
+
+    monkeypatch.setattr(provider, "_adownload_file", _failing_download(original))
+    with pytest.raises(ProviderError) as open_error:
+        async with provider.adownload_file("file-1"):
+            pass  # pragma: no cover
+
+    async def read_download() -> None:
+        async with provider.adownload_file("file-1") as download:
+            async for _ in download.chunks:
+                pass  # pragma: no cover
+
+    monkeypatch.setattr(provider, "_adownload_file", failing_read)
+    with pytest.raises(ProviderError) as read_error:
+        await read_download()
+
+    for caught in (open_error, read_error):
+        assert type(caught.value) is ProviderError
+        assert caught.value.original_exception is original

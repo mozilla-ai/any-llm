@@ -1338,6 +1338,11 @@ class UnsupportedParameterError(AnyLLMError):
         "One consequence worth noting: a 5xx is always a provider fault, even when its body happens to mention "
         "something like a content policy."
     )
+    parts.append("")
+    parts.append(
+        "A provider can pick the type itself before the status and message are consulted, for SDK errors whose "
+        "class says more than either."
+    )
 
     # Usage
     parts.append("")

@@ -14,12 +14,15 @@ from any_llm.exceptions import (
     GatewayTimeoutError,
     InsufficientFundsError,
     InvalidRequestError,
+    MissingApiKeyError,
     ModelNotFoundError,
     ProviderError,
+    ProviderFileNotFoundError,
     RateLimitError,
     UpstreamProviderError,
 )
 from any_llm.utils.exception_handler import (
+    _CLASSIFIABLE_ERRORS,
     _ERROR_PATTERNS,
     _STATUS_ERROR_CLASSES,
     _handle_exception,
@@ -455,19 +458,18 @@ def test_convert_exception_classification_order_is_pinned(message: str, expected
 
 
 def test_every_classified_class_accepts_the_metadata_keywords() -> None:
-    """Every class either table can select must accept the structured metadata keywords.
+    """Every class the tables or a provider can select must accept the structured metadata keywords.
 
     convert_exception constructs through a ``type[AnyLLMError]`` variable, so
     mypy checks the call against the base signature only. A subclass with an
     incompatible ``__init__`` (MissingApiKeyError, BatchNotCompleteError) would
     pass the type check and raise TypeError inside the exception handler,
-    masking the provider's original error. Both the message table and the status
-    table feed that construction site, so both are covered here.
+    masking the provider's original error. Both tables and a provider's pick
+    feed that construction site, and the set covers all of them.
     """
-    classified = {error_class for _pattern, error_class in _ERROR_PATTERNS}
-    classified.update(_STATUS_ERROR_CLASSES.values())
-    classified.update({InvalidRequestError, ProviderError})
-    for error_class in classified:
+    assert {error_class for _pattern, error_class in _ERROR_PATTERNS} <= _CLASSIFIABLE_ERRORS
+    assert set(_STATUS_ERROR_CLASSES.values()) <= _CLASSIFIABLE_ERRORS
+    for error_class in _CLASSIFIABLE_ERRORS:
         error = error_class(
             message="boom",
             original_exception=ValueError("boom"),
@@ -798,3 +800,109 @@ def test_convert_exception_ignores_a_boolean_response_status() -> None:
     original.response = type("Response", (), {"status_code": True, "status": False})()  # type: ignore[attr-defined]
     result = convert_exception(original, "gateway")
     assert result.status_code is None
+
+
+def test_convert_exception_uses_the_class_a_provider_picks() -> None:
+    original = _StatusError(200, "Invalid response data at 'answers'.", headers={"retry-after": "3"})
+
+    result = convert_exception(original, "typesafe", classify=lambda _exc: RateLimitError)
+
+    assert type(result) is RateLimitError
+    assert result.status_code == 200
+    assert result.retry_after == "3"
+    assert result.original_exception is original
+
+
+def test_convert_exception_falls_back_when_the_provider_defers() -> None:
+    classify = MagicMock(return_value=None)
+    original = Exception("At least one question is required.")
+
+    result = convert_exception(original, "typesafe", classify=classify)
+
+    assert type(result) is ProviderError
+    classify.assert_called_once_with(original)
+
+
+class _ClassifyingProvider(_Provider):
+    """A provider that reports every failure as a caller mistake."""
+
+    _unified_exceptions = True
+
+    @staticmethod
+    def _classify_exception(exception: Exception) -> type[AnyLLMError] | None:
+        return InvalidRequestError
+
+    @handle_exceptions()
+    async def call(self, error: Exception) -> None:
+        raise error
+
+    @handle_exceptions(wrap_streaming=True)
+    async def fail_before_streaming(self, error: Exception) -> Any:
+        raise error
+
+
+@pytest.mark.asyncio
+async def test_handle_exceptions_asks_the_provider_to_classify() -> None:
+    provider = _ClassifyingProvider()
+    original = TimeoutError("request timed out")
+
+    async def failing_stream() -> AsyncIterator[int]:
+        raise original
+        yield  # pragma: no cover
+
+    with pytest.raises(InvalidRequestError) as call_error:
+        await provider.call(original)
+    with pytest.raises(InvalidRequestError) as startup_error:
+        await provider.fail_before_streaming(original)
+    with pytest.raises(InvalidRequestError) as stream_error:
+        await anext(await provider.stream(failing_stream()))
+
+    for caught in (call_error, startup_error, stream_error):
+        assert caught.value.original_exception is original
+
+
+def _raise_key_error(_exception: Exception) -> type[AnyLLMError] | None:
+    key = "detail"
+    raise KeyError(key)
+
+
+@pytest.mark.parametrize(
+    "classify",
+    [
+        _raise_key_error,
+        lambda _exc: MissingApiKeyError,
+        lambda _exc: MagicMock(),
+        lambda _exc: [],
+    ],
+    ids=["raises", "rejects-metadata-keywords", "mock", "unhashable"],
+)
+def test_convert_exception_ignores_an_unusable_provider_pick(classify: Any) -> None:
+    result = convert_exception(_StatusError(429, "slow down"), "test", classify=classify)
+
+    assert type(result) is RateLimitError
+
+
+def test_file_operation_keeps_the_provider_pick_for_a_404() -> None:
+    original = _StatusError(404, "No such file")
+
+    with pytest.raises(InvalidRequestError) as picked:
+        _handle_exception(
+            original, "test", file_operation=True, unified_exceptions=True, classify=lambda _exc: InvalidRequestError
+        )
+    with pytest.raises(ProviderFileNotFoundError):
+        _handle_exception(original, "test", file_operation=True, unified_exceptions=True, classify=lambda _exc: None)
+
+    assert type(picked.value) is InvalidRequestError
+
+
+def test_handle_exception_skips_the_provider_without_unified_exceptions() -> None:
+    classify = MagicMock(return_value=InvalidRequestError)
+    original = TimeoutError("request timed out")
+
+    with (
+        pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+        pytest.raises(TimeoutError),
+    ):
+        _handle_exception(original, "test", unified_exceptions=False, classify=classify)
+
+    classify.assert_not_called()

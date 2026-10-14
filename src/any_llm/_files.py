@@ -14,14 +14,13 @@ from any_llm.types.files import (
     FilePage,
 )
 from any_llm.utils.aio import _async_source_to_sync_iter, run_async_in_sync
-from any_llm.utils.exception_handler import _handle_exception, handle_exceptions
+from any_llm.utils.exception_handler import handle_exceptions, provider_exception_handler
 
 
 class FilesMixin:
     """Public provider file operations and unsupported-provider defaults."""
 
     PROVIDER_NAME: str
-    _unified_exceptions: bool | None
 
     SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset()
 
@@ -140,9 +139,7 @@ class FilesMixin:
                     self._adownload_file(file_id, chunk_size=chunk_size, **kwargs)
                 )
             except Exception as exc:
-                _handle_exception(
-                    exc, self.PROVIDER_NAME, file_operation=True, unified_exceptions=self._unified_exceptions
-                )
+                provider_exception_handler(self, file_operation=True)(exc)
                 return  # pragma: no cover
 
             async def iterate() -> AsyncGenerator[bytes, None]:
@@ -150,9 +147,7 @@ class FilesMixin:
                     async for chunk in response:
                         yield chunk
                 except Exception as exc:
-                    _handle_exception(
-                        exc, self.PROVIDER_NAME, file_operation=True, unified_exceptions=self._unified_exceptions
-                    )
+                    provider_exception_handler(self, file_operation=True)(exc)
 
             async with aclosing(iterate()) as chunks:
                 yield AsyncFileDownload(status_code=response.status_code, headers=response.headers, chunks=chunks)
