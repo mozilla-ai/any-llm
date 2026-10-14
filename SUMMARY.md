@@ -4,6 +4,7 @@
 * [Quickstart](quickstart.md)
 * [Providers](providers.md)
 * [Files](files.md)
+* [TypeSafe](typesafe.md)
 
 ## Cookbooks
 
