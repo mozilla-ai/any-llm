@@ -1,5 +1,6 @@
 import warnings
 from collections.abc import Iterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx2
@@ -14,11 +15,22 @@ from typesafe_sdk import (
     RetryPolicy,
     Score,
     TypeSafeAPIError,
+    TypeSafeAPIResponseValidationError,
+    TypeSafeAPITimeoutError,
+    TypeSafeBadRequestError,
+    TypeSafeError,
     TypeSafeRateLimitError,
+    TypeSafeUnprocessableEntityError,
 )
 
 from any_llm import AnyLLM
-from any_llm.exceptions import InsufficientFundsError, InvalidRequestError, MissingApiKeyError, RateLimitError
+from any_llm.exceptions import (
+    InsufficientFundsError,
+    InvalidRequestError,
+    MissingApiKeyError,
+    ProviderError,
+    RateLimitError,
+)
 from any_llm.providers.typesafe import TypesafeProvider
 
 _QUESTIONS: dict[str, Question] = {"billing": Noul(instructions="Is this about billing?")}
@@ -221,6 +233,104 @@ async def test_unified_errors_classify_by_status_not_hostname(
 
     with pytest.raises(expected):
         await provider.adecide("state", _QUESTIONS)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "At least one question is required.",
+        'Score question "a" has no criteria; at least one score is required.',
+        "The request body could not be encoded as JSON",
+    ],
+)
+@pytest.mark.asyncio
+async def test_unified_sdk_local_errors_are_invalid_requests(provider: TypesafeProvider, message: str) -> None:
+    provider._unified_exceptions = True
+    provider.client.system_one.side_effect = TypeSafeError(message)  # type: ignore[attr-defined]
+
+    with pytest.raises(InvalidRequestError) as exc_info:
+        await provider.adecide("state", _QUESTIONS)
+
+    assert exc_info.value.status_code is None
+
+
+class _CallerAnswers(BaseModel):
+    not_in_response: str
+
+
+def _provider_answering(body: dict[str, Any]) -> TypesafeProvider:
+    transport = httpx2.MockTransport(lambda _request: httpx2.Response(200, json=body))
+    return TypesafeProvider(
+        api_key="test_key", unified_exceptions=True, http_client=httpx2.AsyncClient(transport=transport)
+    )
+
+
+@pytest.mark.asyncio
+async def test_unified_unreadable_response_is_a_provider_error() -> None:
+    provider = _provider_answering({"model": "jev", "usage": None, "answers": {}})
+
+    with pytest.raises(ProviderError) as exc_info:
+        await provider.adecide("state", _QUESTIONS)
+
+    assert type(exc_info.value) is ProviderError
+    assert exc_info.value.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_unified_response_model_mismatch_is_an_invalid_request() -> None:
+    provider = _provider_answering({"model": "jev", "usage": {"input_tokens": 1, "output_tokens": 1}, "answers": {}})
+
+    with pytest.raises(InvalidRequestError) as exc_info:
+        await provider.adecide("state", _QUESTIONS, response_model=_CallerAnswers)
+
+    assert type(exc_info.value.original_exception) is TypeSafeAPIResponseValidationError
+
+
+@pytest.mark.parametrize("question", ["auth_check", "rate_limit_risk", "safety_concern"])
+@pytest.mark.parametrize("error_class", [TypeSafeBadRequestError, TypeSafeUnprocessableEntityError])
+@pytest.mark.asyncio
+async def test_unified_rejected_requests_ignore_question_names(
+    provider: TypesafeProvider, question: str, error_class: type[TypeSafeAPIError]
+) -> None:
+    provider._unified_exceptions = True
+    body = {"detail": [{"loc": ["body", "questions", question, "criteria"], "msg": "Field required"}]}
+    status = 400 if error_class is TypeSafeBadRequestError else 422
+    provider.client.system_one.side_effect = error_class(status, body, httpx2.Headers())  # type: ignore[attr-defined]
+
+    with pytest.raises(InvalidRequestError) as exc_info:
+        await provider.adecide("state", _QUESTIONS)
+
+    assert type(exc_info.value) is InvalidRequestError
+    assert exc_info.value.status_code == status
+
+
+class _FutureSdkError(TypeSafeError):
+    """A TypeSafeError subclass a later SDK release could add for a server or transport fault."""
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        TypeSafeAPIError(400, None, httpx2.Headers()),
+        TypeSafeAPITimeoutError(5.0),
+        _FutureSdkError("stream could not be decoded"),
+        RuntimeError("not from the SDK"),
+    ],
+)
+def test_other_errors_use_the_shared_classification(error: Exception) -> None:
+    assert TypesafeProvider._classify_exception(error) is None
+
+
+@pytest.mark.asyncio
+async def test_alist_models_rejects_a_malformed_release_date(provider: TypesafeProvider) -> None:
+    provider.client.models.list.return_value = ListModelsResponse(  # type: ignore[attr-defined]
+        models=(ModelMetadata(name="jev-latest", description="Jev", release_date="2026/01/01"),)
+    )
+
+    with pytest.raises(ProviderError, match="release_date") as exc_info:
+        await provider.alist_models()
+
+    assert type(exc_info.value) is ProviderError
 
 
 @pytest.mark.asyncio

@@ -1341,7 +1341,7 @@ class UnsupportedParameterError(AnyLLMError):
     parts.append("")
     parts.append(
         "A provider can pick the type itself before the status and message are consulted, for SDK errors whose "
-        "class says more than either."
+        "class says more than either. TypeSafe does this: see its provider page for the cases it handles."
     )
 
     # Usage
