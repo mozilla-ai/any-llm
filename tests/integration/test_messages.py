@@ -359,3 +359,39 @@ async def test_messages_bedrock_claude_streams_signed_thinking(
         isinstance(event, ContentBlockDeltaEvent) and event.delta.type == "signature_delta" and event.delta.signature
         for event in events
     )
+
+
+@pytest.mark.asyncio
+async def test_messages_bedrock_claude_takes_automatic_caching_and_drops_unsupported_betas(
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """InvokeModel answers a top-level cache_control (Opus 4.6 and earlier) and an unknown beta with a 400."""
+    if provider != LLMProvider.BEDROCK:
+        pytest.skip("Targets the native Messages path for Claude models on Bedrock")
+
+    request: dict[str, Any] = {
+        "model": provider_reasoning_model_map[provider],
+        "max_tokens": 64,
+        "system": _CACHEABLE_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": "What is the weather like in Lisbon in spring?"}],
+        "cache_control": {"type": "ephemeral"},
+        "betas": ["interleaved-thinking-2025-05-14", "code-execution-2025-08-25"],
+        "metadata": {"user_id": "any-llm-integration"},
+    }
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        first = await llm.amessages(**request)
+        second = await llm.amessages(**request)
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except Exception as exc:
+        _skip_without_bedrock_credentials(exc)
+
+    assert isinstance(first, MessageResponse)
+    assert (first.usage.cache_creation_input_tokens or 0) + (first.usage.cache_read_input_tokens or 0) > 0
+    assert isinstance(second, MessageResponse)
+    assert (second.usage.cache_read_input_tokens or 0) > 0

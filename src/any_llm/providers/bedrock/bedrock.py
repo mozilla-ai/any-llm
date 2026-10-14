@@ -65,6 +65,36 @@ if TYPE_CHECKING:
 # since InvokeModel has no Anthropic headers.
 _ANTHROPIC_BEDROCK_VERSION = "bedrock-2023-05-31"
 
+# The anthropic_beta values AWS documents for Claude on InvokeModel (the Bedrock user guide's
+# Claude Messages pages). Bedrock answers any other value with a 400 "invalid beta flag".
+_BEDROCK_BETAS = frozenset(
+    {
+        "compact-2026-01-12",
+        "compact-2026-09-04",
+        "computer-use-2024-10-22",
+        "computer-use-2025-01-24",
+        "computer-use-2025-11-24",
+        "context-1m-2025-08-07",
+        "context-management-2025-06-27",
+        "dev-full-thinking-2025-05-14",
+        "effort-2025-11-24",
+        "fallback-credit-2026-06-01",
+        "fine-grained-tool-streaming-2025-05-14",
+        "inline-tools-2026-09-15",
+        "interleaved-thinking-2025-05-14",
+        "mid-conversation-effort-2026-08-01",
+        "mid-conversation-output-config-2026-07-01",
+        "mid-conversation-tool-changes-2026-07-01",
+        "output-128k-2025-02-19",
+        "per-message-effort-2026-07-01",
+        "per-turn-control-2026-07-01",
+        "thinking-binding-controls-2026-08-01",
+        "token-efficient-tools-2025-02-19",
+        "tool-examples-2025-10-29",
+        "tool-search-tool-2025-10-19",
+    }
+)
+
 _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
     "message_start": MessageStartEvent,
     "message_delta": MessageDeltaEvent,
@@ -73,6 +103,43 @@ _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
     "content_block_delta": ContentBlockDeltaEvent,
     "content_block_stop": ContentBlockStopEvent,
 }
+
+
+def _is_cacheable(block: Any) -> bool:
+    return (
+        isinstance(block, dict)
+        and block.get("type") not in {"thinking", "redacted_thinking"}
+        and not (block.get("type") == "text" and not block.get("text"))
+        and not block.get("defer_loading")
+    )
+
+
+def _mark_last_cacheable(holder: dict[str, Any], key: str, cache_control: dict[str, Any]) -> bool:
+    content = holder.get(key)
+    if isinstance(content, str):
+        if not content:
+            return False
+        holder[key] = [{"type": "text", "text": content, "cache_control": cache_control}]
+        return True
+    for block in reversed(content or []):
+        if _is_cacheable(block):
+            block.setdefault("cache_control", cache_control)
+            return True
+    return False
+
+
+def _place_cache_breakpoint(body: dict[str, Any], cache_control: dict[str, Any]) -> None:
+    """Move a top-level `cache_control` onto the last cacheable block, where Anthropic's API applies it.
+
+    Bedrock's InvokeModel integration for Claude Opus 4.6 and earlier answers a top-level
+    `cache_control` with a 400 but accepts the same breakpoint on a block. The prompt prefix runs
+    tools, system, then messages, so the search runs backward from the last message. A block that
+    already carries its own `cache_control` keeps it.
+    """
+    holders = [(message, "content") for message in reversed(body["messages"])]
+    for holder, key in [*holders, (body, "system"), (body, "tools")]:
+        if _mark_last_cacheable(holder, key, cache_control):
+            return
 
 
 class BedrockProvider(AnyLLM):
@@ -393,24 +460,16 @@ class BedrockProvider(AnyLLM):
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
         """Send a Claude model's request to Bedrock as an Anthropic Messages body via InvokeModel.
 
-        This keeps `cache_control`, thinking blocks with their signatures, and betas, which the
-        Converse bridge drops. Other models, and `output_format` (which Converse emulates with a
-        forced tool call), still use the bridge. Extra keyword arguments go to InvokeModel, as
-        they go to Converse on the bridge.
+        This keeps `cache_control`, thinking blocks with their signatures, and the betas Bedrock
+        supports, which the Converse bridge drops. Other models, and `output_format` (which
+        Converse emulates with a forced tool call), still use the bridge. Extra keyword arguments
+        go to InvokeModel, as they go to Converse on the bridge.
         """
         if params.output_format is not None or not self.serves_messages_natively(params.model):
             return await super()._amessages(params, **kwargs)
 
+        body = self._native_messages_body(params)
         client = self._client_for_timeout(kwargs.pop("timeout", None))
-        # Anthropic's service_tier values mean nothing to Bedrock, whose own tiers are a separate
-        # InvokeModel parameter; the Converse bridge drops it too.
-        body = params.model_dump(
-            exclude_none=True, exclude={"model", "stream", "betas", "output_format", "service_tier"}
-        )
-        body["anthropic_version"] = _ANTHROPIC_BEDROCK_VERSION
-        betas = _messages_betas(params)
-        if betas:
-            body["anthropic_beta"] = betas
         request = {
             "modelId": params.model,
             "body": json.dumps(body),
@@ -425,6 +484,33 @@ class BedrockProvider(AnyLLM):
 
         response = await asyncio.to_thread(self._invoke_native_messages, client, request)
         return MessageResponse.model_validate(response)
+
+    def _native_messages_body(self, params: MessagesParams) -> dict[str, Any]:
+        """Build the InvokeModel body from the Messages fields Bedrock accepts for Claude."""
+        if params.container is not None:
+            parameter_name = "container"
+            additional_message = "Bedrock does not support code execution or Agent Skills."
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+
+        # Anthropic's service_tier values mean nothing to Bedrock, whose own tiers are a separate
+        # InvokeModel parameter; the Converse bridge drops it too.
+        body = params.model_dump(
+            exclude_none=True,
+            exclude={"model", "stream", "betas", "output_format", "service_tier", "cache_control"},
+        )
+        if params.cache_control is not None:
+            _place_cache_breakpoint(body, params.cache_control)
+        body["anthropic_version"] = _ANTHROPIC_BEDROCK_VERSION
+
+        betas = []
+        for beta in _messages_betas(params):
+            if beta in _BEDROCK_BETAS:
+                betas.append(beta)
+            else:
+                logger.debug("Dropping Anthropic beta %r, which Bedrock does not support", beta)
+        if betas:
+            body["anthropic_beta"] = betas
+        return body
 
     @staticmethod
     def _invoke_native_messages(client: Any, request: dict[str, Any]) -> Any:
