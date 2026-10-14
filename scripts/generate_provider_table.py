@@ -46,8 +46,8 @@ def generate_provider_table(providers: list[ProviderMetadata]) -> str:
         return "No providers found."
 
     table_lines = [
-        "| ID | Tier | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch |",
-        "|----|------|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|",
+        "| ID | Tier | Key | Base | Responses | Completion | Streaming<br>(Completions) | Reasoning<br>(Completions) | Image <br>(Completions) | Embedding | List Models | Batch | Rerank | Decide |",
+        "|----|------|-----|------|-----------|------------|--------------------------|--------------------------|-----------|-----------|-------------|-------|--------|--------|",
     ]
 
     for provider in providers:
@@ -65,13 +65,16 @@ def generate_provider_table(providers: list[ProviderMetadata]) -> str:
         completion_supported = "✅" if provider.completion else "❌"
         list_models_supported = "✅" if provider.list_models else "❌"
         batch_supported = "✅" if provider.batch_completion else "❌"
+        rerank_supported = "✅" if provider.rerank else "❌"
+        decide_supported = "✅" if provider.decide else "❌"
 
         tier_label = "✅ Verified" if provider.tier is ProviderTier.VERIFIED else "🤝 Community"
 
         row = (
             f"| {provider_id_link} | {tier_label} | {env_key} | {env_api_base} | {responses_supported} | "
             f"{completion_supported} | {stream_supported} | {reasoning_supported} | {image_supported} | "
-            f"{embedding_supported} | {list_models_supported} | {batch_supported} |"
+            f"{embedding_supported} | {list_models_supported} | {batch_supported} | {rerank_supported} | "
+            f"{decide_supported} |"
         )
         table_lines.append(row)
 

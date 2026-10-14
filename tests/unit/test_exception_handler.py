@@ -86,6 +86,17 @@ def test_validation_error_bubbles_up_unchanged() -> None:
     assert raised.value is original
 
 
+@pytest.mark.parametrize("unified_exceptions", [False, True])
+def test_not_implemented_error_bubbles_up_unchanged(unified_exceptions: bool) -> None:
+    """A provider that does not implement a feature raises NotImplementedError before any request."""
+    original = NotImplementedError("Provider doesn't support decide.")
+
+    with pytest.raises(NotImplementedError) as raised:
+        _handle_exception(original, "openai", unified_exceptions=unified_exceptions)
+
+    assert raised.value is original
+
+
 def test_convert_exception_insufficient_funds() -> None:
     original = Exception("Insufficient funds for this request")
     result = convert_exception(original, "gateway")
