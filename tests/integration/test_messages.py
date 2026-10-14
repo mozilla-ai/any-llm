@@ -395,3 +395,45 @@ async def test_messages_bedrock_claude_takes_automatic_caching_and_drops_unsuppo
     assert (first.usage.cache_creation_input_tokens or 0) + (first.usage.cache_read_input_tokens or 0) > 0
     assert isinstance(second, MessageResponse)
     assert (second.usage.cache_read_input_tokens or 0) > 0
+
+
+# Adaptive thinking and its display values need a Claude 4.6 or later model; the shared Bedrock
+# reasoning model (Claude Haiku 4.5) takes only `enabled` thinking.
+_BEDROCK_ADAPTIVE_CLAUDE_MODEL = "us.anthropic.claude-sonnet-5-5"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True], ids=["non-streaming", "streaming"])
+async def test_messages_bedrock_claude_takes_thinking_display_updates(
+    provider: LLMProvider,
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+    stream: bool,
+) -> None:
+    """InvokeModel answers `display: "updates"` with a 400 unless its beta is in the body."""
+    if provider != LLMProvider.BEDROCK:
+        pytest.skip("Targets the native Messages path for Claude models on Bedrock")
+
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        result = await llm.amessages(
+            model=_BEDROCK_ADAPTIVE_CLAUDE_MODEL,
+            messages=[{"role": "user", "content": "What is the weather in Paris? Use the get_weather tool."}],
+            max_tokens=2048,
+            thinking={"type": "adaptive", "display": "updates"},
+            tools=[_WEATHER_TOOL],
+            stream=stream,
+        )
+        events = [event async for event in result] if isinstance(result, AsyncIterator) else []
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except Exception as exc:
+        _skip_without_bedrock_credentials(exc)
+
+    if stream:
+        assert events[0].type == "message_start"
+        assert events[-1].type == "message_stop"
+    else:
+        assert isinstance(result, MessageResponse)
+        assert result.content
