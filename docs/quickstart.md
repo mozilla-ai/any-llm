@@ -280,8 +280,6 @@ any-llm automatically converts your Python functions to OpenAI tools format. Fun
 - Type annotations for all parameters
 - A return type annotation
 
-Gemini preserves provider-supplied tool-call IDs in both completion responses and streaming chunks. When replying to a tool call, include its ID as `tool_call_id` so the function response matches the original call. Responses without an ID retain generated IDs for compatibility.
-
 ## Retries
 
 Provider SDKs differ in how often they retry a failed request on their own: the OpenAI and
