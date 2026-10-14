@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 
 from any_llm.utils.aio import (
+    RUNNER_THREAD_NAME,
     _async_source_to_sync_iter,
     _get_runner_loop,
     _runner,
@@ -689,6 +690,26 @@ def test_async_iter_to_sync_iter_close_from_the_runner_thread_does_not_wedge_the
     assert follow_up == ["still running"]
 
 
+@pytest.fixture(
+    params=[
+        "application-nested-worker",
+        "pytest_timeout tests/unit/test_utils.py::test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread",
+    ],
+    ids=["application-thread", "timeout-watchdog"],
+)
+def unrelated_nested_thread(request: pytest.FixtureRequest) -> Generator[None]:
+    stopped = threading.Event()
+    thread = threading.Thread(target=stopped.wait, name=request.param, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+
+@pytest.mark.usefixtures("unrelated_nested_thread")
 def test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread() -> None:
     """The private loop cannot stop itself, but it must not be left running either.
 
@@ -698,7 +719,9 @@ def test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread() -> Non
     """
 
     def live_nested_threads() -> list[str]:
-        return [thread.name for thread in threading.enumerate() if "nested" in thread.name]
+        return [
+            thread.name for thread in threading.enumerate() if thread.name.startswith(f"{RUNNER_THREAD_NAME}-nested")
+        ]
 
     async def source() -> AsyncIterator[int]:
         value = 0
