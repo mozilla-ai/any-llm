@@ -321,6 +321,54 @@ def test_convert_exception_stringifies_numeric_retry_after() -> None:
     assert result.retry_after == "30"
 
 
+class _StatusHeadersError(Exception):
+    """An SDK error that keeps the status and headers on itself, as typesafe-sdk does."""
+
+    def __init__(self, status: int, message: str, headers: dict[str, str] | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.headers = headers or {}
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (402, InsufficientFundsError),
+        (422, InvalidRequestError),
+        (502, UpstreamProviderError),
+        (504, GatewayTimeoutError),
+    ],
+)
+def test_convert_exception_reads_status_off_the_exception(status: int, expected: type[AnyLLMError]) -> None:
+    result = convert_exception(_StatusHeadersError(status, "status code (no body)"), "typesafe")
+    assert type(result) is expected
+    assert result.status_code == status
+
+
+def test_convert_exception_reads_retry_after_off_the_exception() -> None:
+    error = _StatusHeadersError(429, "slow down", {"retry-after": "7"})
+    result = convert_exception(error, "typesafe")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "7"
+
+
+def test_convert_exception_falls_back_to_response_retry_after() -> None:
+    """Headers on the exception that lack Retry-After must not hide the response's."""
+    error = _StatusHeadersError(429, "slow down", {"x-request-id": "abc"})
+    error.response = MagicMock(headers={"retry-after": "9"})  # type: ignore[attr-defined]
+    result = convert_exception(error, "typesafe")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "9"
+
+
+@pytest.mark.parametrize("host", ["http://safety-api.acme.internal", "https://auth-proxy.local:8080"])
+def test_convert_exception_ignores_urls_in_the_message(host: str) -> None:
+    """A hostname in the endpoint prefix must not pick the class over the status."""
+    error = _StatusHeadersError(400, f"POST {host}/v1/systemone: 400 bad question")
+    result = convert_exception(error, "typesafe")
+    assert type(result) is InvalidRequestError
+
+
 def test_convert_exception_retry_after_is_none_without_the_header() -> None:
     error = _ResponseStatusError(429, "Rate limit exceeded")
     error.response.headers = {}  # type: ignore[attr-defined]

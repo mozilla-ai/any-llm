@@ -1,6 +1,7 @@
 import asyncio
 import contextvars
 import gc
+import inspect
 import threading
 import time
 from collections.abc import AsyncIterator, Generator
@@ -348,7 +349,8 @@ def test_run_async_in_sync_disallows_running_loop_when_requested() -> None:
         coro = operation()
         with pytest.raises(RuntimeError, match="Cannot use the `sync` API in an `async` context"):
             run_async_in_sync(coro, allow_running_loop=False)
-        coro.close()
+        # Closed by the rejection itself, so the caller sees no "never awaited" warning.
+        assert inspect.getcoroutinestate(coro) == inspect.CORO_CLOSED
 
     asyncio.run(call_from_async_context())
 
