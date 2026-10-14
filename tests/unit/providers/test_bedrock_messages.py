@@ -218,6 +218,87 @@ async def test_claude_request_with_only_unsupported_betas_sends_no_beta_field() 
     assert "anthropic_beta" not in _sent_body(client.invoke_model)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "betas",
+    [
+        pytest.param(None, id="beta-inferred"),
+        pytest.param(["thinking-display-updates-2026-08-18"], id="beta-passed"),
+    ],
+)
+async def test_claude_thinking_display_updates_carries_its_beta(betas: list[str] | None) -> None:
+    provider, client = _custom_client_provider(_CLAUDE_MESSAGE)
+
+    await provider.amessages(
+        model=CLAUDE_MODEL,
+        messages=_THINKING_HISTORY,
+        max_tokens=64,
+        thinking={"type": "adaptive", "display": "updates"},
+        betas=betas,
+    )
+
+    body = _sent_body(client.invoke_model)
+    assert body["thinking"] == {"type": "adaptive", "display": "updates"}
+    assert body["anthropic_beta"] == ["thinking-display-updates-2026-08-18"]
+
+
+@pytest.mark.asyncio
+async def test_claude_stream_thinking_display_updates_carries_its_beta() -> None:
+    client = Mock()
+    client.invoke_model_with_response_stream.return_value = {"body": _FakeEventStream(_CLAUDE_STREAM)}
+    provider = BedrockProvider(client=client)
+
+    stream = await provider.amessages(
+        model=CLAUDE_MODEL,
+        messages=_THINKING_HISTORY,
+        max_tokens=64,
+        thinking={"type": "adaptive", "display": "updates"},
+        betas=["interleaved-thinking-2025-05-14"],
+        stream=True,
+    )
+    assert isinstance(stream, AsyncIterator)
+    await _drain(stream, [])
+
+    body = _sent_body(client.invoke_model_with_response_stream)
+    assert body["thinking"] == {"type": "adaptive", "display": "updates"}
+    assert body["anthropic_beta"] == ["interleaved-thinking-2025-05-14", "thinking-display-updates-2026-08-18"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "thinking",
+    [
+        pytest.param({"type": "adaptive", "display": "summarized"}, id="summarized"),
+        pytest.param({"type": "adaptive", "display": "omitted"}, id="omitted"),
+        pytest.param({"type": "adaptive"}, id="no-display"),
+    ],
+)
+async def test_claude_thinking_display_bedrock_accepts_is_sent_as_is(thinking: dict[str, Any]) -> None:
+    provider, client = _custom_client_provider(_CLAUDE_MESSAGE)
+
+    await provider.amessages(model=CLAUDE_MODEL, messages=_THINKING_HISTORY, max_tokens=64, thinking=thinking)
+
+    body = _sent_body(client.invoke_model)
+    assert body["thinking"] == thinking
+    assert "anthropic_beta" not in body
+
+
+@pytest.mark.asyncio
+async def test_claude_unknown_thinking_display_is_sent_as_summarized(caplog: pytest.LogCaptureFixture) -> None:
+    provider, client = _custom_client_provider(_CLAUDE_MESSAGE)
+
+    with caplog.at_level(logging.DEBUG, logger="any_llm"):
+        await provider.amessages(
+            model=CLAUDE_MODEL,
+            messages=_THINKING_HISTORY,
+            max_tokens=64,
+            thinking={"type": "adaptive", "display": "verbose"},
+        )
+
+    assert _sent_body(client.invoke_model)["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert "'verbose'" in caplog.text
+
+
 _AUTO_CACHE = {"type": "ephemeral", "ttl": "1h"}
 
 

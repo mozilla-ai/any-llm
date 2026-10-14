@@ -89,11 +89,17 @@ _BEDROCK_BETAS = frozenset(
         "per-message-effort-2026-07-01",
         "per-turn-control-2026-07-01",
         "thinking-binding-controls-2026-08-01",
+        "thinking-display-updates-2026-08-18",
         "token-efficient-tools-2025-02-19",
         "tool-examples-2025-10-29",
         "tool-search-tool-2025-10-19",
     }
 )
+
+# `thinking.display: "updates"` is a beta on every platform; InvokeModel reads the beta only from
+# the body, and answers "updates" without it as an unknown display value.
+_THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
+_BEDROCK_THINKING_DISPLAYS = frozenset({"summarized", "omitted", "updates"})
 
 _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
     "message_start": MessageStartEvent,
@@ -502,8 +508,16 @@ class BedrockProvider(AnyLLM):
             _place_cache_breakpoint(body, params.cache_control)
         body["anthropic_version"] = _ANTHROPIC_BEDROCK_VERSION
 
+        requested_betas = _messages_betas(params)
+        display = (params.thinking or {}).get("display")
+        if display == "updates" and _THINKING_DISPLAY_UPDATES_BETA not in requested_betas:
+            requested_betas.append(_THINKING_DISPLAY_UPDATES_BETA)
+        elif display is not None and display not in _BEDROCK_THINKING_DISPLAYS:
+            logger.debug("Sending thinking display %r as 'summarized', which Bedrock accepts", display)
+            body["thinking"] = {**body["thinking"], "display": "summarized"}
+
         betas = []
-        for beta in _messages_betas(params):
+        for beta in requested_betas:
             if beta in _BEDROCK_BETAS:
                 betas.append(beta)
             else:
