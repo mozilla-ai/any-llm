@@ -27,7 +27,8 @@ class AnyLLMError(Exception):
         original_exception: The original SDK exception that triggered this error
         provider_name: Name of the provider that raised the error (if available)
         status_code: HTTP status the provider returned, when the failure was an
-            HTTP error
+            HTTP error. A response the SDK could not parse keeps its own status,
+            so a ``ProviderError`` can carry a 2xx.
         code: Provider-specific error code from the response body
         param: Request field the provider flagged as the cause
         error_type: Provider-specific error category (OpenAI's ``type``, e.g.

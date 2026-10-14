@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from any_llm._files import FilesMixin
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
+    AnyLLMError,
     ContentFilterFinishReasonError,
     LengthFinishReasonError,
     MissingApiKeyError,
@@ -570,6 +571,16 @@ class AnyLLM(FilesMixin, ABC):
     def _convert_rerank_response(response: Any) -> RerankResponse:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
+
+    @staticmethod
+    def _classify_exception(exception: Exception) -> type[AnyLLMError] | None:
+        """Pick the unified exception class for an SDK exception, or None to use the shared classification.
+
+        Override when the SDK's exception types say more than its status and message do,
+        for example an error the SDK raises before sending anything. A class the shared
+        classification never picks, or an exception raised here, falls back to it.
+        """
+        return None
 
     @classmethod
     def get_provider_metadata(cls) -> ProviderMetadata:
