@@ -499,13 +499,15 @@ class AnyLLM(FilesMixin, ABC):
             raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from e
 
     @classmethod
-    def split_model_provider(cls, model: str) -> tuple[str | LLMProvider, str]:
+    def split_model_provider(cls, model: str, *, stacklevel: int = 3) -> tuple[str | LLMProvider, str]:
         """Extract the provider key from the model identifier.
 
         Supports both new format 'provider:model' (e.g., 'mistral:mistral-small')
         and legacy format 'provider/model' (e.g., 'mistral/mistral-small').
 
-        The legacy format will be deprecated in version 1.0.
+        The legacy format will be deprecated in version 1.0. Its warning points
+        ``stacklevel`` frames up, at the caller of the function that called this
+        one; a helper in between should raise it by one.
 
         The provider is returned as an ``LLMProvider`` member, registry-only
         gateways included.
@@ -523,7 +525,7 @@ class AnyLLM(FilesMixin, ABC):
                 f"Model format 'provider/model' is deprecated and will be removed in version 1.0. "
                 f"Please use 'provider:model' format instead. Got: '{model}'",
                 DeprecationWarning,
-                stacklevel=3,
+                stacklevel=stacklevel,
             )
             provider, model_name = model.split("/", 1)
         else:

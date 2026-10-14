@@ -231,6 +231,8 @@ def _build_docs_patches() -> ExitStack:
     stack.enter_context(patch("any_llm.alist_models", new=AsyncMock(return_value=fake_models)))
     stack.enter_context(patch("any_llm.rerank", return_value=fake_rerank))
     stack.enter_context(patch("any_llm.arerank", new=AsyncMock(return_value=fake_rerank)))
+    stack.enter_context(patch("any_llm.decide", return_value=fake_decide))
+    stack.enter_context(patch("any_llm.adecide", new=AsyncMock(return_value=fake_decide)))
     stack.enter_context(patch("any_llm.create_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.retrieve_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.list_batches", return_value=[fake_batch]))

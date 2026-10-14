@@ -51,7 +51,17 @@ The result is a `DecideResponse`, with the answers keyed by question name in `an
 The model you pass is always sent, so the SDK's `TYPESAFE_DEFAULT_MODEL` environment variable and the `model`
 client argument do not apply to `decide`.
 
-Both methods accept `timeout` (in seconds) and forward `retry`, `extra_headers` and `extra_body` to the
+The top-level `decide` and `adecide` functions take a provider-prefixed model instead:
+
+```python
+from any_llm import decide
+from any_llm.types.decide import Noul
+
+result = decide("typesafe:jev-latest", "I was charged twice.", {"billing": Noul(instructions="Is this about billing?")})
+print(result.nouls["billing"].noul)
+```
+
+All of them accept `timeout` (in seconds) and forward `retry`, `extra_headers` and `extra_body` to the
 SDK's `AsyncTypeSafeClient.system_one`. `response_model` is not forwarded: `decide` always returns a
 `DecideResponse`, and raises `UnsupportedParameterError` when it is passed.
 
