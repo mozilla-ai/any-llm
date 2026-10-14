@@ -131,8 +131,11 @@ close.
 
 Consume streaming responses before leaving the context or calling `aclose()`.
 xAI keeps a separate client for each event loop. Its `aclose()` closes the current loop's
-client and releases clients whose loops have already closed; clients for other usable loops
-remain open and must be closed on their own loop.
+client and releases clients whose loops have already closed. A client for another loop that is
+still running stays open, since it can only be closed on that loop.
+
+The module-level functions such as `acompletion()` create a provider for each call and do not
+close it. Create the provider with `AnyLLM.create()`, as above, when you need to close it.
 
 ## Custom OpenAI-compatible Endpoints
 
