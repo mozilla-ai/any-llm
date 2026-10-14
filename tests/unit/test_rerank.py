@@ -383,6 +383,20 @@ async def test_arerank_api_function() -> None:
         assert call_args[1]["max_tokens_per_doc"] == 512
 
 
+def test_rerank_api_warns_about_the_legacy_model_format_at_the_caller() -> None:
+    mock_provider = Mock()
+    mock_provider._rerank = Mock(return_value=RerankResponse(results=[]))
+    from any_llm.api import rerank
+
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=mock_provider),
+        pytest.warns(DeprecationWarning, match="provider/model") as record,
+    ):
+        rerank("cohere/rerank-v3.5", query="q", documents=["d"])
+
+    assert record[0].filename == __file__
+
+
 def test_rerank_response_model_validate() -> None:
     """Test that RerankResponse can be validated from a dict (otari wire format)."""
     data = {

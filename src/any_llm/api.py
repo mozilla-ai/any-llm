@@ -14,6 +14,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.decide import DecideResponse, JSONContent, QuestionsInput
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedBetaMessage, ParsedMessage
 from any_llm.types.model import Model
@@ -1313,29 +1314,26 @@ async def amoderation(
     return await llm._amoderation(model_name, input, **kwargs)
 
 
-def _resolve_rerank_target(
+def _resolve_llm(
     model: str,
     provider: str | LLMProvider | None,
-    top_n: int | None,
-    max_tokens_per_doc: int | None,
     api_key: str | None,
     api_base: str | None,
     client_args: dict[str, Any] | None,
-    kwargs: dict[str, Any],
-) -> tuple[AnyLLM, str, dict[str, Any]]:
+) -> tuple[AnyLLM, str]:
+    """Create the provider for ``model`` and return it with the bare model name.
+
+    Called only by the public functions, so the legacy-format warning is raised one frame
+    further up than usual to still point at the caller's line.
+    """
     if provider is None:
-        provider_key, model_name = AnyLLM.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model, stacklevel=4)
     else:
         provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
-    if top_n is not None:
-        kwargs["top_n"] = top_n
-    if max_tokens_per_doc is not None:
-        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
-
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
-    return llm, model_name, kwargs
+    return llm, model_name
 
 
 def rerank(
@@ -1372,9 +1370,11 @@ def rerank(
         NotImplementedError: If the provider does not support reranking.
 
     """
-    llm, model_name, kwargs = _resolve_rerank_target(
-        model, provider, top_n, max_tokens_per_doc, api_key, api_base, client_args, kwargs
-    )
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if max_tokens_per_doc is not None:
+        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
     return llm._rerank(model_name, query, documents, **kwargs)
 
 
@@ -1395,10 +1395,68 @@ async def arerank(
 
     See rerank() for full documentation.
     """
-    llm, model_name, kwargs = _resolve_rerank_target(
-        model, provider, top_n, max_tokens_per_doc, api_key, api_base, client_args, kwargs
-    )
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if max_tokens_per_doc is not None:
+        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
     return await llm.arerank(model_name, query, documents, **kwargs)
+
+
+def decide(
+    model: str,
+    state: JSONContent,
+    questions: QuestionsInput,
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> DecideResponse:
+    """Answer named yes/no, choice, and score questions about a state.
+
+    Args:
+        model: Provider-prefixed model ID (e.g., "typesafe:jev-latest").
+        state: Text, a JSON object, or an array the questions refer to.
+        questions: Names mapped to `Noul`, `Choice` or `Score` questions, their dict forms, or
+            objects with the same attributes.
+        provider: Provider name or enum. Inferred from model string if omitted.
+        api_key: Provider API key. Falls back to environment variable.
+        api_base: Provider API base URL. Falls back to environment variable.
+        client_args: Additional arguments passed to the provider client constructor.
+        **kwargs: Additional arguments for the call, such as `timeout` in seconds.
+
+    Returns:
+        DecideResponse with one answer per question, keyed by question name.
+
+    Raises:
+        NotImplementedError: If the provider does not support decide. Raised as is, with or
+            without unified exceptions.
+        pydantic.ValidationError: If `questions` is not a mapping of valid questions.
+
+    """
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
+    return llm.decide(model_name, state, questions, **kwargs)
+
+
+async def adecide(
+    model: str,
+    state: JSONContent,
+    questions: QuestionsInput,
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> DecideResponse:
+    """Answer named yes/no, choice, and score questions about a state (async).
+
+    See decide() for full documentation.
+    """
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
+    return await llm.adecide(model_name, state, questions, **kwargs)
 
 
 def list_models(

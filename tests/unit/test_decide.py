@@ -1,9 +1,12 @@
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+import any_llm
+from any_llm.api import adecide, decide
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai import OpenaiProvider
 from any_llm.types.decide import (
@@ -278,3 +281,54 @@ def test_decide_runs_adecide_synchronously(provider: OpenaiProvider) -> None:
 
     assert response == _response()
     adecide.assert_awaited_once_with("model", "state", {"billing": Noul()}, extra="value")
+
+
+def test_decide_api_splits_the_provider_from_the_model() -> None:
+    llm = Mock()
+    llm.decide.return_value = _response()
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=llm) as create:
+        result = decide("typesafe:jev-latest", "state", {"billing": Noul()}, api_key="key", timeout=5)
+
+    assert result == _response()
+    create.assert_called_once_with("typesafe", api_key="key", api_base=None)
+    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()}, timeout=5)
+
+
+def test_decide_api_warns_about_the_legacy_model_format_at_the_caller() -> None:
+    llm = Mock()
+    llm.decide.return_value = _response()
+
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=llm),
+        pytest.warns(DeprecationWarning, match="provider/model") as record,
+    ):
+        decide("typesafe/jev-latest", "state", {"billing": Noul()})
+
+    assert record[0].filename == __file__
+    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()})
+
+
+@pytest.mark.asyncio
+async def test_adecide_api_uses_an_explicit_provider_and_client_args() -> None:
+    llm = Mock()
+    llm.adecide = AsyncMock(return_value=_response())
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=llm) as create:
+        result = await adecide(
+            "jev-latest",
+            "state",
+            {"billing": Noul()},
+            provider=LLMProvider.TYPESAFE,
+            api_base="http://localhost:11434",
+            client_args={"max_retries": 0},
+        )
+
+    assert result == _response()
+    create.assert_called_once_with("typesafe", api_key=None, api_base="http://localhost:11434", max_retries=0)
+    llm.adecide.assert_awaited_once_with("jev-latest", "state", {"billing": Noul()})
+
+
+def test_decide_is_importable_from_the_top_level() -> None:
+    assert any_llm.decide is decide
+    assert any_llm.adecide is adecide
