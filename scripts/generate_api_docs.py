@@ -23,6 +23,7 @@ import any_llm.api as api_module
 from any_llm import AnyLLM
 from any_llm import exceptions as exc_module
 from any_llm.types import completion as completion_types
+from any_llm.types import decide as decide_types
 from any_llm.types import messages as messages_types
 from any_llm.types import provider as provider_types
 from any_llm.types import responses as responses_types
@@ -550,6 +551,21 @@ async def alist_models(self, **kwargs) -> Sequence[Model]
 ```"""
     )
 
+    # decide / adecide
+    parts.append("")
+    parts.append("### `decide()` / `adecide()`")
+    parts.append("")
+    parts.append(
+        "Answer named yes/no, choice and score questions about a state. See the [Decide](decide.md) reference."
+    )
+    parts.append("")
+    parts.append(
+        """```
+def decide(self, model, state, questions, **kwargs) -> DecideResponse
+async def adecide(self, model, state, questions, *, timeout=None, **kwargs) -> DecideResponse
+```"""
+    )
+
     # create_batch / acreate_batch
     parts.append("")
     parts.append("### `create_batch()` / `acreate_batch()`")
@@ -903,6 +919,92 @@ asyncio.run(main())
         "",
         '{% hint style="info" %}',
         "Not all providers support embeddings. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.embedding` programmatically.",
+        "{% endhint %}",
+    ]
+    return "\n".join(parts) + "\n"
+
+
+def generate_decide_page() -> str:
+    """Generate api/decide.md."""
+    sync_fn = api_module.decide
+    async_fn = api_module.adecide
+    parsed = _parse_docstring(sync_fn.__doc__)
+
+    parts = [
+        "---",
+        "title: Decide",
+        "description: Answer named yes/no, choice and score questions about a state",
+        "---",
+        "",
+        "The `decide` and `adecide` functions answer named questions about a state (text, a JSON object, or an array) with a provider that supports the decide API, such as [TypeSafe](../typesafe.md).",
+        "",
+        "## `any_llm.decide()`",
+        "",
+        _get_signature_block(sync_fn),
+        "",
+        "## `any_llm.adecide()`",
+        "",
+        "Async variant with the same parameters.",
+        "",
+        _get_signature_block(async_fn),
+        "",
+        "## Parameters",
+        "",
+        _param_table(sync_fn, parsed),
+        "",
+        "## Return Value",
+        "",
+        "Returns a [`DecideResponse`](types/decide.md) containing:",
+        "",
+        "- `answers` -- one answer per question, keyed by question name.",
+        "- `nouls`, `choices`, `scores` -- the answers grouped by question type.",
+        "- `model` -- the model that served the request.",
+        "- `usage` -- token usage, when the provider reports it.",
+        "- `id` -- the provider's request ID, when it reports one.",
+        "",
+        "## Usage",
+        "",
+        "### Every question type",
+        "",
+        """```python
+from any_llm import decide
+from any_llm.types.decide import Choice, Noul, Score
+
+result = decide(
+    "typesafe:jev-latest",
+    "I was charged twice. Please fix this ASAP.",
+    {
+        "billing": Noul(instructions="Is this ticket about billing?"),
+        "tone": Choice(instructions="What is the tone?", criteria={"calm": None, "angry": None}),
+        "urgency": Score(instructions="How urgent is this?", criteria=["low", "medium", "high"]),
+    },
+)
+
+print(result.nouls["billing"].noul)
+print(result.choices["tone"].choice)
+print(result.scores["urgency"].score)
+```""",
+        "",
+        "### Async",
+        "",
+        """```python
+import asyncio
+from any_llm import adecide
+from any_llm.types.decide import Noul
+
+async def main():
+    result = await adecide(
+        "typesafe:jev-latest",
+        "I was charged twice.",
+        {"billing": Noul(instructions="Is this ticket about billing?")},
+    )
+    print(result.nouls["billing"].noul)
+
+asyncio.run(main())
+```""",
+        "",
+        '{% hint style="info" %}',
+        "Not all providers support decide. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.decide` programmatically. A provider that does not support it raises `NotImplementedError`.",
         "{% endhint %}",
     ]
     return "\n".join(parts) + "\n"
@@ -1999,12 +2101,47 @@ if batch.status == "completed":
     return "\n".join(parts) + "\n"
 
 
+def generate_types_decide_page() -> str:
+    """Generate api/types/decide.md."""
+    parts = [
+        "---",
+        "title: Decide Types",
+        "description: Question and answer models for the decide API",
+        "---",
+        "",
+        "The questions passed to `any_llm.decide()` and `any_llm.adecide()`, and the response they return.",
+        "",
+        "**Import:** `from any_llm.types.decide import Noul, Choice, Score, DecideResponse`",
+        "",
+        "## Questions",
+        "",
+        "Each question is identified by its `type`, so a question can also be passed as a dict with a `type` key.",
+        "",
+    ]
+    for cls in (decide_types.Noul, decide_types.NoulCriteria, decide_types.Choice, decide_types.Score):
+        parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
+
+    parts.extend(["## Answers", ""])
+    for cls in (decide_types.NoulAnswer, decide_types.ChoiceAnswer, decide_types.ScoreAnswer):
+        parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
+
+    parts.extend(["## Response", ""])
+    for cls in (decide_types.DecideResponse, decide_types.DecideUsage):
+        parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
+
+    parts.append(
+        "`DecideResponse` also exposes the answers grouped by question type as `nouls`, `choices` and `scores`."
+    )
+    return "\n".join(parts) + "\n"
+
+
 # Map of output file paths to generator functions
 PAGES: dict[str, Any] = {
     "any-llm.md": generate_any_llm_page,
     "completion.md": generate_completion_page,
     "responses.md": generate_responses_page,
     "embedding.md": generate_embedding_page,
+    "decide.md": generate_decide_page,
     "list-models.md": generate_list_models_page,
     "batch.md": generate_batch_page,
     "exceptions.md": generate_exceptions_page,
@@ -2015,6 +2152,7 @@ PAGES: dict[str, Any] = {
     "types/model.md": generate_types_model_page,
     "types/provider.md": generate_types_provider_page,
     "types/batch.md": generate_types_batch_page,
+    "types/decide.md": generate_types_decide_page,
 }
 
 

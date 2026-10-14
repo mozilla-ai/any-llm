@@ -2,14 +2,15 @@ from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
-from typesafe_sdk import Choice, Noul, Score
 
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.typesafe import TypesafeProvider
+from any_llm.types.decide import Choice, Noul, Score
 from any_llm.utils.aio import run_async_in_sync
 from tests.constants import EXPECTED_PROVIDERS
 
+_MODEL = "jev-latest"
 _STATE = "I was charged twice. Please fix this ASAP."
 
 
@@ -41,6 +42,7 @@ def llm() -> Iterator[TypesafeProvider]:
 @pytest.mark.asyncio
 async def test_adecide_answers_every_question_type(async_llm: TypesafeProvider) -> None:
     result = await async_llm.adecide(
+        _MODEL,
         _STATE,
         {
             "billing": Noul(instructions="Is this ticket about billing?"),
@@ -55,10 +57,11 @@ async def test_adecide_answers_every_question_type(async_llm: TypesafeProvider) 
     assert 0.0 <= result.nouls["billing"].noul <= 1.0
     assert result.choices["tone"].choice in {"calm", "frustrated", "angry"}
     assert 0.0 <= result.scores["urgency"].score <= 2.0
+    assert result.usage is not None
     assert result.usage.input_tokens
 
 
 def test_decide_sync(llm: TypesafeProvider) -> None:
-    result = llm.decide(_STATE, {"billing": Noul(instructions="Is this ticket about billing?")})
+    result = llm.decide(_MODEL, _STATE, {"billing": Noul(instructions="Is this ticket about billing?")})
 
     assert result.nouls["billing"].noul > 0.5

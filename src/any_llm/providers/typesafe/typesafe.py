@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.constants import INSIDE_NOTEBOOK
-from any_llm.exceptions import AnyLLMError, InvalidRequestError, MissingApiKeyError, ProviderError
+from any_llm.exceptions import (
+    AnyLLMError,
+    InvalidRequestError,
+    MissingApiKeyError,
+    ProviderError,
+    UnsupportedParameterError,
+)
+from any_llm.types.decide import DecideResponse, Noul, Question
 from any_llm.types.model import Model
-from any_llm.utils.aio import run_async_in_sync
-from any_llm.utils.exception_handler import handle_exceptions
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 try:
@@ -30,20 +33,19 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
-    from typesafe_sdk import JSONContent, Question
+    from typesafe_sdk import QuestionModel as TypeSafeQuestionModel
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
-
-ResponseT = TypeVar("ResponseT", bound=BaseModel)
+    from any_llm.types.decide import JSONContent
 
 
 class TypesafeProvider(AnyLLM):
     """Provider for TypeSafe AI.
 
     TypeSafe exposes System One, which answers named questions (noul, choice, score) about a
-    state. It has no chat completions, so use `adecide` instead of `completion`.
+    state. It has no chat completions, so use `decide` instead of `completion`.
 
     A base URL other than the hosted API (for example a local Ollama server) makes the API key
     optional. `list_models` only works against the hosted API, whose response shape the SDK expects.
@@ -65,6 +67,8 @@ class TypesafeProvider(AnyLLM):
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
+    SUPPORTS_DECIDE = True
+    TIMEOUT_SUPPORT = "native"
     MAX_RETRIES_SUPPORT = "mapped"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
@@ -149,15 +153,7 @@ class TypesafeProvider(AnyLLM):
     @override
     def _classify_exception(exception: Exception) -> type[AnyLLMError] | None:
         if isinstance(exception, TypeSafeAPIResponseValidationError):
-            # The SDK raises this both for a 200 that fails its own response model (a server fault) and
-            # for one that fails the caller's `response_model` (a mismatch no retry can fix). The pydantic
-            # error it chains names the model that failed.
-            cause = exception.__cause__
-            if isinstance(cause, ValidationError) and cause.title not in {
-                SystemOneResponse.__name__,
-                ListModelsResponse.__name__,
-            }:
-                return InvalidRequestError
+            # A 200 the SDK cannot read with its own response models is a server fault.
             return ProviderError
         if isinstance(exception, (TypeSafeBadRequestError, TypeSafeUnprocessableEntityError)):
             # The message lists the caller's question names, which must not pick the class.
@@ -181,92 +177,42 @@ class TypesafeProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         return self._convert_list_models_response(await self.client.models.list(**kwargs))
 
-    @overload
-    def decide(
-        self,
-        state: JSONContent,
-        questions: Mapping[str, Question],
-        *,
-        model: str | None = None,
-        response_model: None = None,
-        **kwargs: Any,
-    ) -> SystemOneResponse: ...
+    @staticmethod
+    def _convert_question(question: Question) -> TypeSafeQuestionModel:
+        """Return the SDK's dict form of a question, with unset optional fields left off.
 
-    @overload
-    def decide(
-        self,
-        state: JSONContent,
-        questions: Mapping[str, Question],
-        *,
-        model: str | None = None,
-        response_model: type[ResponseT],
-        **kwargs: Any,
-    ) -> ResponseT: ...
-
-    def decide(
-        self,
-        state: JSONContent,
-        questions: Mapping[str, Question],
-        *,
-        model: str | None = None,
-        response_model: type[ResponseT] | None = None,
-        **kwargs: Any,
-    ) -> SystemOneResponse | ResponseT:
-        """Synchronous version of `adecide`."""
-        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
-        kwargs["response_model"] = response_model
-        result: SystemOneResponse | ResponseT = run_async_in_sync(
-            self.adecide(state, questions, model=model, **kwargs), allow_running_loop=allow_running_loop
-        )
-        return result
-
-    @overload
-    async def adecide(
-        self,
-        state: JSONContent,
-        questions: Mapping[str, Question],
-        *,
-        model: str | None = None,
-        response_model: None = None,
-        **kwargs: Any,
-    ) -> SystemOneResponse: ...
-
-    @overload
-    async def adecide(
-        self,
-        state: JSONContent,
-        questions: Mapping[str, Question],
-        *,
-        model: str | None = None,
-        response_model: type[ResponseT],
-        **kwargs: Any,
-    ) -> ResponseT: ...
-
-    @handle_exceptions()
-    async def adecide(
-        self,
-        state: JSONContent,
-        questions: Mapping[str, Question],
-        *,
-        model: str | None = None,
-        response_model: type[ResponseT] | None = None,
-        **kwargs: Any,
-    ) -> SystemOneResponse | ResponseT:
-        """Answer named questions about a state with TypeSafe System One.
-
-        Args:
-            state: Text, a JSON object, or an array to evaluate.
-            questions: Names mapped to `Noul`, `Choice` or `Score` objects (or their dict forms).
-            model: Model override. `None` uses the client default: `TYPESAFE_DEFAULT_MODEL`, else the
-                hosted alias `jev-latest`, which a self-hosted server usually does not serve.
-            response_model: Optional Pydantic model to parse the answers into instead of `SystemOneResponse`.
-            **kwargs: Passed to `AsyncTypeSafeClient.system_one` (for example `timeout`).
-
-        Returns:
-            An instance of `response_model`, or the SDK's `SystemOneResponse` with answers grouped by
-            `nouls`, `choices` and `scores`.
+        The SDK sends a dict as is, so nested values its encoder accepts (dates, UUIDs, Decimals)
+        survive, where its question classes would reject or coerce them.
         """
-        result: SystemOneResponse | ResponseT = await self.client.system_one(
-            state, questions, model=model, response_model=response_model, **kwargs
+        data = question.model_dump()
+        if isinstance(question, Noul) and question.criteria is not None:
+            # An undescribed outcome is left off rather than sent as null, as the dict form always did.
+            data["criteria"] = {side: value for side, value in data["criteria"].items() if value is not None}
+        return cast("TypeSafeQuestionModel", {field: value for field, value in data.items() if value is not None})
+
+    @staticmethod
+    def _convert_decide_response(response: SystemOneResponse) -> DecideResponse:
+        try:
+            request_id: str | None = response.request_id
+        except TypeSafeError:
+            # The SDK raises when the server sent no x-typesafe-request-id header.
+            request_id = None
+        return DecideResponse.model_validate({**response.model_dump(), "id": request_id})
+
+    @override
+    async def _adecide(
+        self, model: str, state: JSONContent, questions: dict[str, Question], **kwargs: Any
+    ) -> DecideResponse:
+        if "response_model" in kwargs:
+            # The SDK would return the caller's model instead of a SystemOneResponse, which the
+            # conversion below cannot read.
+            parameter_name = "response_model"
+            additional_message = "decide always returns a DecideResponse."
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+        response = await self.client.system_one(
+            state,
+            {name: self._convert_question(question) for name, question in questions.items()},
+            model=model,
+            **kwargs,
         )
-        return result
+        return self._convert_decide_response(response)

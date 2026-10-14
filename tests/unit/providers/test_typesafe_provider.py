@@ -1,27 +1,25 @@
 import warnings
 from collections.abc import Iterator
+from datetime import date
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx2
 import pytest
-from pydantic import BaseModel
 from typesafe_sdk import (
-    Choice,
     ListModelsResponse,
     ModelMetadata,
-    Noul,
-    Question,
     RetryPolicy,
-    Score,
+    SystemOneResponse,
     TypeSafeAPIError,
-    TypeSafeAPIResponseValidationError,
     TypeSafeAPITimeoutError,
     TypeSafeBadRequestError,
     TypeSafeError,
     TypeSafeRateLimitError,
     TypeSafeUnprocessableEntityError,
 )
+from typesafe_sdk import Noul as TypeSafeNoul
 
 from any_llm import AnyLLM
 from any_llm.exceptions import (
@@ -30,10 +28,24 @@ from any_llm.exceptions import (
     MissingApiKeyError,
     ProviderError,
     RateLimitError,
+    UnsupportedParameterError,
 )
 from any_llm.providers.typesafe import TypesafeProvider
+from any_llm.types.decide import (
+    Choice,
+    ChoiceAnswer,
+    DecideResponse,
+    DecideUsage,
+    Noul,
+    NoulAnswer,
+    NoulCriteria,
+    Question,
+    Score,
+    ScoreAnswer,
+)
 
-_QUESTIONS: dict[str, Question] = {"billing": Noul(instructions="Is this about billing?")}
+_MODEL = "jev-latest"
+_QUESTIONS = {"billing": Noul(instructions="Is this about billing?")}
 
 
 @pytest.fixture(autouse=True)
@@ -48,13 +60,32 @@ def client_cls() -> Iterator[MagicMock]:
         yield mock
 
 
+_SYSTEM_ONE_BODY: dict[str, Any] = {
+    "model": "jev-1",
+    "usage": {"input_tokens": 12, "output_tokens": 3},
+    "answers": {
+        "billing": {"type": "noul", "noul": 0.9},
+        "tone": {"type": "choice", "choice": "angry", "confidence": 0.8, "probabilities": {"angry": 0.8}},
+        "risk": {
+            "type": "score",
+            "score": 0.4,
+            "confidence": 0.6,
+            "legend": {0: "low", 1: "high"},
+            "probabilities": {0: 0.6, 1: 0.4},
+        },
+    },
+}
+
+
 @pytest.fixture
 def provider() -> Iterator[TypesafeProvider]:
+    """A provider whose client answers `_SYSTEM_ONE_BODY` unless a test overrides it."""
     provider = TypesafeProvider(api_key="test_key")
     with (
-        patch.object(provider.client, "system_one", new_callable=AsyncMock),
+        patch.object(provider.client, "system_one", new_callable=AsyncMock) as system_one,
         patch.object(provider.client.models, "list", new_callable=AsyncMock),
     ):
+        system_one.return_value = SystemOneResponse.model_validate(_SYSTEM_ONE_BODY)
         yield provider
 
 
@@ -66,8 +97,9 @@ def test_provider_is_resolved_by_name() -> None:
     assert AnyLLM.get_provider_class("typesafe") is TypesafeProvider
 
 
-def test_metadata_does_not_advertise_messages() -> None:
+def test_metadata_advertises_decide_but_not_messages() -> None:
     metadata = TypesafeProvider.get_provider_metadata()
+    assert metadata.decide
     assert not metadata.messages
     assert metadata.list_models
 
@@ -135,40 +167,92 @@ def test_explicit_retry_none_does_not_drop_max_retries(client_cls: MagicMock) ->
 
 
 @pytest.mark.asyncio
-async def test_adecide_forwards_to_system_one(provider: TypesafeProvider) -> None:
+async def test_adecide_sends_question_dicts_and_converts_the_response(provider: TypesafeProvider) -> None:
     questions: dict[str, Question] = {
         "billing": Noul(instructions="Is this about billing?"),
-        "tone": Choice(criteria={"calm": None, "angry": None}),
-        "risk": Score(criteria=["low", "high"]),
+        "tone": Choice(criteria={"calm": None, "angry": "Hostile"}),
+        "risk": Score(instructions="How risky?", criteria=["low", "high"]),
     }
 
-    result = await provider.adecide("I was charged twice.", questions, model="jev-latest", timeout=5)
+    result = await provider.adecide(_MODEL, "I was charged twice.", questions, timeout=5)
 
-    system_one = provider.client.system_one
-    assert result is system_one.return_value  # type: ignore[attr-defined]
-    system_one.assert_awaited_once_with(  # type: ignore[attr-defined]
-        "I was charged twice.", questions, model="jev-latest", response_model=None, timeout=5
+    provider.client.system_one.assert_awaited_once_with(  # type: ignore[attr-defined]
+        "I was charged twice.",
+        {
+            "billing": {"type": "noul", "instructions": "Is this about billing?"},
+            "tone": {"type": "choice", "criteria": {"calm": None, "angry": "Hostile"}},
+            "risk": {"type": "score", "instructions": "How risky?", "criteria": ["low", "high"]},
+        },
+        model=_MODEL,
+        timeout=5,
     )
+    assert result == DecideResponse(
+        id=None,
+        model="jev-1",
+        answers={
+            "billing": NoulAnswer(noul=0.9),
+            "tone": ChoiceAnswer(choice="angry", confidence=0.8, probabilities={"angry": 0.8}),
+            "risk": ScoreAnswer(
+                score=0.4, confidence=0.6, legend={0: "low", 1: "high"}, probabilities={0: 0.6, 1: 0.4}
+            ),
+        },
+        usage=DecideUsage(input_tokens=12, output_tokens=3),
+    )
+
+
+@pytest.mark.parametrize(
+    "criteria",
+    [NoulCriteria(true="Advertising"), NoulCriteria(true="Advertising", false=None), {"true": "Advertising"}],
+)
+@pytest.mark.asyncio
+async def test_adecide_leaves_undescribed_noul_outcomes_off(
+    provider: TypesafeProvider, criteria: NoulCriteria | dict[str, str]
+) -> None:
+    await provider.adecide(_MODEL, "state", {"spam": {"type": "noul", "criteria": criteria}})
+
+    sent = provider.client.system_one.await_args.args[1]  # type: ignore[attr-defined]
+    assert sent == {"spam": {"type": "noul", "criteria": {"true": "Advertising"}}}
+
+
+def test_noul_without_criteria_omits_them() -> None:
+    assert TypesafeProvider._convert_question(Noul(criteria=None)) == {"type": "noul"}
 
 
 @pytest.mark.asyncio
-async def test_adecide_forwards_response_model(provider: TypesafeProvider) -> None:
-    class Answers(BaseModel):
-        billing: float
+async def test_adecide_sends_nested_values_the_sdk_encodes(provider: TypesafeProvider) -> None:
+    instructions = {"since": date(2026, 1, 1), "threshold": Decimal("0.5")}
 
-    await provider.adecide("state", _QUESTIONS, response_model=Answers)
+    await provider.adecide(_MODEL, "state", {"recent": Noul(instructions=instructions)})
 
-    provider.client.system_one.assert_awaited_once_with("state", _QUESTIONS, model=None, response_model=Answers)  # type: ignore[attr-defined]
+    sent = provider.client.system_one.await_args.args[1]  # type: ignore[attr-defined]
+    assert sent == {"recent": {"type": "noul", "instructions": instructions}}
+
+
+@pytest.mark.asyncio
+async def test_adecide_accepts_sdk_question_objects(provider: TypesafeProvider) -> None:
+    question = TypeSafeNoul(instructions="Is this about billing?", criteria={"true": "Billing"})
+
+    await provider.adecide(_MODEL, "state", {"billing": question})  # type: ignore[dict-item]
+
+    sent = provider.client.system_one.await_args.args[1]  # type: ignore[attr-defined]
+    assert sent == {
+        "billing": {"type": "noul", "instructions": "Is this about billing?", "criteria": {"true": "Billing"}}
+    }
+
+
+@pytest.mark.asyncio
+async def test_adecide_rejects_response_model(provider: TypesafeProvider) -> None:
+    with pytest.raises(UnsupportedParameterError, match="response_model") as exc_info:
+        await provider.adecide(_MODEL, "state", _QUESTIONS, response_model=SystemOneResponse)
+
+    assert exc_info.value.parameter_name == "response_model"
+    provider.client.system_one.assert_not_awaited()  # type: ignore[attr-defined]
 
 
 def test_decide_runs_adecide_synchronously(provider: TypesafeProvider) -> None:
-    result = provider.decide("I was charged twice.", _QUESTIONS, model="jev-latest")
+    result = provider.decide(_MODEL, "I was charged twice.", _QUESTIONS)
 
-    system_one = provider.client.system_one
-    assert result is system_one.return_value  # type: ignore[attr-defined]
-    system_one.assert_awaited_once_with(  # type: ignore[attr-defined]
-        "I was charged twice.", _QUESTIONS, model="jev-latest", response_model=None
-    )
+    assert result.nouls == {"billing": NoulAnswer(noul=0.9)}
 
 
 @pytest.mark.asyncio
@@ -176,7 +260,7 @@ async def test_decide_inside_running_loop_raises_without_leaking_a_coroutine(pro
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         with pytest.raises(RuntimeError, match="Cannot use the `sync` API in an `async` context"):
-            provider.decide("state", _QUESTIONS)
+            provider.decide(_MODEL, "state", _QUESTIONS)
 
 
 @pytest.mark.asyncio
@@ -212,7 +296,7 @@ async def test_unified_rate_limit_carries_status_and_retry_after(provider: Types
     provider.client.system_one.side_effect = error  # type: ignore[attr-defined]
 
     with pytest.raises(RateLimitError) as exc_info:
-        await provider.adecide("state", _QUESTIONS)
+        await provider.adecide(_MODEL, "state", _QUESTIONS)
 
     assert exc_info.value.status_code == 429
     assert exc_info.value.retry_after == "7"
@@ -232,14 +316,13 @@ async def test_unified_errors_classify_by_status_not_hostname(
     provider.client.system_one.side_effect = error  # type: ignore[attr-defined]
 
     with pytest.raises(expected):
-        await provider.adecide("state", _QUESTIONS)
+        await provider.adecide(_MODEL, "state", _QUESTIONS)
 
 
 @pytest.mark.parametrize(
     "message",
     [
         "At least one question is required.",
-        'Score question "a" has no criteria; at least one score is required.',
         "The request body could not be encoded as JSON",
     ],
 )
@@ -249,7 +332,7 @@ async def test_unified_sdk_local_errors_are_invalid_requests(provider: TypesafeP
     provider.client.system_one.side_effect = TypeSafeError(message)  # type: ignore[attr-defined]
 
     with pytest.raises(InvalidRequestError) as exc_info:
-        await provider.adecide("state", _QUESTIONS)
+        await provider.adecide(_MODEL, "state", _QUESTIONS)
 
     assert exc_info.value.status_code is None
 
@@ -268,15 +351,24 @@ def test_unified_client_construction_errors_are_invalid_requests(kwargs: dict[st
     assert type(exc_info.value.original_exception) is TypeSafeError
 
 
-class _CallerAnswers(BaseModel):
-    not_in_response: str
-
-
-def _provider_answering(body: dict[str, Any]) -> TypesafeProvider:
-    transport = httpx2.MockTransport(lambda _request: httpx2.Response(200, json=body))
+def _provider_answering(body: dict[str, Any], headers: dict[str, str] | None = None) -> TypesafeProvider:
+    transport = httpx2.MockTransport(lambda _request: httpx2.Response(200, json=body, headers=headers))
     return TypesafeProvider(
         api_key="test_key", unified_exceptions=True, http_client=httpx2.AsyncClient(transport=transport)
     )
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected_id"),
+    [({"x-typesafe-request-id": "req_123"}, "req_123"), (None, None)],
+)
+@pytest.mark.asyncio
+async def test_adecide_carries_the_request_id(headers: dict[str, str] | None, expected_id: str | None) -> None:
+    provider = _provider_answering(_SYSTEM_ONE_BODY, headers)
+
+    result = await provider.adecide(_MODEL, "state", _QUESTIONS)
+
+    assert result.id == expected_id
 
 
 @pytest.mark.asyncio
@@ -284,20 +376,10 @@ async def test_unified_unreadable_response_is_a_provider_error() -> None:
     provider = _provider_answering({"model": "jev", "usage": None, "answers": {}})
 
     with pytest.raises(ProviderError) as exc_info:
-        await provider.adecide("state", _QUESTIONS)
+        await provider.adecide(_MODEL, "state", _QUESTIONS)
 
     assert type(exc_info.value) is ProviderError
     assert exc_info.value.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_unified_response_model_mismatch_is_an_invalid_request() -> None:
-    provider = _provider_answering({"model": "jev", "usage": {"input_tokens": 1, "output_tokens": 1}, "answers": {}})
-
-    with pytest.raises(InvalidRequestError) as exc_info:
-        await provider.adecide("state", _QUESTIONS, response_model=_CallerAnswers)
-
-    assert type(exc_info.value.original_exception) is TypeSafeAPIResponseValidationError
 
 
 @pytest.mark.parametrize("question", ["auth_check", "rate_limit_risk", "safety_concern"])
@@ -312,7 +394,7 @@ async def test_unified_rejected_requests_ignore_question_names(
     provider.client.system_one.side_effect = error_class(status, body, httpx2.Headers())  # type: ignore[attr-defined]
 
     with pytest.raises(InvalidRequestError) as exc_info:
-        await provider.adecide("state", _QUESTIONS)
+        await provider.adecide(_MODEL, "state", _QUESTIONS)
 
     assert type(exc_info.value) is InvalidRequestError
     assert exc_info.value.status_code == status
@@ -353,4 +435,4 @@ async def test_adecide_reraises_sdk_errors_by_default(provider: TypesafeProvider
     provider.client.system_one.side_effect = error  # type: ignore[attr-defined]
 
     with pytest.warns(DeprecationWarning, match="unified any-llm exceptions"), pytest.raises(TypeSafeRateLimitError):
-        await provider.adecide("state", _QUESTIONS)
+        await provider.adecide(_MODEL, "state", _QUESTIONS)

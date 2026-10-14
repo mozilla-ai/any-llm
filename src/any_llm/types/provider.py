@@ -29,6 +29,8 @@ class ProviderMetadata(BaseModel):
     audio_transcription: bool = False
     audio_speech: bool = False
     rerank: bool = False
+    decide: bool = False
+    """Whether the provider implements the decide API (`decide`/`adecide`)."""
 
     files: bool = False
     file_operations: tuple[FileOperation, ...] = ()

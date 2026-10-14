@@ -388,6 +388,7 @@ def _handle_exception(
         AnyLLMError: If unified exceptions are enabled
         Exception: The original exception if unified exceptions are disabled
         pydantic.ValidationError: Always re-raised unchanged
+        NotImplementedError: Always re-raised unchanged
 
     """
     # AnyLLMError subclasses are already unified exceptions and should not be re-processed
@@ -400,6 +401,11 @@ def _handle_exception(
     # conform to the schema, pydantic raises ValidationError. This should bubble up unchanged.
     # See: https://github.com/mozilla-ai/any-llm/issues/799
     if isinstance(exception, ValidationError):
+        raise exception
+
+    # A feature the provider does not implement is reported before anything is sent. That is a
+    # capability gap, not a provider fault, so it keeps its type for callers to catch.
+    if isinstance(exception, NotImplementedError):
         raise exception
 
     # Resolved at raise time rather than at construction, so a process that flips the

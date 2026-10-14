@@ -9,6 +9,7 @@ import pytest
 from mktestdocs import check_md_file
 
 from any_llm.constants import LLMProvider
+from any_llm.types.decide import ChoiceAnswer, DecideResponse, NoulAnswer, ScoreAnswer
 
 
 class FakeChatCompletion:
@@ -150,6 +151,17 @@ def _build_docs_patches() -> ExitStack:
     fake_rerank.meta = None
     fake_rerank.usage = Mock(total_tokens=50)
 
+    fake_decide = DecideResponse(
+        model="jev-1",
+        answers={
+            "billing": NoulAnswer(noul=0.98),
+            "tone": ChoiceAnswer(choice="angry", confidence=0.9, probabilities={"angry": 0.9, "calm": 0.1}),
+            "urgency": ScoreAnswer(
+                score=1.8, confidence=0.8, legend={0: "low", 1: "medium", 2: "high"}, probabilities={2: 0.8}
+            ),
+        },
+    )
+
     fake_response = Mock(output_text="Paris", id="resp_123")
     fake_message_response = Mock(content=[Mock(text="Hello!")])
     fake_models = [
@@ -187,6 +199,7 @@ def _build_docs_patches() -> ExitStack:
     provider_mock.responses.return_value = fake_response
     provider_mock.messages.return_value = fake_message_response
     provider_mock.list_models.return_value = fake_models
+    provider_mock.decide.return_value = fake_decide
     provider_mock.get_provider_metadata.return_value = fake_metadata
 
     def mock_completion_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
