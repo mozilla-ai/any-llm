@@ -405,7 +405,7 @@ def _convert_messages(
                     parts.append(
                         types.Part(
                             function_call=types.FunctionCall(
-                                id=tool_call.get("id"), name=function_call["name"], args=args
+                                id=tool_call.get("id") or None, name=function_call["name"], args=args
                             ),
                             thought_signature=cast("bytes | None", thought_signature),
                         )
@@ -420,7 +420,7 @@ def _convert_messages(
                     content = json.loads(content)
             part = types.Part(
                 function_response=types.FunctionResponse(
-                    id=message.get("tool_call_id"), name=name, response=_normalize_tool_response(content)
+                    id=message.get("tool_call_id") or None, name=name, response=_normalize_tool_response(content)
                 )
             )
             # The API documents only "user" and "model" as Content roles. "function" is tolerated by

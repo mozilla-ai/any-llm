@@ -93,15 +93,15 @@ def test_parallel_tool_ids_round_trip(stream: bool) -> None:
     assert [result.name for result in results if result is not None] == ["get_weather", "get_weather"]
 
 
-def test_tool_history_without_ids() -> None:
-    """Calls and results without IDs remain compatible with legacy histories."""
-    contents, _ = _convert_messages(
-        [
-            {"role": "assistant", "tool_calls": [{"function": {"name": "get_weather", "arguments": "{}"}}]},
-            {"role": "tool", "name": "get_weather", "content": "sunny"},
-        ],
-        "gemini",
-    )
+@pytest.mark.parametrize("call_id", [None, ""])
+def test_tool_history_without_ids(call_id: str | None) -> None:
+    """Calls and results without IDs, or with empty ones, are replayed without an ID."""
+    tool_call: dict[str, Any] = {"function": {"name": "get_weather", "arguments": "{}"}}
+    tool_result: dict[str, Any] = {"role": "tool", "name": "get_weather", "content": "sunny"}
+    if call_id is not None:
+        tool_call["id"] = call_id
+        tool_result["tool_call_id"] = call_id
+    contents, _ = _convert_messages([{"role": "assistant", "tool_calls": [tool_call]}, tool_result], "gemini")
     assert contents[0].parts
     assert contents[0].parts[0].function_call
     assert contents[1].parts
