@@ -204,7 +204,7 @@ class ChoiceDelta(OpenAIChoiceDelta):
     """
 
     images: list[ImageContent] | None = None
-    audio: ChoiceDeltaAudio | None = None
+    audio: ChoiceDeltaAudio | None = None  # type: ignore[assignment]
 
 
 class ChunkChoice(OpenAIChunkChoice):
