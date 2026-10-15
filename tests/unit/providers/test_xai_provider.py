@@ -149,6 +149,107 @@ def test_stream_chunk_finish_reason_is_mapped(xai_finish_reason_name: str, expec
     assert chunk.choices[0].finish_reason == expected
 
 
+def test_response_usage_counts_cached_text_and_reasoning() -> None:
+    """xAI's prompt_text_tokens leaves out cached text tokens, and completion_tokens leaves out
+    reasoning tokens, which total_tokens includes."""
+    from xai_sdk.chat import Response as XaiResponse
+    from xai_sdk.proto import chat_pb2, usage_pb2
+
+    from any_llm.providers.xai.utils import _convert_xai_completion_to_anyllm_response
+
+    proto = chat_pb2.GetChatCompletionResponse(
+        outputs=[
+            chat_pb2.CompletionOutput(
+                index=0,
+                message=chat_pb2.CompletionMessage(role=chat_pb2.ROLE_ASSISTANT, content="hi"),
+            )
+        ],
+        usage=usage_pb2.SamplingUsage(
+            prompt_tokens=180,
+            prompt_text_tokens=100,
+            cached_prompt_text_tokens=80,
+            completion_tokens=5,
+            reasoning_tokens=400,
+            total_tokens=585,
+        ),
+    )
+
+    usage = _convert_xai_completion_to_anyllm_response(XaiResponse(proto, index=None)).usage
+
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (180, 405, 585)
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 80
+    assert usage.completion_tokens_details is not None
+    assert usage.completion_tokens_details.reasoning_tokens == 400
+
+
+def test_response_usage_does_not_add_reasoning_already_in_completion_tokens() -> None:
+    from xai_sdk.chat import Response as XaiResponse
+    from xai_sdk.proto import chat_pb2, usage_pb2
+
+    from any_llm.providers.xai.utils import _convert_xai_completion_to_anyllm_response
+
+    proto = chat_pb2.GetChatCompletionResponse(
+        usage=usage_pb2.SamplingUsage(
+            prompt_tokens=131, prompt_text_tokens=131, completion_tokens=567, reasoning_tokens=249, total_tokens=698
+        ),
+    )
+
+    usage = _convert_xai_completion_to_anyllm_response(XaiResponse(proto, index=None)).usage
+
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (131, 567, 698)
+    assert usage.completion_tokens_details is not None
+    assert usage.completion_tokens_details.reasoning_tokens == 249
+
+
+def test_stream_chunk_usage_counts_cached_text_and_reasoning() -> None:
+    from xai_sdk.chat import Chunk as XaiChunk
+    from xai_sdk.proto import chat_pb2, usage_pb2
+
+    from any_llm.providers.xai.utils import _convert_xai_chunk_to_anyllm_chunk
+
+    proto = chat_pb2.GetChatCompletionChunk(
+        usage=usage_pb2.SamplingUsage(
+            prompt_tokens=120,
+            prompt_text_tokens=40,
+            cached_prompt_text_tokens=80,
+            completion_tokens=5,
+            reasoning_tokens=30,
+            total_tokens=155,
+        ),
+    )
+
+    usage = _convert_xai_chunk_to_anyllm_chunk(XaiChunk(proto, index=None)).usage
+
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (120, 35, 155)
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 80
+    assert usage.completion_tokens_details is not None
+    assert usage.completion_tokens_details.reasoning_tokens == 30
+
+
+def test_stream_chunk_usage_without_cache_hit_or_reasoning_keeps_cached_zero() -> None:
+    from xai_sdk.chat import Chunk as XaiChunk
+    from xai_sdk.proto import chat_pb2, usage_pb2
+
+    from any_llm.providers.xai.utils import _convert_xai_chunk_to_anyllm_chunk
+
+    proto = chat_pb2.GetChatCompletionChunk(
+        usage=usage_pb2.SamplingUsage(prompt_tokens=12, prompt_text_tokens=12, completion_tokens=3, total_tokens=15),
+    )
+
+    usage = _convert_xai_chunk_to_anyllm_chunk(XaiChunk(proto, index=None)).usage
+
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (12, 3, 15)
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 0
+    assert usage.completion_tokens_details is None
+
+
 @pytest.mark.asyncio
 async def test_completion_inside_agent_loop(agent_loop_messages: list[dict[str, Any]]) -> None:
     from any_llm.providers.xai.xai import XaiProvider
