@@ -482,6 +482,30 @@ def test_malformed_response_value_error_is_still_a_provider_error() -> None:
     assert type(convert_exception(error, "openai")) is ProviderError
 
 
+@pytest.mark.parametrize(
+    ("sdk_module", "http_module"),
+    [
+        ("openai", "httpx2"),
+        ("anthropic", "httpx"),
+        ("groq", "httpx"),
+        ("together", "httpx"),
+        ("cerebras.cloud.sdk", "httpx"),
+    ],
+)
+def test_sdk_response_validation_error_is_a_provider_error(sdk_module: str, http_module: str) -> None:
+    """A 200 body the SDK cannot parse is a provider fault, though the SDK's message says "invalid"."""
+    sdk = pytest.importorskip(sdk_module)
+    http = pytest.importorskip(http_module)
+    response = http.Response(200, request=http.Request("POST", "https://example.test/v1/chat/completions"))
+    original = sdk.APIResponseValidationError(response=response, body={})
+
+    result = convert_exception(original, sdk_module)
+
+    assert type(result) is ProviderError
+    assert result.status_code == 200
+    assert result.original_exception is original
+
+
 def test_every_classified_class_accepts_the_metadata_keywords() -> None:
     """Every class the tables or a provider can select must accept the structured metadata keywords.
 
