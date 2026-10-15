@@ -95,6 +95,67 @@ async def test_instance_exception_precedence(
         assert raw_error.value is original
 
 
+@pytest.mark.parametrize("env_value", ["", "1"])
+@pytest.mark.parametrize("enabled", [True, False, None])
+def test_client_construction_error_honors_exception_precedence(
+    monkeypatch: pytest.MonkeyPatch, env_value: str, enabled: bool | None
+) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", env_value)
+    original = RuntimeError("Invalid API key")
+
+    def create() -> None:
+        with patch.object(OpenaiProvider, "_init_client", side_effect=original):
+            AnyLLM.create("openai", api_key="test", unified_exceptions=enabled)
+
+    expected_enabled = enabled if enabled is not None else env_value == "1"
+    if expected_enabled:
+        with pytest.raises(AuthenticationError) as error:
+            create()
+        assert error.value.original_exception is original
+        assert error.value.__cause__ is original
+        assert error.value.provider_name == "openai"
+    else:
+        with (
+            pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+            pytest.raises(RuntimeError) as raw_error,
+        ):
+            create()
+        assert raw_error.value is original
+
+
+def test_client_construction_error_asks_the_provider_to_classify(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(OpenaiProvider, "_classify_exception", staticmethod(lambda _exc: ProviderError))
+    original = RuntimeError("Invalid API key")
+
+    with (
+        patch.object(OpenaiProvider, "_init_client", side_effect=original),
+        pytest.raises(ProviderError) as error,
+    ):
+        AnyLLM.create("openai", api_key="test", unified_exceptions=True)
+
+    assert type(error.value) is ProviderError
+    assert error.value.original_exception is original
+
+
+@pytest.mark.parametrize(
+    ("max_retries", "missing_packages", "expected"),
+    [(-1, None, ValueError), (None, ImportError("openai"), ImportError)],
+)
+def test_checks_before_client_construction_raise_unconverted(
+    monkeypatch: pytest.MonkeyPatch,
+    max_retries: int | None,
+    missing_packages: ImportError | None,
+    expected: type[Exception],
+) -> None:
+    monkeypatch.setattr(OpenaiProvider, "MISSING_PACKAGES_ERROR", missing_packages)
+
+    with patch.object(OpenaiProvider, "_init_client") as init_client, pytest.raises(expected) as error:
+        AnyLLM.create("openai", api_key="test", unified_exceptions=True, max_retries=max_retries)
+
+    assert type(error.value) is expected
+    init_client.assert_not_called()
+
+
 def test_clients_keep_independent_settings_for_sync_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANY_LLM_UNIFIED_EXCEPTIONS", raising=False)
     with patch.object(OpenaiProvider, "_init_client"):

@@ -254,6 +254,20 @@ async def test_unified_sdk_local_errors_are_invalid_requests(provider: TypesafeP
     assert exc_info.value.status_code is None
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"api_key": "a b"}, "API key must contain only printable ASCII"),
+        ({"api_key": "test_key", "timeout": -1}, "timeout must be a positive"),
+    ],
+)
+def test_unified_client_construction_errors_are_invalid_requests(kwargs: dict[str, Any], message: str) -> None:
+    with pytest.raises(InvalidRequestError, match=message) as exc_info:
+        AnyLLM.create("typesafe", unified_exceptions=True, **kwargs)
+
+    assert type(exc_info.value.original_exception) is TypeSafeError
+
+
 class _CallerAnswers(BaseModel):
     not_in_response: str
 
