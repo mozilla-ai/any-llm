@@ -60,6 +60,11 @@ _ERROR_PATTERNS: tuple[tuple[str, type[AnyLLMError]], ...] = (
         ),
         InvalidRequestError,
     ),
+    # A 200 body the SDK cannot parse (openai-style APIResponseValidationError, mistralai's
+    # ResponseValidationError) is a provider fault. Ahead of the broad patterns, because the
+    # SDK's "invalid" wording and the field paths it embeds would otherwise pick the class.
+    # Matched by name, not by 2xx status: Anthropic raises mid-stream errors with the stream's 200.
+    (r"responsevalidation", ProviderError),
     (r"ratelimit|rate_limit|too many requests|rate limit|quota exceeded", RateLimitError),
     (
         (
