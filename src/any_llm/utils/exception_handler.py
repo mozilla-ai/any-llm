@@ -49,6 +49,17 @@ _DEPRECATION_WARNING = (
 # specific patterns must stay ahead of broader ones (for example the API-key
 # patterns before the bare "invalid"). Anything unmatched becomes a ProviderError.
 _ERROR_PATTERNS: tuple[tuple[str, type[AnyLLMError]], ...] = (
+    # The interpreter's own wording for a bad call, raised before anything is sent.
+    # First, because parameter names in the message ("safety_settings", "auth_token")
+    # would otherwise match the broader patterns below.
+    (
+        (
+            r"got an unexpected keyword argument|got multiple values for (?:keyword )?argument|"
+            r"missing \d+ required (?:positional |keyword-only )?arguments?|"
+            r"takes (?:from \d+ to )?\d+ positional arguments? but"
+        ),
+        InvalidRequestError,
+    ),
     (r"ratelimit|rate_limit|too many requests|rate limit|quota exceeded", RateLimitError),
     (
         (
