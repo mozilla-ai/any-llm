@@ -384,6 +384,13 @@ except AnyLLMError as e:
 
 ### Accessing Original Exceptions
 
+With unified exceptions enabled, local call-signature mistakes (such as an unknown keyword,
+missing required argument, or duplicate argument) raise `InvalidRequestError`. Correct the
+call rather than retrying it as a provider failure. SDK response-schema validation failures
+raise `ProviderError`, even when the diagnostic mentions fields such as `auth_token` or
+`safety_settings`. These are distinct from a Pydantic `ValidationError` raised while parsing
+your own structured output, which is preserved unchanged.
+
 All unified exceptions preserve the original provider exception for debugging:
 
 ```python
