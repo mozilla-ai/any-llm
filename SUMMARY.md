@@ -17,6 +17,7 @@
 * [Responses](api/responses.md)
 * [Completion](api/completion.md)
 * [Embedding](api/embedding.md)
+* [Decide](api/decide.md)
 * [Messages](api/messages.md)
 * [Exceptions](api/exceptions.md)
 * [List Models](api/list-models.md)
@@ -28,4 +29,5 @@
   * [Model](api/types/model.md)
   * [Provider](api/types/provider.md)
   * [Batch](api/types/batch.md)
+  * [Decide](api/types/decide.md)
 

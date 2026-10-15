@@ -55,6 +55,8 @@ Parses a combined `"provider:model"` string into its components.
 ```
 def split_model_provider(
     model: str,
+    *,
+    stacklevel: int = 3,
 ) -> tuple[str | LLMProvider, str]
 ```
 
@@ -144,6 +146,15 @@ List available models for this provider. See the [List Models](list-models.md) r
 ```
 def list_models(self, **kwargs) -> Sequence[Model]
 async def alist_models(self, **kwargs) -> Sequence[Model]
+```
+
+### `decide()` / `adecide()`
+
+Answer named yes/no, choice and score questions about a state. See the [Decide](decide.md) reference.
+
+```
+def decide(self, model, state, questions, **kwargs) -> DecideResponse
+async def adecide(self, model, state, questions, *, timeout=None, **kwargs) -> DecideResponse
 ```
 
 ### `create_batch()` / `acreate_batch()`
