@@ -457,6 +457,31 @@ def test_convert_exception_classification_order_is_pinned(message: str, expected
     assert type(convert_exception(Exception(message), "openai")) is expected
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "AsyncCompletions.create() got an unexpected keyword argument 'not_a_param'",
+        "AsyncCompletions.create() got an unexpected keyword argument 'safety_settings'",
+        "AsyncCompletions.create() got an unexpected keyword argument 'auth_token'",
+        "create() got multiple values for argument 'model'",
+        "create() got multiple values for keyword argument 'model'",
+        "create() missing 1 required positional argument: 'model'",
+        "create() missing 2 required keyword-only arguments: 'model' and 'messages'",
+        "create() takes 2 positional arguments but 3 were given",
+        "create() takes from 1 to 2 positional arguments but 3 were given",
+    ],
+)
+def test_local_call_signature_mistakes_are_invalid_requests(message: str) -> None:
+    """A TypeError raised before anything is sent is the caller's mistake, not a provider fault."""
+    assert type(convert_exception(TypeError(message), "openai")) is InvalidRequestError
+
+
+def test_malformed_response_value_error_is_still_a_provider_error() -> None:
+    """A type-based rule would misfile this; only the interpreter's wording marks a signature mistake."""
+    error = ValueError("Expecting value: line 1 column 1 (char 0)")
+    assert type(convert_exception(error, "openai")) is ProviderError
+
+
 def test_every_classified_class_accepts_the_metadata_keywords() -> None:
     """Every class the tables or a provider can select must accept the structured metadata keywords.
 
