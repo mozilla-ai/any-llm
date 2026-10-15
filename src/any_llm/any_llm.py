@@ -52,7 +52,7 @@ from any_llm.types.responses import (
     ResponseStreamEvent,
 )
 from any_llm.utils.aio import aclose_quietly, async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
-from any_llm.utils.exception_handler import handle_exceptions
+from any_llm.utils.exception_handler import handle_exceptions, provider_exception_handler
 from any_llm.utils.structured_output import (
     build_parsed_message,
     is_structured_output_type,
@@ -212,11 +212,12 @@ class AnyLLM(FilesMixin, ABC):
         self._verify_no_missing_packages()
         if max_retries is not None:
             self._apply_max_retries(self._validate_max_retries(max_retries), kwargs)
-        self._init_client(
-            api_key=self._verify_and_set_api_key(api_key),
-            api_base=self._resolve_api_base(api_base),
-            **kwargs,
-        )
+        api_key = self._verify_and_set_api_key(api_key)
+        api_base = self._resolve_api_base(api_base)
+        try:
+            self._init_client(api_key=api_key, api_base=api_base, **kwargs)
+        except Exception as e:
+            provider_exception_handler(self)(e)
 
     @staticmethod
     def _validate_max_retries(max_retries: int) -> int:
