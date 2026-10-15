@@ -77,6 +77,8 @@ shared status and message rules run:
 
 - A caller mistake the SDK catches before sending anything, such as an empty `questions` mapping, a
   `Score` with no criteria, or a state that cannot be encoded as JSON, raises `InvalidRequestError`.
+  This includes a client setting the SDK rejects when the provider is created, such as an API key
+  with whitespace inside it or a `timeout` that is not positive.
 - A 400 or 422 raises `InvalidRequestError`, whatever the question names in its message say.
 - A response that does not match your `response_model` raises `InvalidRequestError`.
 - A response the SDK cannot read with its own models raises `ProviderError`. Its `status_code` is the
