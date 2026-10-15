@@ -102,7 +102,7 @@ jobs:
     steps:
       - name: Set expected providers for integration tests
         id: set_providers
-        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,deepseek,fireworks,gemini,groq,inception,mistral,moonshot,nebius,openai,openrouter,otari,portkey,together,sambanova,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
+        run: echo "expected_providers=anthropic,azureopenai,bedrock,cerebras,deepseek,fireworks,gemini,groq,inception,mistral,moonshot,nebius,openai,openrouter,otari,portkey,together,sambanova,typesafe,voyage,xai,zai,minimax" >> $GITHUB_OUTPUT
 
       - name: Set expected providers for local integration tests
         id: set_local_providers
@@ -179,6 +179,7 @@ jobs:
           PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
           SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
           TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}

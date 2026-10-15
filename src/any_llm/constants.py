@@ -170,6 +170,7 @@ VERIFIED_PROVIDERS: frozenset[LLMProvider] = VERIFIED_LOCAL_PROVIDERS | frozense
         LLMProvider.PORTKEY,
         LLMProvider.TOGETHER,
         LLMProvider.SAMBANOVA,
+        LLMProvider.TYPESAFE,
         LLMProvider.VOYAGE,
         LLMProvider.XAI,
         LLMProvider.ZAI,
