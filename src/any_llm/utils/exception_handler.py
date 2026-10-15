@@ -5,6 +5,7 @@ import os
 import re
 import warnings
 from collections.abc import Callable
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, TypeVar
 
 from pydantic import ValidationError
@@ -244,13 +245,12 @@ def _extract_error_metadata(exception: Exception) -> _ErrorMetadata:
     )
 
 
-def _extract_retry_after(exception: Exception) -> str | None:
-    """Read the ``Retry-After`` header off the exception or its attached response.
+def _header_value(exception: Exception, names: tuple[str, ...]) -> str | None:
+    """Return the first usable header among ``names`` from the exception, then its response.
 
-    Returned verbatim, because the header is either a number of seconds or an
-    HTTP-date and normalizing it would throw away the caller's ability to tell
-    the two apart. ``httpx.Headers`` lookups are case-insensitive, but a plain
-    dict is not, so both spellings are tried.
+    ``httpx.Headers`` lookups are case-insensitive, but a plain dict is not, so
+    callers pass both spellings. Only a string or a plain int is usable; bool is
+    excluded because ``True`` would stringify to ``"True"``.
     """
     for headers in (
         getattr(exception, "headers", None),
@@ -260,7 +260,7 @@ def _extract_retry_after(exception: Exception) -> str | None:
         if not callable(get_header):
             continue
 
-        for name in ("retry-after", "Retry-After"):
+        for name in names:
             value = get_header(name)
             if isinstance(value, str):
                 return value
@@ -268,6 +268,35 @@ def _extract_retry_after(exception: Exception) -> str | None:
                 return str(value)
 
     return None
+
+
+def _milliseconds_to_seconds(value: str) -> str | None:
+    """Convert a millisecond count to a decimal seconds string, or None if it is not a valid count."""
+    try:
+        milliseconds = Decimal(value.strip())
+    except InvalidOperation:
+        return None
+    if not milliseconds.is_finite() or milliseconds < 0:
+        return None
+    return format(milliseconds / 1000, "f")
+
+
+def _extract_retry_after(exception: Exception) -> str | None:
+    """Read the retry delay off the exception or its attached response.
+
+    ``Retry-After`` is returned verbatim, because it is either a number of
+    seconds or an HTTP-date and normalizing it would throw away the caller's
+    ability to tell the two apart. When it is absent, ``retry-after-ms`` (sent
+    by some SDKs and APIs) is converted to seconds.
+    """
+    retry_after = _header_value(exception, ("retry-after", "Retry-After"))
+    if retry_after is not None:
+        return retry_after
+
+    retry_after_ms = _header_value(exception, ("retry-after-ms", "Retry-After-Ms"))
+    if retry_after_ms is None:
+        return None
+    return _milliseconds_to_seconds(retry_after_ms)
 
 
 def _provider_pick(classify: ExceptionClassifier, exception: Exception) -> type[AnyLLMError] | None:

@@ -380,6 +380,42 @@ def test_convert_exception_retry_after_is_none_without_the_header() -> None:
     assert result.retry_after is None
 
 
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [
+        ({"retry-after-ms": "1500"}, "1.5"),
+        ({"Retry-After-Ms": "2000"}, "2"),
+        ({"retry-after-ms": 250}, "0.25"),
+        ({"retry-after-ms": "0"}, "0"),
+        ({"retry-after-ms": "1500", "retry-after": "30"}, "30"),
+    ],
+)
+def test_convert_exception_falls_back_to_retry_after_ms(headers: dict[str, object], expected: str) -> None:
+    """retry-after-ms becomes seconds, but only when retry-after is absent."""
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = headers  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == expected
+
+
+def test_convert_exception_prefers_retry_after_from_the_response_over_ms_on_the_exception() -> None:
+    error = _StatusHeadersError(429, "slow down", {"retry-after-ms": "1500"})
+    error.response = MagicMock(headers={"retry-after": "9"})  # type: ignore[attr-defined]
+    result = convert_exception(error, "typesafe")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "9"
+
+
+@pytest.mark.parametrize("value", ["soon", "-5", "nan", "inf", "", True, 1.5, object()])
+def test_convert_exception_rejects_unusable_retry_after_ms_values(value: object) -> None:
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {"retry-after-ms": value}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after is None
+
+
 @pytest.mark.parametrize("value", [True, 30.5, object()])
 def test_convert_exception_rejects_unusable_retry_after_values(value: object) -> None:
     """Only a string or a plain int is a usable retry hint.
