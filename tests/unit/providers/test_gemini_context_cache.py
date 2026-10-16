@@ -1,4 +1,5 @@
 import asyncio
+import time
 from collections.abc import AsyncIterator, Iterator
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -714,3 +715,29 @@ async def test_empty_stream_yields_no_chunks() -> None:
 
     assert isinstance(stream, AsyncIterator)
     assert [chunk async for chunk in stream] == []
+
+
+@pytest.mark.asyncio
+async def test_other_errors_on_a_reused_cache_propagate_from_a_stream() -> None:
+    client = _client()
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
+    await _complete(client, messages)
+    bad = errors.ClientError(400, {"error": {"code": 400, "message": "bad"}})
+    client.aio.models.generate_content_stream = AsyncMock(return_value=_failing_stream(bad))
+
+    with pytest.raises(errors.ClientError):
+        await _provider(client)._acompletion(CompletionParams(model_id=MODEL, messages=messages, stream=True))
+
+    client.aio.models.generate_content_stream.assert_awaited_once()
+    assert len(registry) == 1
+
+
+def test_forgetting_an_uncached_request_changes_nothing() -> None:
+    registry.put("other", _RegistryEntry(cache_name=CACHE_NAME, expires_at=time.monotonic() + 60))
+
+    ContextCacheUse(request_kwargs={}, uncached_kwargs={}).forget()
+
+    assert len(registry) == 1
