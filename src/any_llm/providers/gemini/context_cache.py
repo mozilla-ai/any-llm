@@ -69,7 +69,7 @@ class _CacheRegistry:
         if entry is None:
             return None
         if entry.expires_at <= now:
-            del self._entries[key]
+            self._entries.pop(key, None)
             return None
         self._entries.move_to_end(key)
         return entry

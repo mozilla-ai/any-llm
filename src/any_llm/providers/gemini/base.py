@@ -22,6 +22,7 @@ from any_llm.types.completion import (
     Reasoning,
     ReasoningEffort,
 )
+from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
@@ -448,12 +449,15 @@ class GoogleProvider(AnyLLM):
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
                 tool_call_counter: list[int] = [0]
                 code_execution_state = CodeExecutionState()
-                async for chunk in response_stream:
-                    converted_chunk = self._convert_completion_chunk_response(
-                        chunk, tool_call_counter=tool_call_counter, code_execution_state=code_execution_state
-                    )
-                    report_cache_write(converted_chunk.usage, cache_use)
-                    yield converted_chunk
+                try:
+                    async for chunk in response_stream:
+                        converted_chunk = self._convert_completion_chunk_response(
+                            chunk, tool_call_counter=tool_call_counter, code_execution_state=code_execution_state
+                        )
+                        report_cache_write(converted_chunk.usage, cache_use)
+                        yield converted_chunk
+                finally:
+                    await aclose_quietly(response_stream)
 
             return _stream()
 
@@ -492,6 +496,9 @@ class GoogleProvider(AnyLLM):
                 return stream, [await anext(stream)]
             except StopAsyncIteration:
                 return stream, []
+            except BaseException:
+                await aclose_quietly(stream)
+                raise
 
         try:
             stream, head = await first_chunk(cache_use.request_kwargs)
@@ -502,10 +509,13 @@ class GoogleProvider(AnyLLM):
             stream, head = await first_chunk(cache_use.uncached_kwargs)
 
         async def chunks() -> AsyncIterator[Any]:
-            for chunk in head:
-                yield chunk
-            async for chunk in stream:
-                yield chunk
+            try:
+                for chunk in head:
+                    yield chunk
+                async for chunk in stream:
+                    yield chunk
+            finally:
+                await aclose_quietly(stream)
 
         return chunks()
 

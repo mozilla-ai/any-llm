@@ -1,6 +1,6 @@
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -741,3 +741,73 @@ def test_forgetting_an_uncached_request_changes_nothing() -> None:
     ContextCacheUse(request_kwargs={}, uncached_kwargs={}).forget()
 
     assert len(registry) == 1
+
+
+class _ClosingStream:
+    def __init__(self, items: list[Any], error: Exception | None = None) -> None:
+        self._items = list(items)
+        self._error = error
+        self.closed = False
+
+    def __aiter__(self) -> "_ClosingStream":
+        return self
+
+    async def __anext__(self) -> Any:
+        if self._error is not None:
+            raise self._error
+        if not self._items:
+            raise StopAsyncIteration
+        return self._items.pop(0)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_a_stream_closed_early_closes_the_sdk_stream() -> None:
+    client = _client()
+    sdk_stream = _ClosingStream([_response(), _response()])
+    client.aio.models.generate_content_stream = AsyncMock(return_value=sdk_stream)
+
+    stream = await _provider(client)._acompletion(
+        CompletionParams(model_id=MODEL, messages=[{"role": "user", "content": "Q"}], stream=True)
+    )
+    assert isinstance(stream, AsyncGenerator)
+    await anext(stream)
+    await stream.aclose()
+
+    assert sdk_stream.closed
+
+
+@pytest.mark.asyncio
+async def test_a_stream_dropped_for_a_gone_cache_is_closed() -> None:
+    client = _client()
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
+    await _complete(client, messages)
+    missing = errors.ClientError(403, {"error": {"code": 403, "message": "CachedContent not found"}})
+    stale = _ClosingStream([], error=missing)
+    client.aio.models.generate_content_stream = AsyncMock(side_effect=[stale, _aiter([_response(cached_tokens=None)])])
+
+    stream = await _provider(client)._acompletion(CompletionParams(model_id=MODEL, messages=messages, stream=True))
+    assert isinstance(stream, AsyncIterator)
+    _ = [chunk async for chunk in stream]
+
+    assert stale.closed
+
+
+def test_registry_get_drops_an_expired_entry_already_removed() -> None:
+    entry = _RegistryEntry(cache_name=CACHE_NAME, expires_at=1.0)
+    registry.put("key", entry)
+    entries = registry._entries
+    original_get = entries.get
+
+    def get_then_lose(key: str, default: Any = None) -> Any:
+        found = original_get(key, default)
+        entries.pop(key, None)
+        return found
+
+    with patch.object(entries, "get", side_effect=get_then_lose):
+        assert registry.get("key", now=2.0) is None
