@@ -338,7 +338,7 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
         openai_choice = ChunkChoice(
             index=choice.index,
             delta=delta,
-            finish_reason=choice.finish_reason,  # type: ignore[arg-type]
+            finish_reason=choice.finish_reason,
         )
         openai_choices.append(openai_choice)
 

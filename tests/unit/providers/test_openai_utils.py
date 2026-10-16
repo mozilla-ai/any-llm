@@ -168,6 +168,39 @@ def test_convert_chunk_response_with_nonstandard_service_tier() -> None:
     assert result.service_tier == "standard"
 
 
+def test_convert_completion_response_keeps_nonstandard_finish_reason() -> None:
+    """A finish_reason outside OpenAI's five values must not lose the whole response."""
+    openai_response = OpenAIChatCompletion.model_construct(
+        id="test-id",
+        choices=[
+            {
+                "index": 0,
+                "finish_reason": "some_new_reason",
+                "message": {"role": "assistant", "content": "Hello"},
+            }
+        ],
+        created=1234567890,
+        model="test-model",
+        object="chat.completion",
+    )
+    result = _convert_chat_completion(openai_response)
+    assert result.choices[0].finish_reason == "some_new_reason"
+    assert result.choices[0].message.content == "Hello"
+
+
+def test_convert_chunk_response_keeps_nonstandard_finish_reason() -> None:
+    """Streaming must keep a finish_reason outside OpenAI's five values too."""
+    openai_chunk = OpenAIChatCompletionChunk.model_construct(
+        id="test-id",
+        choices=[{"index": 0, "delta": {"content": "Hi"}, "finish_reason": "some_new_reason"}],
+        created=1234567890,
+        model="test-model",
+        object="chat.completion.chunk",
+    )
+    result = BaseOpenAIProvider._convert_completion_chunk_response(openai_chunk)
+    assert result.choices[0].finish_reason == "some_new_reason"
+
+
 def _vertex_partner_chunk(usage: dict[str, object]) -> OpenAIChatCompletionChunk:
     return OpenAIChatCompletionChunk.model_construct(
         id="test-id",
