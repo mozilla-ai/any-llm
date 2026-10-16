@@ -1602,11 +1602,16 @@ def test_supports_messages_native_flags() -> None:
 
 def test_supports_messages_native_matches_amessages_override() -> None:
     """SUPPORTS_MESSAGES_NATIVE agrees with whether the provider overrides `_amessages`."""
+    from any_llm.providers.openai.base import BaseOpenAIProvider
+
+    # BaseOpenAIProvider._amessages is still a bridge (Completions, or Responses for tools +
+    # thinking), not a native Messages pass-through.
+    bridges = {AnyLLM._amessages, BaseOpenAIProvider._amessages}
     for provider_name in AnyLLM.get_supported_providers():
         if sys.version_info >= (3, 14) and provider_name in {"voyage", "watsonx"}:
             continue
         provider_class = AnyLLM.get_provider_class(provider_name)
-        overrides = provider_class._amessages is not AnyLLM._amessages
+        overrides = provider_class._amessages not in bridges
         assert provider_class.SUPPORTS_MESSAGES_NATIVE is overrides, provider_name
 
 
