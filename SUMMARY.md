@@ -5,6 +5,7 @@
 * [Providers](providers.md)
 * [Files](files.md)
 * [TypeSafe](typesafe.md)
+* [Prompt Caching](caching.md)
 
 ## Cookbooks
 
