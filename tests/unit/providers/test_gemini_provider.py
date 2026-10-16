@@ -1072,6 +1072,7 @@ def test_convert_response_single_tool_call() -> None:
 
     mock_function_call = Mock()
     mock_function_call.name = "search_web"
+    mock_function_call.id = None
     mock_function_call.args = {"query": "test query", "limit": 5}
 
     mock_response.candidates[0].content.parts[0].function_call = mock_function_call
@@ -1115,14 +1116,17 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
 
     mock_function_call_1 = Mock()
     mock_function_call_1.name = "search_web"
+    mock_function_call_1.id = None
     mock_function_call_1.args = {"query": "test query"}
 
     mock_function_call_2 = Mock()
     mock_function_call_2.name = "get_weather"
+    mock_function_call_2.id = None
     mock_function_call_2.args = {"location": "New York"}
 
     mock_function_call_3 = Mock()
     mock_function_call_3.name = "calculate"
+    mock_function_call_3.id = None
     mock_function_call_3.args = {"expression": "2+2"}
 
     mock_part_1 = Mock()
@@ -1932,6 +1936,7 @@ def test_streaming_completion_with_tool_call() -> None:
 
     mock_function_call = Mock()
     mock_function_call.name = "get_weather"
+    mock_function_call.id = None
     mock_function_call.args = {"location": "Paris"}
 
     mock_part = Mock()
@@ -1964,6 +1969,7 @@ def test_streaming_completion_with_tool_call_preserves_thought_signature() -> No
 
     mock_function_call = Mock()
     mock_function_call.name = "get_weather"
+    mock_function_call.id = None
     mock_function_call.args = {"location": "Paris"}
 
     original_bytes = b"test-signature-bytes"
@@ -1997,6 +2003,7 @@ def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
 
     mock_function_call = Mock()
     mock_function_call.name = "get_weather"
+    mock_function_call.id = None
     mock_function_call.args = {"location": "Paris"}
 
     mock_part = Mock()
@@ -2027,10 +2034,12 @@ def test_streaming_completion_with_multiple_tool_calls() -> None:
 
     mock_function_call_1 = Mock()
     mock_function_call_1.name = "get_weather"
+    mock_function_call_1.id = None
     mock_function_call_1.args = {"location": "Paris"}
 
     mock_function_call_2 = Mock()
     mock_function_call_2.name = "get_weather"
+    mock_function_call_2.id = None
     mock_function_call_2.args = {"location": "London"}
 
     mock_part_1 = Mock()
@@ -2065,6 +2074,7 @@ def _make_single_tool_call_chunk(name: str, args: dict[str, Any]) -> Mock:
 
     mock_function_call = Mock()
     mock_function_call.name = name
+    mock_function_call.id = None
     mock_function_call.args = args
 
     mock_part = Mock()
@@ -2125,10 +2135,12 @@ def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunk
 
     mock_function_call_1 = Mock()
     mock_function_call_1.name = "get_weather"
+    mock_function_call_1.id = None
     mock_function_call_1.args = {"location": "Paris"}
 
     mock_function_call_2 = Mock()
     mock_function_call_2.name = "get_weather"
+    mock_function_call_2.id = None
     mock_function_call_2.args = {"location": "London"}
 
     mock_part_1 = Mock()
@@ -2204,6 +2216,7 @@ def test_convert_response_preserves_thought_signature() -> None:
 
     mock_function_call = Mock()
     mock_function_call.name = "get_weather"
+    mock_function_call.id = None
     mock_function_call.args = {"location": "Paris"}
 
     mock_part = Mock()
@@ -2240,6 +2253,7 @@ def test_convert_response_no_thought_signature() -> None:
 
     mock_function_call = Mock()
     mock_function_call.name = "get_weather"
+    mock_function_call.id = None
     mock_function_call.args = {"location": "Paris"}
 
     mock_part = Mock()
@@ -3065,6 +3079,7 @@ def test_streaming_completion_with_tool_call_without_args() -> None:
 
     mock_function_call = Mock()
     mock_function_call.name = "no_args_function"
+    mock_function_call.id = None
     mock_function_call.args = None
 
     mock_part = Mock()
