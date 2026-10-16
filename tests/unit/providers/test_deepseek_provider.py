@@ -993,7 +993,9 @@ async def test_streamed_tool_call_turn_replays_reasoning_content() -> None:
     tools = [{"type": "function", "function": {"name": "weather", "parameters": {"type": "object"}}}]
     messages: list[dict[str, Any] | ChatCompletionMessage] = [{"role": "user", "content": "Weather in Paris?"}]
     try:
-        stream = await provider.acompletion(model="deepseek-v4-pro", messages=messages, tools=tools, stream=True)
+        stream = await provider.acompletion(
+            model="deepseek-v4-pro", messages=messages, tools=tools, stream=True, reasoning_effort="low"
+        )
         completion = await aaccumulate_chunks(stream)
 
         message = completion.choices[0].message
@@ -1001,10 +1003,15 @@ async def test_streamed_tool_call_turn_replays_reasoning_content() -> None:
         messages.append(message)
         messages.append({"role": "tool", "tool_call_id": "call_1", "content": "sunny"})
 
-        await provider.acompletion(model="deepseek-v4-pro", messages=messages, tools=tools, stream=True)
+        await provider.acompletion(
+            model="deepseek-v4-pro", messages=messages, tools=tools, stream=True, reasoning_effort="low"
+        )
     finally:
         await provider.client.close()
 
+    for body in requests:
+        assert body["thinking"] == {"type": "enabled"}
+        assert body["reasoning_effort"] == "low"
     replayed = requests[1]["messages"][1]
     assert replayed["reasoning_content"] == "I need the weather."
     assert replayed["tool_calls"][0]["function"] == {"name": "weather", "arguments": '{"city": "Paris"}'}
