@@ -14,7 +14,7 @@ calls, and reports the tokens it wrote and read. There is no cache API to call.
 from any_llm import AnyLLM
 
 provider = AnyLLM.create("gemini")
-manual = open("manual.txt").read()  # needs at least 1,024 tokens, see below
+manual = "Widgets are blue and round. " * 200  # the long, stable prefix: at least 1,024 tokens, see below
 
 response = provider.completion(
     model="gemini-2.5-flash",

@@ -140,6 +140,7 @@ def _build_docs_patches() -> ExitStack:
     fake_chat_completion = fake_chat_completion_class()
     fake_chat_completion.model = "gpt-4.1-mini"
     fake_chat_completion.choices = [Mock(message=Mock(content="Hello!"), delta=Mock(content="Hello!"))]
+    fake_chat_completion.usage = Mock(prompt_tokens_details=Mock(cached_tokens=0, cache_write_tokens=0))
 
     fake_embedding = Mock()
     fake_embedding.data = [Mock(embedding=[0.1, 0.2, 0.3], index=0)]
