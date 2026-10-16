@@ -6,6 +6,7 @@ from typing_extensions import override
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.deepseek.utils import (
+    ReasoningReplayStream,
     _inject_cached_tokens,
     _inject_cached_tokens_chunk,
     _inject_reasoning_extra_content,
@@ -148,4 +149,7 @@ class DeepseekProvider(BaseOpenAIProvider):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        return await super()._acompletion(_preprocess_messages(params), **kwargs)
+        response = await super()._acompletion(_preprocess_messages(params), **kwargs)
+        if isinstance(response, ChatCompletion):
+            return response
+        return ReasoningReplayStream(response)

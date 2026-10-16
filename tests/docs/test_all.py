@@ -9,6 +9,7 @@ import pytest
 from mktestdocs import check_md_file
 
 from any_llm.constants import LLMProvider
+from any_llm.types.completion import ChatCompletionChunk
 from any_llm.types.decide import ChoiceAnswer, DecideResponse, NoulAnswer, ScoreAnswer
 
 
@@ -272,7 +273,17 @@ def test_all_docs(doc_file: pathlib.Path) -> None:
 
         def mock_completion_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
             if kwargs.get("stream", False):
-                return [Mock(choices=[Mock(delta=Mock(content="Hello!"))])]
+                return [
+                    ChatCompletionChunk.model_validate(
+                        {
+                            "id": "chatcmpl-docs",
+                            "object": "chat.completion.chunk",
+                            "created": 1,
+                            "model": "gpt-5",
+                            "choices": [{"index": 0, "delta": {"content": "Hello!"}, "finish_reason": "stop"}],
+                        }
+                    )
+                ]
             return Mock(choices=[Mock(message=Mock(content="Hello!"), delta=Mock(content="Hello!"))])
 
         with (
