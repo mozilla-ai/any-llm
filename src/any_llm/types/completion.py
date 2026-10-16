@@ -159,6 +159,7 @@ class ChatCompletionMessage(OpenAIChatCompletionMessage):
 
 class Choice(OpenAIChoice):
     message: ChatCompletionMessage
+    finish_reason: str  # type: ignore[assignment]
 
 
 class ChatCompletion(OpenAIChatCompletion):
@@ -209,6 +210,7 @@ class ChoiceDelta(OpenAIChoiceDelta):
 
 class ChunkChoice(OpenAIChunkChoice):
     delta: ChoiceDelta
+    finish_reason: str | None = None  # type: ignore[assignment]
 
 
 class ChatCompletionChunk(OpenAIChatCompletionChunk):
