@@ -112,6 +112,13 @@ class AzureProvider(AnyLLM):
             **kwargs,
         )
 
+    @override
+    async def aclose(self) -> None:
+        try:
+            await self.chat_client.close()
+        finally:
+            await self.embeddings_client.close()
+
     async def _stream_completion_async(
         self,
         model: str,

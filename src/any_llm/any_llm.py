@@ -69,6 +69,8 @@ _QUESTIONS_ADAPTER: TypeAdapter[dict[str, Question]] = TypeAdapter(dict[str, Que
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
+    from types import TracebackType
+    from typing import Self
 
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
@@ -650,6 +652,31 @@ class AnyLLM(FilesMixin, ABC):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
+
+    async def aclose(self) -> None:
+        """Close SDK clients that hold async connections between requests.
+
+        Await this, or use the provider as an async context manager, before the event loop that
+        ran its async calls closes. A client left to the garbage collector is shut down on
+        whichever loop is running at that point, and connections opened on a loop that has
+        since closed fail there with ``RuntimeError: Event loop is closed``.
+
+        It is safe to call more than once. Do not make further requests with a closed provider.
+        Each SDK client is closed the way the SDK closes it, so an HTTP client passed in through
+        the provider's client arguments may be closed with it. Providers without persistent
+        async transports have nothing to close.
+        """
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.aclose()
 
     # Overloads let type checkers narrow the return type based on response_format and stream.
     # The implementation only declares these discriminating params; everything else

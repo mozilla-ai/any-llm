@@ -187,6 +187,10 @@ class OllamaProvider(AnyLLM):
         self.client = AsyncClient(host=api_base, **kwargs)
 
     @override
+    async def aclose(self) -> None:
+        await self.client.close()  # type: ignore[no-untyped-call]
+
+    @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return api_key
 

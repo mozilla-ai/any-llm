@@ -256,6 +256,10 @@ class GoogleProvider(AnyLLM):
                 update={"retry_options": types.HttpRetryOptions(attempts=attempts)}
             )
 
+    @override
+    async def aclose(self) -> None:
+        await self.client.aio.aclose()
+
     @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:

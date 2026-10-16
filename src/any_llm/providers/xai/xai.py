@@ -180,6 +180,18 @@ class XaiProvider(AnyLLM):
             _close_client(self._clients_by_loop.pop(loop))
 
     @override
+    async def aclose(self) -> None:
+        """Close the client for the running loop, along with those whose loop has closed.
+
+        A client built for another loop that is still running, such as the sync API's runner,
+        can only be closed on that loop, so it is left there.
+        """
+        self._discard_clients_for_closed_loops()
+        client = self._clients_by_loop.pop(asyncio.get_running_loop(), None)
+        if client is not None:
+            await client.close()
+
+    @override
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:

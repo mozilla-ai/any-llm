@@ -259,7 +259,10 @@ def test_all_docs(doc_file: pathlib.Path) -> None:
     elif doc_file.name == "quickstart.md":
         mock_provider = Mock()
         mock_provider.completion.return_value = Mock(choices=[Mock(message=Mock(content="Hello!"))])
+        mock_provider.acompletion = AsyncMock(return_value=Mock(choices=[Mock(message=Mock(content="Hello!"))]))
         mock_provider.get_provider_metadata.return_value = Mock(streaming=True, completion=True)
+        mock_provider.__aenter__ = AsyncMock(return_value=mock_provider)
+        mock_provider.__aexit__ = AsyncMock(return_value=None)
 
         mock_embedding_result = Mock()
         mock_embedding_result.data = [Mock(embedding=[0.1, 0.2, 0.3])]
