@@ -3920,3 +3920,67 @@ def test_streaming_via_sync_completion_reports_tool_calls_when_stop_arrives_late
         finish_reasons = [chunk.choices[0].finish_reason for chunk in result]
 
     assert finish_reasons == [None, "tool_calls"]
+
+
+def test_convert_messages_folds_developer_and_list_system_messages_into_the_instruction() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": "Be brief."},
+        {"role": "developer", "content": [{"type": "text", "text": "Answer in "}, {"type": "text", "text": "French."}]},
+        {"role": "user", "content": "Hi"},
+    ]
+
+    contents, system_instruction = _convert_messages(messages)
+
+    assert system_instruction == "Be brief.\nAnswer in French."
+    assert [content.role for content in contents] == ["user"]
+
+
+_WEATHER_FUNCTION_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {"name": "get_weather", "parameters": {"type": "object", "properties": {}}},
+}
+
+
+@pytest.mark.parametrize(
+    ("tools", "tool_choice", "expected_mode"),
+    [
+        ([_WEATHER_FUNCTION_TOOL, {"google_search": {}}], None, None),
+        ([_WEATHER_FUNCTION_TOOL, {"code_execution": {}}], "auto", "AUTO"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_built_in_tools_beside_functions_enable_server_side_tool_invocations(
+    tools: list[dict[str, Any]], tool_choice: str | None, expected_mode: str | None
+) -> None:
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="gemini-pro",
+                messages=[{"role": "user", "content": "Hello"}],
+                tools=tools,
+                tool_choice=tool_choice,
+            )
+        )
+
+        tool_config = mock_genai.return_value.aio.models.generate_content.call_args.kwargs["config"].tool_config
+
+    assert tool_config.include_server_side_tool_invocations is True
+    mode = tool_config.function_calling_config.mode.value if tool_config.function_calling_config else None
+    assert mode == expected_mode
+
+
+@pytest.mark.parametrize("tools", [[_WEATHER_FUNCTION_TOOL], [{"google_search": {}}]])
+@pytest.mark.asyncio
+async def test_functions_or_built_in_tools_alone_leave_server_side_tool_invocations_off(
+    tools: list[dict[str, Any]],
+) -> None:
+    with mock_gemini_provider() as mock_genai:
+        provider = GeminiProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="gemini-pro", messages=[{"role": "user", "content": "Hello"}], tools=tools)
+        )
+
+        tool_config = mock_genai.return_value.aio.models.generate_content.call_args.kwargs["config"].tool_config
+
+    assert tool_config is None
