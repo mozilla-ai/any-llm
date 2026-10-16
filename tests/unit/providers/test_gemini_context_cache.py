@@ -1,12 +1,12 @@
+import asyncio
 from collections.abc import AsyncIterator, Iterator
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.genai import errors, types
 
-from any_llm.providers.gemini import GeminiProvider
-from any_llm.providers.gemini import context_cache
+from any_llm.providers.gemini import GeminiProvider, context_cache
 from any_llm.providers.gemini.context_cache import (
     EXPIRY_MARGIN_SECONDS,
     ContextCacheUse,
@@ -18,7 +18,7 @@ from any_llm.providers.gemini.context_cache import (
     report_cache_write,
 )
 from any_llm.types.completion import ChatCompletion, CompletionParams, CompletionUsage, PromptTokensDetails
-from any_llm.types.messages import MessageResponse
+from any_llm.types.messages import MessageDeltaEvent, MessageResponse
 
 MODEL = "gemini-2.5-flash"
 CACHE_NAME = "cachedContents/abc"
@@ -95,14 +95,17 @@ def _sent(client: MagicMock) -> dict[str, Any]:
     return sent
 
 
-def _texts(contents: list[types.Content] | None) -> list[str | None]:
+def _texts(contents: Any) -> list[str | None]:
     return [part.text for content in contents or [] for part in content.parts or []]
 
 
 @pytest.mark.asyncio
 async def test_breakpoint_on_system_message_moves_system_and_tools_into_the_cache() -> None:
     client = _client()
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     await _complete(client, messages, params={"tools": [WEATHER_TOOL], "tool_choice": "auto"})
 
@@ -124,7 +127,7 @@ async def test_breakpoint_on_system_message_moves_system_and_tools_into_the_cach
 @pytest.mark.asyncio
 async def test_breakpoint_on_a_content_part_caches_contents_up_to_its_message() -> None:
     client = _client()
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": "Doc", "cache_control": EPHEMERAL}]},
         {"role": "assistant", "content": "Read it."},
         {"role": "user", "content": "Q"},
@@ -141,7 +144,7 @@ async def test_breakpoint_on_a_content_part_caches_contents_up_to_its_message() 
 @pytest.mark.asyncio
 async def test_breakpoint_in_extra_content_side_channel_is_honored() -> None:
     client = _client()
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM, "extra_content": {"cache_control": EPHEMERAL}},
         {"role": "user", "content": "Q"},
     ]
@@ -155,7 +158,7 @@ async def test_breakpoint_in_extra_content_side_channel_is_honored() -> None:
 @pytest.mark.asyncio
 async def test_last_breakpoint_wins_and_a_1h_breakpoint_in_the_prefix_sets_the_ttl() -> None:
     client = _client()
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
         {"role": "user", "content": "Doc", "cache_control": EPHEMERAL},
         {"role": "assistant", "content": "Read it."},
@@ -173,7 +176,10 @@ async def test_last_breakpoint_wins_and_a_1h_breakpoint_in_the_prefix_sets_the_t
 @pytest.mark.asyncio
 async def test_breakpoint_on_the_last_message_keeps_that_turn_outside_the_cache() -> None:
     client = _client()
-    messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "Q", "cache_control": EPHEMERAL}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": "Q", "cache_control": EPHEMERAL},
+    ]
 
     await _complete(client, messages)
 
@@ -186,10 +192,9 @@ async def test_breakpoint_on_the_last_message_keeps_that_turn_outside_the_cache(
 async def test_breakpoint_inside_a_run_of_tool_results_stops_before_their_shared_turn() -> None:
     client = _client()
     calls = [
-        {"id": f"call_{i}", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}
-        for i in (1, 2)
+        {"id": f"call_{i}", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}} for i in (1, 2)
     ]
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": "Weather?"},
         {"role": "assistant", "content": None, "tool_calls": calls},
         {"role": "tool", "tool_call_id": "call_1", "content": "Sunny", "cache_control": EPHEMERAL},
@@ -200,7 +205,7 @@ async def test_breakpoint_inside_a_run_of_tool_results_stops_before_their_shared
 
     cache_config = _cache_config(client)
     assert isinstance(cache_config.contents, list)
-    assert [content.role for content in cache_config.contents] == ["user", "model"]
+    assert [content.role for content in cast("list[types.Content]", cache_config.contents)] == ["user", "model"]
     sent_contents = _sent(client)["contents"]
     assert len(sent_contents) == 1
     assert len(sent_contents[0].parts) == 2
@@ -230,7 +235,10 @@ async def test_no_breakpoint_makes_no_caches_call() -> None:
 @pytest.mark.asyncio
 async def test_explicit_cached_content_bypasses_the_automatic_path() -> None:
     client = _client()
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     result = await _complete(client, messages, cached_content="cachedContents/mine")
 
@@ -245,7 +253,10 @@ async def test_explicit_cached_content_bypasses_the_automatic_path() -> None:
 @pytest.mark.asyncio
 async def test_created_cache_is_reported_as_a_write_not_a_read() -> None:
     client = _client()
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     result = await _complete(client, messages)
 
@@ -263,7 +274,10 @@ async def test_created_cache_is_reported_as_a_write_not_a_read() -> None:
 @pytest.mark.asyncio
 async def test_cache_is_reused_across_provider_instances() -> None:
     first_client, second_client = _client(), _client()
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     await _complete(first_client, messages)
     result = await _complete(second_client, messages)
@@ -280,7 +294,10 @@ async def test_cache_is_reused_across_provider_instances() -> None:
 @pytest.mark.asyncio
 async def test_different_api_keys_do_not_share_caches() -> None:
     first_client, second_client = _client("key-a"), _client("key-b")
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     await _complete(first_client, messages)
     await _complete(second_client, messages)
@@ -292,7 +309,10 @@ async def test_different_api_keys_do_not_share_caches() -> None:
 @pytest.mark.asyncio
 async def test_cache_is_recreated_once_its_entry_nears_expiry() -> None:
     client = _client()
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     with patch.object(context_cache, "time") as clock:
         clock.monotonic.return_value = 1000.0
@@ -312,7 +332,10 @@ async def test_refused_cache_falls_back_and_is_negative_cached() -> None:
     client.aio.caches.create.side_effect = errors.ClientError(
         400, {"error": {"code": 400, "message": "Cached content is too small.", "status": "INVALID_ARGUMENT"}}
     )
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     first = await _complete(client, messages)
     await _complete(client, messages)
@@ -330,7 +353,10 @@ async def test_refused_cache_falls_back_and_is_negative_cached() -> None:
 async def test_transient_creation_failure_falls_back_without_negative_caching() -> None:
     client = _client()
     client.aio.caches.create.side_effect = errors.ServerError(503, {"error": {"code": 503, "message": "busy"}})
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     await _complete(client, messages)
     await _complete(client, messages)
@@ -343,7 +369,10 @@ async def test_transient_creation_failure_falls_back_without_negative_caching() 
 async def test_cache_created_without_a_name_falls_back() -> None:
     client = _client()
     client.aio.caches.create.return_value = _cache(name=None)
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     await _complete(client, messages)
 
@@ -354,7 +383,10 @@ async def test_cache_created_without_a_name_falls_back() -> None:
 @pytest.mark.asyncio
 async def test_reused_cache_that_is_gone_is_forgotten_and_the_request_resent_uncached() -> None:
     client = _client()
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
     await _complete(client, messages)
     missing = errors.ClientError(403, {"error": {"code": 403, "message": "CachedContent not found"}})
     client.aio.models.generate_content.side_effect = [missing, _response(cached_tokens=None)]
@@ -370,7 +402,10 @@ async def test_reused_cache_that_is_gone_is_forgotten_and_the_request_resent_unc
 @pytest.mark.asyncio
 async def test_other_errors_on_a_reused_cache_propagate() -> None:
     client = _client()
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
     await _complete(client, messages)
     client.aio.models.generate_content.side_effect = errors.ClientError(400, {"error": {"code": 400, "message": "bad"}})
 
@@ -389,7 +424,10 @@ async def _aiter(items: list[types.GenerateContentResponse]) -> AsyncIterator[ty
 async def test_streamed_completion_reports_the_cache_write_on_usage_chunks() -> None:
     client = _client()
     client.aio.models.generate_content_stream = AsyncMock(return_value=_aiter([_response()]))
-    messages = [{"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL}, {"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
 
     stream = await _provider(client)._acompletion(CompletionParams(model_id=MODEL, messages=messages, stream=True))
 
@@ -407,7 +445,7 @@ async def test_streamed_completion_reports_the_cache_write_on_usage_chunks() -> 
 async def test_messages_bridge_reports_creation_then_read() -> None:
     first_client, second_client = _client(), _client()
     system = [{"type": "text", "text": SYSTEM, "cache_control": EPHEMERAL}]
-    messages = [{"role": "user", "content": "Q"}]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "Q"}]
 
     first = await _provider(first_client).amessages(model=MODEL, system=system, messages=messages, max_tokens=64)
     second = await _provider(second_client).amessages(model=MODEL, system=system, messages=messages, max_tokens=64)
@@ -438,8 +476,8 @@ async def test_streamed_messages_bridge_reports_creation_then_read() -> None:
             max_tokens=64,
             stream=True,
         )
-        assert not isinstance(stream, MessageResponse)
-        usages.append([event async for event in stream if event.type == "message_delta"][-1].usage)
+        assert isinstance(stream, AsyncIterator)
+        usages.append([event async for event in stream if isinstance(event, MessageDeltaEvent)][-1].usage)
 
     assert usages[0].cache_creation_input_tokens == CACHED_TOKENS
     assert usages[0].cache_read_input_tokens == 0
@@ -450,7 +488,7 @@ async def test_streamed_messages_bridge_reports_creation_then_read() -> None:
 @pytest.mark.asyncio
 async def test_messages_bridge_block_level_breakpoint_reaches_the_cache() -> None:
     client = _client()
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": "Doc", "cache_control": EPHEMERAL}]},
         {"role": "assistant", "content": [{"type": "text", "text": "Read it."}]},
         {"role": "user", "content": "Q"},
@@ -537,3 +575,142 @@ def test_report_cache_write_without_a_write_or_usage_changes_nothing() -> None:
     report_cache_write(None, ContextCacheUse(request_kwargs={}, uncached_kwargs={}, cache_write_tokens=5))
 
     assert usage.prompt_tokens_details is None
+
+
+@pytest.mark.asyncio
+async def test_a_1h_breakpoint_does_not_reuse_a_5m_cache() -> None:
+    client = _client()
+    short: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
+    long: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+        {"role": "user", "content": "Q"},
+    ]
+
+    await _complete(client, short)
+    await _complete(client, long)
+
+    assert client.aio.caches.create.await_count == 2
+    assert _cache_config(client).ttl == "3600s"
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_creation_falls_back_without_negative_caching() -> None:
+    client = _client()
+    client.aio.caches.create.side_effect = errors.ClientError(
+        429, {"error": {"code": 429, "message": "Quota exceeded.", "status": "RESOURCE_EXHAUSTED"}}
+    )
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
+
+    await _complete(client, messages)
+    await _complete(client, messages)
+
+    assert client.aio.caches.create.await_count == 2
+    assert len(registry) == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_for_one_prefix_create_a_single_cache() -> None:
+    client = _client()
+    release = asyncio.Event()
+
+    async def create(**_: Any) -> types.CachedContent:
+        await release.wait()
+        return _cache()
+
+    client.aio.caches.create = AsyncMock(side_effect=create)
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
+
+    pending = [asyncio.create_task(_complete(client, messages)) for _ in range(3)]
+    await asyncio.sleep(0)
+    release.set()
+    results = await asyncio.gather(*pending)
+
+    client.aio.caches.create.assert_awaited_once()
+    for call in client.aio.models.generate_content.call_args_list:
+        assert call.kwargs["config"].cached_content == CACHE_NAME
+    writes = [
+        result.usage.prompt_tokens_details.cache_write_tokens
+        for result in results
+        if result.usage is not None and result.usage.prompt_tokens_details is not None
+    ]
+    assert sorted(writes, key=lambda write: write is None) == [CACHED_TOKENS, None, None]
+
+
+@pytest.mark.asyncio
+async def test_creation_cancelled_while_others_wait_sends_them_uncached() -> None:
+    client = _client()
+    started = asyncio.Event()
+
+    async def create(**_: Any) -> types.CachedContent:
+        started.set()
+        await asyncio.Event().wait()
+        return _cache()
+
+    client.aio.caches.create = AsyncMock(side_effect=create)
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
+
+    creator = asyncio.create_task(_complete(client, messages))
+    await started.wait()
+    follower = asyncio.create_task(_complete(client, messages))
+    await asyncio.sleep(0)
+    creator.cancel()
+    await follower
+
+    assert _sent(client)["config"].cached_content is None
+    assert _sent(client)["config"].system_instruction == SYSTEM
+    with pytest.raises(asyncio.CancelledError):
+        await creator
+
+
+async def _failing_stream(exc: Exception) -> AsyncIterator[types.GenerateContentResponse]:
+    raise exc
+    yield  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_streamed_request_on_a_gone_cache_is_resent_uncached() -> None:
+    client = _client()
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM, "cache_control": EPHEMERAL},
+        {"role": "user", "content": "Q"},
+    ]
+    await _complete(client, messages)
+    missing = errors.ClientError(403, {"error": {"code": 403, "message": "CachedContent not found"}})
+    client.aio.models.generate_content_stream = AsyncMock(
+        side_effect=[_failing_stream(missing), _aiter([_response(cached_tokens=None), _response(cached_tokens=None)])]
+    )
+
+    stream = await _provider(client)._acompletion(CompletionParams(model_id=MODEL, messages=messages, stream=True))
+
+    assert isinstance(stream, AsyncIterator)
+    chunks = [chunk async for chunk in stream]
+    assert len(chunks) == 2
+    retried = client.aio.models.generate_content_stream.call_args.kwargs
+    assert retried["config"].cached_content is None
+    assert retried["config"].system_instruction == SYSTEM
+    assert len(registry) == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_stream_yields_no_chunks() -> None:
+    client = _client()
+    client.aio.models.generate_content_stream = AsyncMock(return_value=_aiter([]))
+
+    stream = await _provider(client)._acompletion(
+        CompletionParams(model_id=MODEL, messages=[{"role": "user", "content": "Q"}], stream=True)
+    )
+
+    assert isinstance(stream, AsyncIterator)
+    assert [chunk async for chunk in stream] == []

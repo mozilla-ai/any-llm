@@ -42,6 +42,7 @@ try:
         _convert_tool_spec,
         _create_openai_chunk_from_google_chunk,
         _create_openai_embedding_response_from_google,
+        _enable_server_side_tool_invocations,
         _has_additional_properties,
     )
 except ImportError as e:
@@ -291,6 +292,9 @@ class GoogleProvider(AnyLLM):
             kwargs["tools"] = _convert_tool_spec(params.tools, provider_name)
         if params.tool_choice is not None:
             kwargs["tool_config"] = _convert_tool_choice(params.tool_choice, provider_name)
+        if tools := kwargs.get("tools"):
+            if tool_config := _enable_server_side_tool_invocations(tools, kwargs.get("tool_config")):
+                kwargs["tool_config"] = tool_config
         if params.stop is not None:
             if isinstance(params.stop, str):
                 kwargs["stop_sequences"] = [params.stop]
@@ -437,7 +441,7 @@ class GoogleProvider(AnyLLM):
         cache_use = await prepare_context_cache(self.client, self.PROVIDER_NAME, params.messages, converted_kwargs)
 
         if params.stream:
-            response_stream = await self._send_with_context_cache(
+            response_stream = await self._open_stream_with_context_cache(
                 self.client.aio.models.generate_content_stream, cache_use
             )
 
@@ -471,6 +475,39 @@ class GoogleProvider(AnyLLM):
                 raise
             cache_use.forget()
             return await send(**cache_use.uncached_kwargs)
+
+    @staticmethod
+    async def _open_stream_with_context_cache(
+        send: Callable[..., Awaitable[AsyncIterator[Any]]], cache_use: ContextCacheUse
+    ) -> AsyncIterator[Any]:
+        """Open a stream, reading its first chunk under the stale-cache retry.
+
+        The SDK may not send the request until the stream is first iterated, so a cache that has gone
+        only surfaces there.
+        """
+
+        async def first_chunk(kwargs: dict[str, Any]) -> tuple[AsyncIterator[Any], list[Any]]:
+            stream = await send(**kwargs)
+            try:
+                return stream, [await anext(stream)]
+            except StopAsyncIteration:
+                return stream, []
+
+        try:
+            stream, head = await first_chunk(cache_use.request_kwargs)
+        except Exception as exc:
+            if not cache_use.is_stale_cache_error(exc):
+                raise
+            cache_use.forget()
+            stream, head = await first_chunk(cache_use.uncached_kwargs)
+
+        async def chunks() -> AsyncIterator[Any]:
+            for chunk in head:
+                yield chunk
+            async for chunk in stream:
+                yield chunk
+
+        return chunks()
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:

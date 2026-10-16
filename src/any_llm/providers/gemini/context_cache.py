@@ -13,6 +13,7 @@ without a breakpoint.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
@@ -29,6 +30,8 @@ from any_llm.types.completion import CacheCreationTokenDetails, PromptTokensDeta
 from .utils import _convert_messages
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from google import genai
 
     from any_llm.types.completion import CompletionUsage
@@ -88,6 +91,34 @@ class _CacheRegistry:
 
 
 registry = _CacheRegistry(REGISTRY_MAX_ENTRIES)
+
+# Creations in progress, per event loop, so concurrent requests for one prefix create a single cache.
+_in_flight: dict[tuple[int, str], asyncio.Future[_RegistryEntry | None]] = {}
+
+
+async def _create_once(
+    key: str, create: Callable[[], Awaitable[tuple[_RegistryEntry | None, int | None]]]
+) -> tuple[_RegistryEntry | None, int | None]:
+    """Run ``create`` for ``key`` unless another request is already creating it, then share its entry.
+
+    Only the request that created the cache gets its written token count, so a cache write is reported once.
+    """
+    loop = asyncio.get_running_loop()
+    flight_key = (id(loop), key)
+    pending = _in_flight.get(flight_key)
+    if pending is not None:
+        return await asyncio.shield(pending), None
+    future: asyncio.Future[_RegistryEntry | None] = loop.create_future()
+    _in_flight[flight_key] = future
+    try:
+        entry, cache_write_tokens = await create()
+    except BaseException:
+        future.set_result(None)
+        raise
+    finally:
+        _in_flight.pop(flight_key, None)
+    future.set_result(entry)
+    return entry, cache_write_tokens
 
 
 @dataclass
@@ -165,6 +196,7 @@ def _cache_key(
     model: str,
     config: types.GenerateContentConfig,
     prefix: list[types.Content],
+    ttl: int,
 ) -> str:
     material = {
         "provider": provider_name,
@@ -174,8 +206,56 @@ def _cache_key(
         "tools": _dump(config.tools),
         "tool_config": _dump(config.tool_config),
         "contents": _dump(prefix),
+        # A 1h request must not reuse a cache created to live 5 minutes.
+        "ttl_seconds": ttl,
     }
     return hashlib.sha256(json.dumps(material, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _is_refusal(exc: errors.ClientError) -> bool:
+    """Whether Gemini refused the cache itself (for example a prefix under its minimum size).
+
+    Other client errors, such as 429 RESOURCE_EXHAUSTED, are transient and must not disable caching for the TTL.
+    """
+    return exc.code == 400 and exc.status == "INVALID_ARGUMENT"
+
+
+async def _create_cache(
+    client: genai.Client,
+    key: str,
+    model: str,
+    config: types.GenerateContentConfig,
+    prefix: list[types.Content],
+    ttl: int,
+    now: float,
+) -> tuple[_RegistryEntry | None, int | None]:
+    try:
+        cache = await client.aio.caches.create(
+            model=model,
+            config=types.CreateCachedContentConfig(
+                contents=cast("types.ContentListUnion", prefix) if prefix else None,
+                system_instruction=config.system_instruction,
+                # _convert_tool_spec only produces types.Tool, never the SDK's callables.
+                tools=cast("list[types.Tool] | None", config.tools),
+                tool_config=config.tool_config,
+                ttl=f"{ttl}s",
+            ),
+        )
+    except errors.ClientError as exc:
+        logger.debug("Gemini refused a context cache (%s); sending the request uncached", exc.code)
+        if not _is_refusal(exc):
+            return None, None
+        refused = _RegistryEntry(cache_name=None, expires_at=now + ttl)
+        registry.put(key, refused)
+        return refused, None
+    except Exception as exc:
+        logger.debug("Creating a Gemini context cache failed (%s); sending the request uncached", exc)
+        return None, None
+    if not cache.name:
+        return None, None
+    entry = _RegistryEntry(cache_name=cache.name, expires_at=now + ttl - EXPIRY_MARGIN_SECONDS)
+    registry.put(key, entry)
+    return entry, cache.usage_metadata.total_token_count if cache.usage_metadata else None
 
 
 def _prefix_length(
@@ -218,36 +298,15 @@ async def prepare_context_cache(
         return no_cache
 
     model: str = converted_kwargs["model"]
-    key = _cache_key(provider_name, client_identity(client), model, config, prefix)
+    key = _cache_key(provider_name, client_identity(client), model, config, prefix, ttl)
     now = time.monotonic()
     entry = registry.get(key, now)
     cache_write_tokens: int | None = None
     if entry is None:
-        try:
-            cache = await client.aio.caches.create(
-                model=model,
-                config=types.CreateCachedContentConfig(
-                    contents=cast("types.ContentListUnion", prefix) if prefix else None,
-                    system_instruction=config.system_instruction,
-                    # _convert_tool_spec only produces types.Tool, never the SDK's callables.
-                    tools=cast("list[types.Tool] | None", config.tools),
-                    tool_config=config.tool_config,
-                    ttl=f"{ttl}s",
-                ),
-            )
-        except errors.ClientError as exc:
-            logger.debug("Gemini refused a context cache (%s); sending the request uncached", exc.code)
-            registry.put(key, _RegistryEntry(cache_name=None, expires_at=now + ttl))
-            return no_cache
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Creating a Gemini context cache failed (%s); sending the request uncached", exc)
-            return no_cache
-        if not cache.name:
-            return no_cache
-        entry = _RegistryEntry(cache_name=cache.name, expires_at=now + ttl - EXPIRY_MARGIN_SECONDS)
-        registry.put(key, entry)
-        cache_write_tokens = cache.usage_metadata.total_token_count if cache.usage_metadata else None
-    if entry.cache_name is None:
+        entry, cache_write_tokens = await _create_once(
+            key, lambda: _create_cache(client, key, model, config, prefix, ttl, now)
+        )
+    if entry is None or entry.cache_name is None:
         return no_cache
 
     request_kwargs = {

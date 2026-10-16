@@ -369,3 +369,27 @@ def test_convert_response_passes_through_non_enum_language_and_missing_fields() 
         {"type": "executable_code", "id": "code_exec_0", "language": "RUST", "code": ""},
         {"type": "code_execution_result", "id": "code_exec_0", "outcome": "OUTCOME_UNSPECIFIED", "output": ""},
     ]
+
+
+def test_convert_messages_replays_a_code_execution_only_turn_without_an_empty_text_part() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "extra_content": {
+                "google": {
+                    "code_execution": [
+                        {"type": "executable_code", "language": "PYTHON", "code": CODE},
+                        {"type": "code_execution_result", "outcome": "OUTCOME_OK", "output": "2"},
+                    ]
+                }
+            },
+        }
+    ]
+
+    parts = _convert_messages(messages)[0][0].parts
+
+    assert parts is not None
+    assert len(parts) == 2
+    assert parts[0].executable_code is not None
+    assert parts[1].code_execution_result is not None

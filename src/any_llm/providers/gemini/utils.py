@@ -150,6 +150,21 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
     return converted_tools
 
 
+def _enable_server_side_tool_invocations(
+    tools: list[types.Tool], tool_config: types.ToolConfig | None
+) -> types.ToolConfig | None:
+    """Return ``tool_config`` with server-side tool invocations on when built-in tools sit beside functions.
+
+    Gemini answers a request that combines built-in tools (such as ``google_search`` or ``code_execution``)
+    with function declarations with a 400 unless ``include_server_side_tool_invocations`` is set.
+    """
+    has_functions = any(tool.function_declarations for tool in tools)
+    has_built_in = any(tool.model_dump(exclude_none=True, exclude={"function_declarations"}) for tool in tools)
+    if not (has_functions and has_built_in):
+        return tool_config
+    return (tool_config or types.ToolConfig()).model_copy(update={"include_server_side_tool_invocations": True})
+
+
 def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) -> types.ToolConfig:
     error_message = "tool_choice"
     additional_message = f"Unsupported tool_choice: {tool_choice}"
@@ -482,7 +497,8 @@ def _convert_messages(
             # The model's own text belongs in its turn, ahead of any function calls it made.
             content = message.get("content")
             has_text = isinstance(content, str) and content
-            if has_text or not message.get("tool_calls"):
+            # Code execution parts already give the turn content, so it needs no empty text part.
+            if has_text or not (parts or message.get("tool_calls")):
                 parts.append(
                     types.Part(
                         text=content,
