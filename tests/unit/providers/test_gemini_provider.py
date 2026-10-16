@@ -3920,3 +3920,16 @@ def test_streaming_via_sync_completion_reports_tool_calls_when_stop_arrives_late
         finish_reasons = [chunk.choices[0].finish_reason for chunk in result]
 
     assert finish_reasons == [None, "tool_calls"]
+
+
+def test_convert_messages_folds_developer_and_list_system_messages_into_the_instruction() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": "Be brief."},
+        {"role": "developer", "content": [{"type": "text", "text": "Answer in "}, {"type": "text", "text": "French."}]},
+        {"role": "user", "content": "Hi"},
+    ]
+
+    contents, system_instruction = _convert_messages(messages)
+
+    assert system_instruction == "Be brief.\nAnswer in French."
+    assert [content.role for content in contents] == ["user"]
