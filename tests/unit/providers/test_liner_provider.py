@@ -138,10 +138,35 @@ async def test_completion_flattens_text_parts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completion_sends_system_and_developer_messages_as_a_leading_user_turn() -> None:
+    requests: list[httpx.Request] = []
+    provider = _provider(_recording(httpx.Response(200, json=ANSWER), requests))
+    messages: list[Any] = [
+        {"role": "system", "content": "Be brief."},
+        {"role": "user", "content": "What is Firefox?"},
+        {"role": "assistant", "content": "A browser."},
+        {"role": "developer", "content": [{"type": "text", "text": "Cite sources."}]},
+        {"role": "user", "content": "Who makes it?"},
+    ]
+
+    await provider.acompletion(model="quick-answer", messages=messages)
+
+    assert json.loads(requests[0].content)["messages"] == [
+        {"role": "user", "content": "Be brief.\n\nCite sources."},
+        {"role": "user", "content": "What is Firefox?"},
+        {"role": "assistant", "content": "A browser."},
+        {"role": "user", "content": "Who makes it?"},
+    ]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("messages", "error"),
     [
-        ([{"role": "system", "content": "Be brief."}, *MESSAGES], UnsupportedParameterError),
+        (
+            [{"role": "system", "content": [{"type": "image_url", "image_url": {"url": "x"}}]}, *MESSAGES],
+            UnsupportedParameterError,
+        ),
         ([{"role": "tool", "content": "42", "tool_call_id": "c-1"}], UnsupportedParameterError),
         ([{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "x"}}]}], UnsupportedParameterError),
         ([{"role": "assistant", "content": None}], UnsupportedParameterError),
