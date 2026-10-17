@@ -1,10 +1,13 @@
-import re
-from collections.abc import AsyncIterator
-from typing import Any
+from __future__ import annotations
 
+import re
+from typing import TYPE_CHECKING, Any
+
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from typing_extensions import override
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.deepseek.utils import (
     _inject_cached_tokens,
     _inject_cached_tokens_chunk,
@@ -12,7 +15,25 @@ from any_llm.providers.deepseek.utils import (
     _preprocess_messages,
 )
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, ReasoningEffort
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStopEvent,
+)
+from any_llm.utils.messages_compat import prepare_blocks_for_native_messages
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage
+    from anthropic.types.parsed_message import ParsedMessage
+
+    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, ReasoningEffort
+    from any_llm.types.messages import MessagesParams, MessageStreamEvent
 
 # Each entry maps an any-llm effort to DeepSeek's top-level effort and thinking toggle.
 # DeepSeek Chat accepts low, high, and max, maps medium and xhigh to high, and does not
@@ -46,17 +67,61 @@ _UNSUPPORTED_DEEPSEEK_FIELDS = frozenset(
 )
 
 
+_MESSAGE_STREAM_EVENT_TYPES: dict[str, type[Any]] = {
+    "message_start": MessageStartEvent,
+    "message_delta": MessageDeltaEvent,
+    "message_stop": MessageStopEvent,
+    "content_block_start": ContentBlockStartEvent,
+    "content_block_delta": ContentBlockDeltaEvent,
+    "content_block_stop": ContentBlockStopEvent,
+}
+
+
+def _derive_anthropic_base(openai_base: str) -> str:
+    """The Anthropic-compatible base URL beside an OpenAI-compatible one.
+
+    DeepSeek serves the Anthropic API under ``/anthropic`` on the same host, and the
+    Anthropic SDK appends ``/v1/messages`` itself, so a ``/v1`` on the OpenAI base is dropped.
+    https://api-docs.deepseek.com/guides/anthropic_api
+    """
+    return openai_base.rstrip("/").removesuffix("/v1") + "/anthropic"
+
+
 class DeepseekProvider(BaseOpenAIProvider):
+    """DeepSeek provider.
+
+    Chat Completions and Responses go through the inherited OpenAI-compatible machinery.
+    Messages go to DeepSeek's Anthropic-compatible endpoint through the Anthropic SDK, so
+    thinking blocks, tool use and server-side web search blocks keep their native shape.
+    """
+
     API_BASE = "https://api.deepseek.com"
     ENV_API_KEY_NAME = "DEEPSEEK_API_KEY"
     ENV_API_BASE_NAME = "DEEPSEEK_API_BASE"
     PROVIDER_NAME = "deepseek"
     PROVIDER_DOCUMENTATION_URL = "https://platform.deepseek.com/"
 
-    SUPPORTS_COMPLETION_IMAGE = False
+    # deepseek-flash accepts images; deepseek-v4-pro does not, and answers an image with a 400.
+    # https://api-docs.deepseek.com/guides/vision
+    SUPPORTS_COMPLETION_IMAGE = True
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False  # DeepSeek doesn't host an embedding model
     SUPPORTS_COMPLETION_REASONING = True
+    SUPPORTS_RESPONSES = True
+    SUPPORTS_MESSAGES_NATIVE = True
+
+    client: AsyncOpenAI
+    _anthropic_client: AsyncAnthropic
+
+    @override
+    def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        resolved_base = api_base or self.API_BASE
+        self.client = AsyncOpenAI(base_url=resolved_base, api_key=api_key, **kwargs)
+        self._anthropic_client = AsyncAnthropic(
+            api_key=api_key,
+            base_url=_derive_anthropic_base(resolved_base),
+            **kwargs,
+        )
 
     @staticmethod
     @override
@@ -149,3 +214,46 @@ class DeepseekProvider(BaseOpenAIProvider):
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         return await super()._acompletion(_preprocess_messages(params), **kwargs)
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
+        """Send a Messages request to DeepSeek's Anthropic-compatible endpoint.
+
+        ``betas`` travel as the ``anthropic-beta`` header, which DeepSeek ignores except to
+        accept a Files API image reference. ``context_management`` is dropped: it configures
+        Anthropic's server-side context editing, which DeepSeek does not document, and Claude
+        Code sends it on every request. ``container`` is refused, because DeepSeek runs no code
+        execution. ``output_format`` goes through the Messages-to-Completions bridge, because
+        DeepSeek's ``output_config`` takes only ``effort``.
+        https://api-docs.deepseek.com/guides/anthropic_api
+        """
+        if params.container is not None:
+            msg = "container"
+            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
+
+        if params.output_format is not None:
+            bridged = params.model_copy(update={"betas": None, "context_management": None})
+            return await super()._amessages(bridged, **kwargs)
+
+        api_kwargs = params.model_dump(exclude_none=True, exclude={"stream", "betas", "context_management"})
+        api_kwargs["messages"] = prepare_blocks_for_native_messages(api_kwargs["messages"])
+        api_kwargs.update(kwargs)
+        if params.betas:
+            headers = dict(api_kwargs.get("extra_headers") or {})
+            headers["anthropic-beta"] = ",".join(params.betas)
+            api_kwargs["extra_headers"] = headers
+
+        if params.stream:
+            return self._stream_messages_async(**api_kwargs)
+
+        message = await self._anthropic_client.messages.create(**api_kwargs)
+        return MessageResponse.model_validate(message, from_attributes=True)
+
+    async def _stream_messages_async(self, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+        async with self._anthropic_client.messages.stream(**kwargs) as stream:
+            async for event in stream:
+                event_model = _MESSAGE_STREAM_EVENT_TYPES.get(event.type)
+                if event_model is not None:
+                    yield event_model.model_validate(event, from_attributes=True)

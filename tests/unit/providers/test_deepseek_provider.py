@@ -100,6 +100,29 @@ async def test_preprocess_messages_with_dataclass() -> None:
     assert "age" in processed_params.messages[0]["content"]
 
 
+def test_preprocess_messages_keeps_content_parts_with_structured_output() -> None:
+    image_part = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+    original = {"role": "user", "content": [{"type": "text", "text": "Who is this?"}, image_part]}
+    params = CompletionParams(model_id="deepseek-flash", messages=[original], response_format=PersonResponseFormat)
+
+    processed_params = _preprocess_messages(params)
+
+    content = processed_params.messages[0]["content"]
+    assert content[0]["type"] == "text"
+    assert "JSON object" in content[0]["text"]
+    assert content[1:] == [{"type": "text", "text": "Who is this?"}, image_part]
+    assert original["content"] == [{"type": "text", "text": "Who is this?"}, image_part]
+
+
+def test_preprocess_messages_does_not_mutate_caller_message_with_structured_output() -> None:
+    original = {"role": "user", "content": "Generate a person"}
+    params = CompletionParams(model_id="deepseek-flash", messages=[original], response_format=PersonResponseFormat)
+
+    _preprocess_messages(params)
+
+    assert original["content"] == "Generate a person"
+
+
 def test_convert_completion_response_extracts_cached_tokens() -> None:
     """Test that prompt_cache_hit_tokens is extracted into prompt_tokens_details."""
     response = OpenAIChatCompletion.model_validate(

@@ -160,6 +160,7 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k3",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.NEOSANTARA: "gemini-3-flash-preview",  # Vision model compatible with OpenAI format
+        LLMProvider.DEEPSEEK: "deepseek-flash",  # deepseek-v4-pro rejects images
     }
 
 
