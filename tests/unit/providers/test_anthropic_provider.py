@@ -50,6 +50,11 @@ if TYPE_CHECKING:
     from anthropic.lib.streaming import MessageStreamEvent
 
 
+@pytest.fixture(autouse=True)
+def clear_anthropic_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(AnthropicProvider.ENV_API_BASE_NAME, raising=False)
+
+
 @contextmanager
 def mock_anthropic_provider():  # type: ignore[no-untyped-def]
     with (

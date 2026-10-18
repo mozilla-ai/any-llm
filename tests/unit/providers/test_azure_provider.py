@@ -13,6 +13,11 @@ from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 
 
+@pytest.fixture(autouse=True)
+def clear_azure_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(AzureProvider.ENV_API_KEY_NAME, raising=False)
+
+
 @contextmanager
 def mock_azure_provider():  # type: ignore[no-untyped-def]
     with (

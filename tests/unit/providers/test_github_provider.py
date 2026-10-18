@@ -9,6 +9,11 @@ from any_llm.providers.github.github import GithubProvider
 from any_llm.types.completion import CompletionParams
 
 
+@pytest.fixture(autouse=True)
+def clear_github_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(GithubProvider.ENV_API_BASE_NAME, raising=False)
+
+
 def test_github_provider_attributes() -> None:
     provider = GithubProvider(api_key="test-key")
     assert provider.PROVIDER_NAME == "github"

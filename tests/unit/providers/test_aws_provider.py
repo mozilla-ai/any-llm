@@ -39,6 +39,11 @@ from any_llm.providers.bedrock.utils import (
 from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
 
 
+@pytest.fixture(autouse=True)
+def clear_bedrock_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(BedrockProvider.ENV_API_BASE_NAME, raising=False)
+
+
 @contextmanager
 def mock_aws_provider():  # type: ignore[no-untyped-def]
     """Mock boto3.Session so the provider builds its runtime client from a mocked session.

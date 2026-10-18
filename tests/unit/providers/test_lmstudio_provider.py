@@ -16,6 +16,11 @@ from any_llm.types.completion import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clear_lmstudio_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(LmstudioProvider.ENV_API_BASE_NAME, raising=False)
+
+
 def _make_stats(
     *,
     prompt: int = 10,

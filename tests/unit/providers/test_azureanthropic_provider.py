@@ -7,6 +7,12 @@ from any_llm.providers.azureanthropic.azureanthropic import AzureanthropicProvid
 from any_llm.types.completion import CompletionParams
 
 
+@pytest.fixture(autouse=True)
+def clear_azureanthropic_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (AzureanthropicProvider.ENV_API_BASE_NAME, "AZURE_ANTHROPIC_RESOURCE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @contextmanager
 def mock_azureanthropic_provider():  # type: ignore[no-untyped-def]
     with (
