@@ -1113,13 +1113,21 @@ class AnyLLM(FilesMixin, ABC):
             Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
-            ValueError: If `output_format` is combined with `stream=True` for a provider that
-                does not support streaming structured output.
+            ValueError: If an `output_format` that names a format is combined with `stream=True`
+                for a provider that does not support streaming structured output.
             NotImplementedError: If `container`, `context_management`, or `betas` is used
                 with a provider that has no native Anthropic Messages API.
 
         """
-        if output_format is not None and stream and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING:
+        # An output_config that names no format (effort alone) asks for no structured output,
+        # so there is nothing a stream could fail to honour.
+        names_format = not isinstance(output_format, dict) or "format" in normalize_output_config(output_format)
+        if (
+            output_format is not None
+            and stream
+            and names_format
+            and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING
+        ):
             msg = "stream is not supported for output_format"
             raise ValueError(msg)
 

@@ -288,6 +288,22 @@ async def test_amessages_streaming_delegates_to_stream_method() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_streams_effort_only_output_format_natively() -> None:
+    provider = _build_provider()
+    provider._stream_messages_async = Mock(return_value=AsyncMock())  # type: ignore[method-assign]
+
+    await provider.amessages(
+        model="deepseek-flash",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=64,
+        output_format={"effort": "high"},
+        stream=True,
+    )
+
+    assert provider._stream_messages_async.call_args.kwargs["output_config"] == {"effort": "high"}
+
+
+@pytest.mark.asyncio
 async def test_stream_messages_async_emits_typed_events() -> None:
     events_list: list[Any] = [
         SDKMessageStartEvent(

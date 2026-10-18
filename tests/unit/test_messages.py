@@ -2131,6 +2131,23 @@ async def test_amessages_output_config_dict_returns_parsed_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amessages_effort_only_output_config_streams() -> None:
+    """An effort-only output_config asks for no structured output, so streaming is not refused."""
+    provider = _openai_provider()
+    provider._amessages = AsyncMock(return_value=AsyncMock())
+
+    await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=128,
+        output_format={"effort": "high"},
+        stream=True,
+    )
+
+    assert provider._amessages.call_args.args[0].output_format == {"effort": "high"}
+
+
+@pytest.mark.asyncio
 async def test_amessages_output_config_dict_rejects_streaming() -> None:
     """A raw output_config dict combined with stream=True also raises ValueError."""
     output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
