@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from time import time
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from google.genai import types
 from google.genai.pagers import Pager
@@ -535,7 +536,7 @@ def _convert_messages(
 
                     parts.append(
                         types.Part(
-                            function_call=types.FunctionCall(name=function_call["name"], args=args),
+                            function_call=types.FunctionCall(id=tool_call_id, name=function_call["name"], args=args),
                             thought_signature=cast("bytes | None", thought_signature),
                         )
                     )
@@ -547,7 +548,12 @@ def _convert_messages(
             if isinstance(content, (str, bytes, bytearray)):
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
-            part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
+            # Gemini 3 maps each result to its call by id; without one it pairs them by position.
+            part = types.Part(
+                function_response=types.FunctionResponse(
+                    id=message.get("tool_call_id"), name=name, response=_normalize_tool_response(content)
+                )
+            )
             # The API documents only "user" and "model" as Content roles. "function" is tolerated by
             # older models and rejected with 400 INVALID_ARGUMENT by gemini-3.5-flash-lite, 3.7-flash
             # and 3.8-flash. Results of parallel calls share one user turn, as google-genai emits them.
@@ -779,7 +785,8 @@ def _convert_response_to_response_dict(
                         args_dict[key] = value
 
                 tool_call_dict: dict[str, Any] = {
-                    "id": f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                    # Gemini 3 issues ids; older models do not, so mint one unique across turns and processes.
+                    "id": function_call.id or f"call_{uuid4().hex}",
                     "function": {
                         "name": function_call.name,
                         "arguments": json.dumps(args_dict),
@@ -902,9 +909,8 @@ def _create_openai_chunk_from_google_chunk(
         response: The Google GenerateContentResponse streaming chunk.
         tool_call_counter: Optional single-element list holding the number of tool
             calls already emitted earlier in the same stream. This should be created
-            once per stream and passed in by the caller so that ``index`` (and the
-            generated tool call ``id``) stay stable and unique across chunks, rather
-            than restarting at 0 for every chunk.
+            once per stream and passed in by the caller so that ``index`` stays stable
+            and unique across chunks, rather than restarting at 0 for every chunk.
         code_execution_state: Optional per-stream state, like ``tool_call_counter``, so a
             code execution result in a later chunk pairs with the code emitted before it.
     """
@@ -947,7 +953,7 @@ def _create_openai_chunk_from_google_chunk(
             tool_calls_list.append(
                 ChoiceDeltaToolCall(
                     index=tool_call_index,
-                    id=f"call_{hash(function_call.name)}_{tool_call_index}",
+                    id=function_call.id or f"call_{uuid4().hex}",
                     type="function",
                     function=ChoiceDeltaToolCallFunction(
                         name=function_call.name,

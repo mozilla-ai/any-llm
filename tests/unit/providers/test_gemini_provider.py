@@ -1070,7 +1070,7 @@ def test_convert_response_single_tool_call() -> None:
     mock_response.candidates[0].content = Mock()
     mock_response.candidates[0].content.parts = [Mock()]
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = "search_web"
     mock_function_call.args = {"query": "test query", "limit": 5}
 
@@ -1104,7 +1104,6 @@ def test_convert_response_single_tool_call() -> None:
     assert tool_call["function"]["name"] == "search_web"
     assert tool_call["function"]["arguments"] == '{"query": "test query", "limit": 5}'
     assert tool_call["id"].startswith("call_")
-    assert tool_call["id"].endswith("_0")
 
 
 def test_convert_response_multiple_parallel_tool_calls() -> None:
@@ -1113,15 +1112,15 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call_1 = Mock()
+    mock_function_call_1 = Mock(id=None)
     mock_function_call_1.name = "search_web"
     mock_function_call_1.args = {"query": "test query"}
 
-    mock_function_call_2 = Mock()
+    mock_function_call_2 = Mock(id=None)
     mock_function_call_2.name = "get_weather"
     mock_function_call_2.args = {"location": "New York"}
 
-    mock_function_call_3 = Mock()
+    mock_function_call_3 = Mock(id=None)
     mock_function_call_3.name = "calculate"
     mock_function_call_3.args = {"expression": "2+2"}
 
@@ -1165,18 +1164,47 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
 
     assert tool_calls[0]["function"]["name"] == "search_web"
     assert tool_calls[0]["function"]["arguments"] == '{"query": "test query"}'
-    assert tool_calls[0]["id"].endswith("_0")
 
     assert tool_calls[1]["function"]["name"] == "get_weather"
     assert tool_calls[1]["function"]["arguments"] == '{"location": "New York"}'
-    assert tool_calls[1]["id"].endswith("_1")
 
     assert tool_calls[2]["function"]["name"] == "calculate"
     assert tool_calls[2]["function"]["arguments"] == '{"expression": "2+2"}'
-    assert tool_calls[2]["id"].endswith("_2")
 
     tool_call_ids = [tc["id"] for tc in tool_calls]
     assert len(set(tool_call_ids)) == 3
+
+
+def test_gemini_function_call_id_round_trips_to_the_request() -> None:
+    """Gemini 3 maps each result to its call by id, so the id it issued must come back on both parts."""
+    response = _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(id="fc_1", name="get_price", args={"ticker": "ACME"}))],
+        types.FinishReason.STOP,
+    )
+    streamed = _create_openai_chunk_from_google_chunk(response).choices[0].delta.tool_calls
+    assert streamed is not None
+    assert streamed[0].id == "fc_1"
+
+    message = _convert_response_to_response_dict(response)["choices"][0]["message"]
+    contents, _ = _convert_messages([message, {"role": "tool", "tool_call_id": "fc_1", "content": "{}"}])
+
+    wire = [part.model_dump(exclude_none=True) for content in contents for part in content.parts or []]
+    assert wire[0]["function_call"]["id"] == "fc_1"
+    assert wire[1]["function_response"]["id"] == "fc_1"
+
+
+def test_tool_call_without_a_gemini_id_gets_a_fresh_id_each_turn() -> None:
+    """Older models send no id; the same call in a later turn, or another process, must not reuse one."""
+    response = _make_gemini_response(
+        [types.Part(function_call=types.FunctionCall(name="get_price", args={}))], types.FinishReason.STOP
+    )
+
+    turns = [_convert_response_to_response_dict(response) for _ in range(2)]
+    chunks = [_create_openai_chunk_from_google_chunk(response) for _ in range(2)]
+    ids = [turn["choices"][0]["message"]["tool_calls"][0]["id"] for turn in turns]
+    ids += [tool_call.id for chunk in chunks for tool_call in chunk.choices[0].delta.tool_calls or []]
+
+    assert len(set(ids)) == 4, ids
 
 
 @pytest.mark.parametrize(
@@ -1930,7 +1958,7 @@ def test_streaming_completion_with_tool_call() -> None:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = "get_weather"
     mock_function_call.args = {"location": "Paris"}
 
@@ -1962,7 +1990,7 @@ def test_streaming_completion_with_tool_call_preserves_thought_signature() -> No
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = "get_weather"
     mock_function_call.args = {"location": "Paris"}
 
@@ -1995,7 +2023,7 @@ def test_streaming_completion_with_tool_call_no_thought_signature() -> None:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = "get_weather"
     mock_function_call.args = {"location": "Paris"}
 
@@ -2025,11 +2053,11 @@ def test_streaming_completion_with_multiple_tool_calls() -> None:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call_1 = Mock()
+    mock_function_call_1 = Mock(id=None)
     mock_function_call_1.name = "get_weather"
     mock_function_call_1.args = {"location": "Paris"}
 
-    mock_function_call_2 = Mock()
+    mock_function_call_2 = Mock(id=None)
     mock_function_call_2.name = "get_weather"
     mock_function_call_2.args = {"location": "London"}
 
@@ -2063,7 +2091,7 @@ def _make_single_tool_call_chunk(name: str, args: dict[str, Any]) -> Mock:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = name
     mock_function_call.args = args
 
@@ -2123,11 +2151,11 @@ def test_streaming_completion_multiple_tool_calls_within_chunk_after_prior_chunk
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call_1 = Mock()
+    mock_function_call_1 = Mock(id=None)
     mock_function_call_1.name = "get_weather"
     mock_function_call_1.args = {"location": "Paris"}
 
-    mock_function_call_2 = Mock()
+    mock_function_call_2 = Mock(id=None)
     mock_function_call_2.name = "get_weather"
     mock_function_call_2.args = {"location": "London"}
 
@@ -2202,7 +2230,7 @@ def test_convert_response_preserves_thought_signature() -> None:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = "get_weather"
     mock_function_call.args = {"location": "Paris"}
 
@@ -2238,7 +2266,7 @@ def test_convert_response_no_thought_signature() -> None:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = "get_weather"
     mock_function_call.args = {"location": "Paris"}
 
@@ -3063,7 +3091,7 @@ def test_streaming_completion_with_tool_call_without_args() -> None:
     mock_response.candidates = [Mock()]
     mock_response.candidates[0].content = Mock()
 
-    mock_function_call = Mock()
+    mock_function_call = Mock(id=None)
     mock_function_call.name = "no_args_function"
     mock_function_call.args = None
 
