@@ -193,6 +193,136 @@ def test_patch_messages_rebuilds_thinking_and_still_inserts_assistant_ok() -> No
     assert out[2] == {"role": "assistant", "content": "OK"}
 
 
+@pytest.mark.parametrize(
+    "empty_assistant",
+    [
+        {"role": "assistant", "content": ""},
+        {"role": "assistant", "content": None},
+        {"role": "assistant"},
+        {"role": "assistant", "content": []},
+        {"role": "assistant", "content": [{"type": "text", "text": ""}, {"type": "text"}]},
+        {"role": "assistant", "content": "", "tool_calls": []},
+        {"role": "assistant", "content": "", "tool_calls": None, "reasoning": ""},
+    ],
+)
+def test_patch_messages_drops_trailing_empty_assistant_message(empty_assistant: dict[str, Any]) -> None:
+    """Mistral rejects a conversation ending in an empty assistant turn, so it is dropped."""
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "u"},
+        empty_assistant,
+    ]
+    out = _patch_messages(messages)
+    assert out == messages[:2]
+
+
+def test_patch_messages_drops_empty_assistant_message_mid_conversation() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": ""},
+        {"role": "user", "content": "u2"},
+    ]
+    out = _patch_messages(messages)
+    assert out == [{"role": "user", "content": "u1"}, {"role": "user", "content": "u2"}]
+
+
+@pytest.mark.parametrize(
+    "assistant",
+    [
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]},
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": ""}, {"type": "image_url", "image_url": "x"}]},
+        {"role": "assistant", "content": ["not-a-dict-part"]},
+        {"role": "assistant", "content": {"unexpected": "shape"}},
+    ],
+)
+def test_patch_messages_keeps_assistant_message_that_carries_something(assistant: dict[str, Any]) -> None:
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "u"}, assistant]
+    out = _patch_messages(messages)
+    assert out == messages
+
+
+def test_patch_messages_keeps_reasoning_only_assistant_message() -> None:
+    """An assistant turn with only a reasoning trace is rebuilt into a thinking chunk, not dropped."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "u"},
+        {"role": "assistant", "content": "", "reasoning": "thought hard"},
+    ]
+    out = _patch_messages(messages)
+    assert len(out) == 2
+    assert out[1]["content"] == [{"type": "thinking", "thinking": [{"type": "text", "text": "thought hard"}]}]
+
+
+def test_patch_messages_keeps_empty_content_on_non_assistant_roles() -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": ""},
+        {"role": "tool", "content": ""},
+    ]
+    out = _patch_messages(messages)
+    assert out == messages
+
+
+def test_patch_messages_inserts_assistant_ok_when_dropped_message_separated_tool_and_user() -> None:
+    """Dropping an empty assistant between a tool and user turn still yields the "OK" bridge."""
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]},
+        {"role": "tool", "content": "t1"},
+        {"role": "assistant", "content": ""},
+        {"role": "user", "content": "u1"},
+    ]
+    out = _patch_messages(messages)
+    assert out == [
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]},
+        {"role": "tool", "content": "t1"},
+        {"role": "assistant", "content": "OK"},
+        {"role": "user", "content": "u1"},
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_completion_drops_trailing_empty_assistant_message(stream: bool) -> None:
+    """Both the completion and streaming paths send Mistral the filtered messages."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    async def mock_stream(*args: Any, **kwargs: Any) -> Any:
+        async def async_iter() -> Any:
+            return
+            yield
+
+        return async_iter()
+
+    with (
+        patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response"),
+    ):
+        provider = MistralProvider(api_key="test-api-key")
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+        mocked_mistral.return_value.chat.stream_async = AsyncMock(side_effect=mock_stream)
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="mistral-small-latest",
+                messages=[
+                    {"role": "user", "content": "Hello"},
+                    {"role": "assistant", "content": ""},
+                ],
+                stream=stream,
+            ),
+        )
+
+        if stream:
+            async for _ in cast("AsyncIterator[Any]", result):
+                pass
+            call_kwargs = mocked_mistral.return_value.chat.stream_async.call_args[1]
+        else:
+            call_kwargs = mocked_mistral.return_value.chat.complete_async.call_args[1]
+
+        assert call_kwargs["messages"] == [{"role": "user", "content": "Hello"}]
+
+
 class StructuredOutput(BaseModel):
     foo: str
     bar: int

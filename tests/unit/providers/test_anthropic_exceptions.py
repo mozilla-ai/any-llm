@@ -1,6 +1,7 @@
 # ruff: noqa: E402
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,12 +9,14 @@ import pytest
 anthropic = pytest.importorskip("anthropic")
 
 from anthropic import APIError as AnthropicAPIError
+from anthropic import APIStatusError as AnthropicAPIStatusError
 from anthropic import AuthenticationError as AnthropicAuthenticationError
 from anthropic import BadRequestError as AnthropicBadRequestError
 from anthropic import NotFoundError as AnthropicNotFoundError
 from anthropic import RateLimitError as AnthropicRateLimitError
 
 from any_llm.exceptions import (
+    AnyLLMError,
     AuthenticationError,
     InvalidRequestError,
     ModelNotFoundError,
@@ -136,3 +139,28 @@ def test_status_code_and_type_are_preserved_on_the_unified_error() -> None:
     assert result.error_type == "invalid_request_error"
     assert result.param is None
     assert result.code is None
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected"),
+    [
+        ("rate_limit_error", RateLimitError),
+        ("invalid_request_error", InvalidRequestError),
+        ("overloaded_error", ProviderError),
+    ],
+)
+def test_mid_stream_error_keeps_its_class_despite_the_stream_status(
+    error_type: str, expected: type[AnyLLMError]
+) -> None:
+    """The SDK raises an SSE error event with the stream's 200, so the event body must decide the class."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}
+    body = {"type": "error", "error": {"type": error_type, "message": "Stream interrupted"}}
+
+    original = AnthropicAPIStatusError(json.dumps(body), response=mock_response, body=body)
+
+    result = convert_exception(original, "anthropic")
+
+    assert type(result) is expected
+    assert result.status_code == 200

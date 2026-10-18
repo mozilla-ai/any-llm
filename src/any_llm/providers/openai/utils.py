@@ -31,6 +31,9 @@ def _normalize_reasoning_on_message(message_dict: dict[str, Any]) -> None:
         message_dict["reasoning"] = {"content": str(value)}
 
 
+_USAGE_TOKEN_COUNTS = ("prompt_tokens", "completion_tokens", "total_tokens")
+
+
 def _normalize_openai_dict_response(response_dict: dict[str, Any]) -> dict[str, Any]:
     """Return a dict where non-standard reasoning fields are normalized.
 
@@ -47,6 +50,12 @@ def _normalize_openai_dict_response(response_dict: dict[str, Any]) -> dict[str, 
             delta = choice.get("delta") if isinstance(choice, dict) else None
             if isinstance(delta, dict):
                 _normalize_reasoning_on_message(delta)
+
+    # Vertex AI's OpenAI-compatible endpoint puts a usage object on every stream chunk, holding only
+    # extra_properties until the last one has the counts. A usage with no token counts at all is none.
+    usage = response_dict.get("usage")
+    if isinstance(usage, dict) and all(usage.get(key) is None for key in _USAGE_TOKEN_COUNTS):
+        response_dict["usage"] = None
 
     return response_dict
 

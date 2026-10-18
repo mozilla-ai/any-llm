@@ -1,20 +1,11 @@
-from typing_extensions import override
+"""Import shim: llama.cpp migrated to the config registry.
 
-from any_llm.providers.openai.base import BaseOpenAIProvider
+The provider is now a row in ``any_llm.providers.registry``; this module keeps
+the historical deep-import path working.
+"""
 
+from any_llm.providers.registry import get_registry_provider_class
 
-class LlamacppProvider(BaseOpenAIProvider):
-    API_BASE = "http://127.0.0.1:8080/v1"
-    ENV_API_KEY_NAME = "None"
-    ENV_API_BASE_NAME = "LLAMACPP_API_BASE"
-    PROVIDER_NAME = "llamacpp"
-    PROVIDER_DOCUMENTATION_URL = "https://github.com/ggml-org/llama.cpp"
+LlamacppProvider = get_registry_provider_class("llamacpp")
 
-    SUPPORTS_EMBEDDING = True
-    SUPPORTS_COMPLETION_REASONING = True
-    SUPPORTS_COMPLETION_STREAMING = True
-    SUPPORTS_COMPLETION_PDF = False
-
-    @override
-    def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
-        return "no-key-required"
+__all__ = ["LlamacppProvider"]

@@ -1,16 +1,27 @@
+import asyncio
 import dataclasses
+import email
+import email.message
+import io
 import json
 import logging
+import pathlib
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from openai import AsyncStream
 from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
 from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
+from typing_extensions import override
 
-from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.exceptions import InvalidRequestError
+from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.providers.openai.openai import OpenaiProvider
+from any_llm.providers.sambanova.sambanova import SambanovaProvider
+from any_llm.types.audio import Transcription
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 from any_llm.types.responses import ParsedResponse, Response
@@ -66,6 +77,64 @@ async def test_openai_messages_bridge_sends_typed_prompt_cache_key() -> None:
 
     assert len(requests) == 1
     assert json.loads(requests[0].content)["prompt_cache_key"] == "tenant-1"
+
+
+async def _wire_body_of_openai_call(call: str, **kwargs: object) -> str:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "gpt-5.6",
+                "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "ok"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenaiProvider(api_key="test-key", http_client=http_client)
+    try:
+        await getattr(provider, call)(model="gpt-5.6", **kwargs)
+    finally:
+        await http_client.aclose()
+    assert len(requests) == 1
+    return requests[0].content.decode()
+
+
+@pytest.mark.asyncio
+async def test_openai_messages_bridge_never_sends_cache_control_breakpoints() -> None:
+    ephemeral = {"type": "ephemeral", "ttl": "1h"}
+
+    body = await _wire_body_of_openai_call(
+        "amessages",
+        system=[{"type": "text", "text": "Be brief.", "cache_control": ephemeral}],
+        messages=[{"role": "user", "content": [{"type": "text", "text": "Hello", "cache_control": ephemeral}]}],
+        cache_control=ephemeral,
+        max_tokens=100,
+    )
+
+    assert "cache_control" not in body
+    assert "extra_content" not in body
+    assert json.loads(body)["messages"][0] == {"role": "system", "content": "Be brief."}
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_drops_the_cache_control_side_channel() -> None:
+    body = await _wire_body_of_openai_call(
+        "acompletion",
+        messages=[
+            {"role": "system", "content": "Be brief.", "extra_content": {"cache_control": {"type": "ephemeral"}}},
+            {"role": "user", "content": "Hello"},
+        ],
+    )
+
+    assert "cache_control" not in body
+    assert "extra_content" not in body
 
 
 class _City(BaseModel):
@@ -503,6 +572,58 @@ async def test_stream_with_basemodel_response_format_uses_create_json_schema() -
         mock_client.chat.completions.parse.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_acompletion_strips_extra_content_but_keeps_gemini_thought_signatures() -> None:
+    """Strict OpenAI-compatible backends reject extra_content, but Gemini's needs its google namespace back."""
+
+    class TestProvider(BaseOpenAIProvider):
+        PROVIDER_NAME = "TestProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    with patch("any_llm.providers.openai.base.AsyncOpenAI") as mock_openai_class:
+        mock_client = AsyncMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create = AsyncMock(return_value=MagicMock())
+
+        provider = TestProvider(api_key="test-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="test-model",
+                messages=[
+                    {"role": "user", "content": "Weather?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "extra_content": {"anthropic": {"signature": "sig"}},
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "get_weather", "arguments": "{}"},
+                                "extra_content": {"google": {"thought_signature": "c2ln"}},
+                            }
+                        ],
+                    },
+                ],
+            )
+        )
+
+        sent = mock_client.chat.completions.create.call_args.kwargs["messages"]
+        assert sent[1] == {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "c2ln"}},
+                }
+            ],
+        }
+
+
 def test_base_provider_maps_max_tokens_to_max_completion_tokens() -> None:
     params = CompletionParams(model_id="model", messages=[{"role": "user", "content": "hi"}], max_tokens=8192)
     result = BaseOpenAIProvider._convert_completion_params(params)
@@ -610,3 +731,256 @@ async def test_acompletion_with_dataclass_uses_create_not_parse() -> None:
 
         mock_client.chat.completions.create.assert_called_once()
         mock_client.chat.completions.parse.assert_not_called()
+
+
+class _TrackedStream(httpx.AsyncByteStream):
+    """An SSE body that records whether the SDK released it."""
+
+    def __init__(self, mode: str, api: str) -> None:
+        self.closed = False
+        self.mode = mode
+        self.api = api
+        self.waiting = asyncio.Event()
+
+    @override
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        if self.api == "chat":
+            yield (
+                b'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"gpt-5.6",'
+                b'"choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}\n\n'
+            )
+        else:
+            yield (
+                b'data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg",'
+                b'"output_index":0,"content_index":0,"delta":"Hi"}\n\n'
+            )
+        if self.mode == "failure":
+            message = "stream failed"
+            raise ValueError(message)
+        if self.mode == "cancellation":
+            self.waiting.set()
+            await asyncio.Event().wait()
+        yield b"data: [DONE]\n\n"
+
+    @override
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["exhaustion", "early_exit", "failure", "cancellation", "zero_consumption"])
+@pytest.mark.parametrize("api", ["chat", "responses"])
+@pytest.mark.parametrize("provider_type", [OpenaiProvider, SambanovaProvider])
+async def test_stream_releases_transport(mode: str, api: str, provider_type: type[BaseOpenAIProvider]) -> None:
+    """Every way a caller can leave a stream, including before the first read, releases the HTTP body."""
+    if provider_type is SambanovaProvider and api == "responses":
+        pytest.skip("SambaNova does not support the Responses API")
+    body = _TrackedStream(mode, api)
+    provider = provider_type(
+        api_key="key",
+        http_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=body)
+            )
+        ),
+    )
+    try:
+        stream = (
+            await provider.acompletion(model="gpt-5.6", messages=[{"role": "user", "content": "Hi"}], stream=True)
+            if api == "chat"
+            else await provider.aresponses(model="gpt-5.6", input_data="Hi", stream=True)
+        )
+        assert isinstance(stream, AsyncIterator)
+        if mode == "zero_consumption":
+            await stream.aclose()  # type: ignore[union-attr]
+        else:
+            await anext(stream)
+        if mode == "early_exit":
+            await stream.aclose()  # type: ignore[union-attr]
+        elif mode == "failure":
+            with (
+                pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+                pytest.raises(ValueError, match="stream failed"),
+            ):
+                await anext(stream)
+        elif mode == "cancellation":
+            task = asyncio.ensure_future(anext(stream))
+            await body.waiting.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        elif mode == "exhaustion":
+            assert [chunk async for chunk in stream] == []
+        assert body.closed
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["exhaustion", "read_error", "conversion_error", "cancellation"])
+async def test_chunk_stream_preserves_outcome_when_close_fails(outcome: str) -> None:
+    error = ValueError("original failure")
+
+    async def chunks() -> AsyncIterator[MagicMock]:
+        if outcome == "read_error":
+            raise error
+        if outcome == "cancellation":
+            raise asyncio.CancelledError
+        if outcome == "conversion_error":
+            yield MagicMock()
+
+    response = MagicMock(spec=AsyncStream)
+    response.__aiter__.side_effect = chunks
+    close = AsyncMock(side_effect=RuntimeError("cleanup failure"))
+    setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
+    convert = MagicMock(side_effect=error)
+    stream = OpenAIChunkStream(response, convert)
+    expected = (
+        StopAsyncIteration
+        if outcome == "exhaustion"
+        else asyncio.CancelledError
+        if outcome == "cancellation"
+        else ValueError
+    )
+    with pytest.raises(expected):
+        await anext(stream)
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    await stream.aclose()
+    close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("consume_first", [False, True])
+async def test_chunk_stream_stops_after_close(consume_first: bool) -> None:
+    response = MagicMock(spec=AsyncStream)
+    response.__aiter__.return_value = [MagicMock(), MagicMock()]
+    close = AsyncMock()
+    setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
+    stream = OpenAIChunkStream(response, MagicMock())
+    if consume_first:
+        await anext(stream)
+    await stream.aclose()
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    close.assert_awaited_once()
+
+
+def _multipart_file_part(request: httpx.Request) -> tuple[str | None, str, bytes]:
+    """Return the ``file`` part of a multipart request as ``(filename, content_type, payload)``."""
+    raw = b"Content-Type: " + request.headers["content-type"].encode() + b"\r\n\r\n" + request.content
+    message = email.message_from_bytes(raw)
+    for part in message.get_payload():
+        assert isinstance(part, email.message.Message)
+        if part.get_param("name", header="content-disposition") == "file":
+            payload = part.get_payload(decode=True)
+            assert isinstance(payload, bytes)
+            return part.get_filename(), part.get_content_type(), payload
+    msg = "no file part in request"
+    raise AssertionError(msg)
+
+
+def _transcription_transport() -> tuple[httpx.MockTransport, list[httpx.Request]]:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return httpx.Response(200, json={"text": "Hi Octonous, what is on my calendar tomorrow?"})
+
+    return httpx.MockTransport(handler), requests
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_named_bytesio_with_its_name_and_content_type() -> None:
+    """A named in-memory file reaches the wire as a file part with that name, as if read from disk."""
+    transport, requests = _transcription_transport()
+    audio = b"\x00\x00\x00\x1cftypM4A " + b"\x00" * 24
+    stream = io.BytesIO(audio)
+    stream.name = "audio_message.m4a"
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        result = await provider.atranscription("whisper-1", stream, language="en")
+    finally:
+        await provider.client.close()
+
+    assert result.text == "Hi Octonous, what is on my calendar tomorrow?"
+    assert len(requests) == 1
+    assert requests[0].url.path == "/v1/audio/transcriptions"
+    assert _multipart_file_part(requests[0]) == ("audio_message.m4a", "audio/mp4", audio)
+    assert b'name="language"\r\n\r\nen\r\n' in requests[0].content
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_bare_bytes_under_a_name_derived_from_their_container() -> None:
+    """Bare bytes no longer go out as an octet-stream named ``upload``, which OpenAI rejects."""
+    transport, requests = _transcription_transport()
+    audio = b"\x1a\x45\xdf\xa3" + b"\x00" * 28
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        await provider.atranscription("whisper-1", audio)
+    finally:
+        await provider.client.close()
+
+    assert _multipart_file_part(requests[0]) == ("audio.webm", "audio/webm", audio)
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_bytes_under_an_explicit_filename_and_mime_type() -> None:
+    transport, requests = _transcription_transport()
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        await provider.atranscription("whisper-1", b"opaque", filename="clip.mp3", mime_type="audio/mpeg")
+    finally:
+        await provider.client.close()
+
+    assert _multipart_file_part(requests[0]) == ("clip.mp3", "audio/mpeg", b"opaque")
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_a_path_under_its_file_name(tmp_path: pathlib.Path) -> None:
+    transport, requests = _transcription_transport()
+    clip = tmp_path / "voice.ogg"
+    clip.write_bytes(b"OggS" + b"\x00" * 28)
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        await provider.atranscription("whisper-1", clip)
+    finally:
+        await provider.client.close()
+
+    assert _multipart_file_part(requests[0]) == ("voice.ogg", "audio/ogg", clip.read_bytes())
+
+
+@pytest.mark.asyncio
+async def test_transcription_missing_path_raises_before_any_request(tmp_path: pathlib.Path) -> None:
+    transport, requests = _transcription_transport()
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=transport))
+    try:
+        with pytest.raises(InvalidRequestError, match="Cannot read audio path"):
+            await provider.atranscription("whisper-1", tmp_path / "missing.m4a")
+    finally:
+        await provider.client.close()
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["text", "srt", "vtt"])
+async def test_transcription_wraps_text_formats_in_a_transcription(response_format: str) -> None:
+    """The SDK hands back the raw body for text formats; callers always get a Transcription."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return httpx.Response(200, headers={"content-type": "text/plain; charset=utf-8"}, text="hello there\n")
+
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    try:
+        result = await provider.atranscription("whisper-1", b"ID3" + b"\x00" * 29, response_format=response_format)
+    finally:
+        await provider.client.close()
+
+    assert isinstance(result, Transcription)
+    assert result.text == "hello there\n"
+    assert f'name="response_format"\r\n\r\n{response_format}\r\n'.encode() in requests[0].content

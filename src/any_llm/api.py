@@ -1,11 +1,11 @@
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from typing import IO, Any, Literal
+from typing import Any, Literal
 
 from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
-from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.audio import AudioInput, AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.batch import Batch, BatchResult
 from any_llm.types.completion import (
     ChatCompletion,
@@ -14,6 +14,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.decide import DecideResponse, JSONContent, QuestionsInput
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedBetaMessage, ParsedMessage
 from any_llm.types.model import Model
@@ -599,7 +600,7 @@ def messages(
     service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
-    container: str | None = None,
+    container: str | dict[str, Any] | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,
     api_key: str | None = None,
@@ -616,9 +617,9 @@ def messages(
         max_tokens: Maximum number of tokens to generate.
         provider: Provider name to use for the request.
         system: System prompt (string or list of content blocks with optional cache_control).
-        temperature: Controls randomness (0.0 to 1.0).
-        top_p: Controls diversity via nucleus sampling.
-        top_k: Only sample from the top K options.
+        temperature: Controls randomness. Anthropic deprecates this for current Claude models.
+        top_p: Controls nucleus sampling. Anthropic deprecates this for current Claude models.
+        top_k: Restricts sampling to the top K options. Anthropic deprecates this for current Claude models.
         stream: Whether to stream the response.
         stop_sequences: Custom stop sequences.
         tools: List of tools in Anthropic format.
@@ -632,12 +633,19 @@ def messages(
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
         betas: Anthropic beta identifiers.
-        container: Container identifier for continuing a previous top-level container.
+        container: Container identifier, or an object with optional ``id`` and ``skills``.
+            A string reuses an existing container. An object selects Skills for a fresh
+            container or reuses one while attaching Skills. See
+            [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
-            providers with native support can stream schema-constrained Messages events.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``
+            for types or mappings with a non-empty schema dict. Mappings without one return
+            ``MessageResponse``. Providers with native support can stream schema-constrained
+            Messages events.
+            Native Anthropic typed beta requests return ``ParsedBetaMessage`` when
+            ``context_management`` is set or beta identifiers are supplied.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
@@ -649,8 +657,9 @@ def messages(
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse (or ParsedMessage when `output_format` is given), or an iterator of
-        MessageStreamEvent (if streaming).
+        MessageResponse, or ParsedMessage for a typed or schema-backed `output_format`.
+        Native Anthropic typed beta requests return ParsedBetaMessage instead.
+        Streaming calls return an iterator of MessageStreamEvent.
 
     """
     if provider is None:
@@ -707,7 +716,7 @@ async def amessages(
     service_tier: str | None = None,
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
-    container: str | None = None,
+    container: str | dict[str, Any] | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     api_key: str | None = None,
@@ -724,9 +733,9 @@ async def amessages(
         max_tokens: Maximum number of tokens to generate.
         provider: Provider name to use for the request.
         system: System prompt (string or list of content blocks with optional cache_control).
-        temperature: Controls randomness (0.0 to 1.0).
-        top_p: Controls diversity via nucleus sampling.
-        top_k: Only sample from the top K options.
+        temperature: Controls randomness. Anthropic deprecates this for current Claude models.
+        top_p: Controls nucleus sampling. Anthropic deprecates this for current Claude models.
+        top_k: Restricts sampling to the top K options. Anthropic deprecates this for current Claude models.
         stream: Whether to stream the response.
         stop_sequences: Custom stop sequences.
         tools: List of tools in Anthropic format.
@@ -740,12 +749,19 @@ async def amessages(
             strategy requires a supported model. Its `input_tokens` trigger value must be at
             least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
         betas: Anthropic beta identifiers.
-        container: Container identifier for continuing a previous top-level container.
+        container: Container identifier, or an object with optional ``id`` and ``skills``.
+            A string reuses an existing container. An object selects Skills for a fresh
+            container or reuses one while attaching Skills. See
+            [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
-            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``;
-            providers with native support can stream schema-constrained Messages events.
+            holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage``
+            for types or mappings with a non-empty schema dict. Mappings without one return
+            ``MessageResponse``. Providers with native support can stream schema-constrained
+            Messages events.
+            Native Anthropic typed beta requests return ``ParsedBetaMessage`` when
+            ``context_management`` is set or beta identifiers are supplied.
         timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
             An explicit ``None`` is treated the same as omitting it (the provider's default
             applies), so it cannot request an unbounded timeout. Providers that have no
@@ -757,8 +773,9 @@ async def amessages(
         **kwargs: Additional provider-specific arguments.
 
     Returns:
-        MessageResponse (or ParsedMessage when `output_format` is given), or an async iterator
-        of MessageStreamEvent (if streaming).
+        MessageResponse, or ParsedMessage for a typed or schema-backed `output_format`.
+        Native Anthropic typed beta requests return ParsedBetaMessage instead.
+        Streaming calls return an async iterator of MessageStreamEvent.
 
     """
     if provider is None:
@@ -990,9 +1007,11 @@ async def aimage_generation(
 
 def transcription(
     model: str,
-    file: bytes | IO[bytes],
+    file: AudioInput,
     *,
     provider: str | LLMProvider | None = None,
+    filename: str | None = None,
+    mime_type: str | None = None,
     language: str | None = None,
     prompt: str | None = None,
     response_format: str | None = None,
@@ -1009,9 +1028,14 @@ def transcription(
         model: Model identifier. **Recommended**: Use with separate `provider` parameter
             (e.g., model='whisper-1', provider='openai').
             **Alternative**: Combined format 'provider:model' (e.g., 'openai:whisper-1').
-        file: Audio file content as bytes or file-like object.
+        file: Audio to transcribe: bytes, a readable binary file object, or a path.
             Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
         provider: Provider name to use for the request (e.g., 'openai').
+        filename: Name to upload the audio under. Defaults to the path or file object's name,
+            else a name derived from the audio format found in the bytes. Providers reject
+            audio whose name and content type do not identify its format.
+        mime_type: Content type to upload the audio under. Defaults to one guessed from
+            `filename`, else from the bytes.
         language: The language of the input audio in ISO-639-1 format.
         prompt: Optional text to guide the model's style or continue a previous segment.
         response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
@@ -1037,6 +1061,8 @@ def transcription(
     return llm._transcription(
         model_name,
         file,
+        filename=filename,
+        mime_type=mime_type,
         language=language,
         prompt=prompt,
         response_format=response_format,
@@ -1048,9 +1074,11 @@ def transcription(
 
 async def atranscription(
     model: str,
-    file: bytes | IO[bytes],
+    file: AudioInput,
     *,
     provider: str | LLMProvider | None = None,
+    filename: str | None = None,
+    mime_type: str | None = None,
     language: str | None = None,
     prompt: str | None = None,
     response_format: str | None = None,
@@ -1067,9 +1095,14 @@ async def atranscription(
         model: Model identifier. **Recommended**: Use with separate `provider` parameter
             (e.g., model='whisper-1', provider='openai').
             **Alternative**: Combined format 'provider:model' (e.g., 'openai:whisper-1').
-        file: Audio file content as bytes or file-like object.
+        file: Audio to transcribe: bytes, a readable binary file object, or a path.
             Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
         provider: Provider name to use for the request (e.g., 'openai').
+        filename: Name to upload the audio under. Defaults to the path or file object's name,
+            else a name derived from the audio format found in the bytes. Providers reject
+            audio whose name and content type do not identify its format.
+        mime_type: Content type to upload the audio under. Defaults to one guessed from
+            `filename`, else from the bytes.
         language: The language of the input audio in ISO-639-1 format.
         prompt: Optional text to guide the model's style or continue a previous segment.
         response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
@@ -1096,6 +1129,8 @@ async def atranscription(
         AudioTranscriptionParams(
             model_id=model_name,
             file=file,
+            filename=filename,
+            mime_type=mime_type,
             language=language,
             prompt=prompt,
             response_format=response_format,  # type: ignore[arg-type]
@@ -1279,29 +1314,26 @@ async def amoderation(
     return await llm._amoderation(model_name, input, **kwargs)
 
 
-def _resolve_rerank_target(
+def _resolve_llm(
     model: str,
     provider: str | LLMProvider | None,
-    top_n: int | None,
-    max_tokens_per_doc: int | None,
     api_key: str | None,
     api_base: str | None,
     client_args: dict[str, Any] | None,
-    kwargs: dict[str, Any],
-) -> tuple[AnyLLM, str, dict[str, Any]]:
+) -> tuple[AnyLLM, str]:
+    """Create the provider for ``model`` and return it with the bare model name.
+
+    Called only by the public functions, so the legacy-format warning is raised one frame
+    further up than usual to still point at the caller's line.
+    """
     if provider is None:
-        provider_key, model_name = AnyLLM.split_model_provider(model)
+        provider_key, model_name = AnyLLM.split_model_provider(model, stacklevel=4)
     else:
         provider_key = AnyLLM.resolve_provider_key(provider)
         model_name = model
 
-    if top_n is not None:
-        kwargs["top_n"] = top_n
-    if max_tokens_per_doc is not None:
-        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
-
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
-    return llm, model_name, kwargs
+    return llm, model_name
 
 
 def rerank(
@@ -1338,9 +1370,11 @@ def rerank(
         NotImplementedError: If the provider does not support reranking.
 
     """
-    llm, model_name, kwargs = _resolve_rerank_target(
-        model, provider, top_n, max_tokens_per_doc, api_key, api_base, client_args, kwargs
-    )
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if max_tokens_per_doc is not None:
+        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
     return llm._rerank(model_name, query, documents, **kwargs)
 
 
@@ -1361,10 +1395,68 @@ async def arerank(
 
     See rerank() for full documentation.
     """
-    llm, model_name, kwargs = _resolve_rerank_target(
-        model, provider, top_n, max_tokens_per_doc, api_key, api_base, client_args, kwargs
-    )
-    return await llm._arerank(model_name, query, documents, **kwargs)
+    if top_n is not None:
+        kwargs["top_n"] = top_n
+    if max_tokens_per_doc is not None:
+        kwargs["max_tokens_per_doc"] = max_tokens_per_doc
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
+    return await llm.arerank(model_name, query, documents, **kwargs)
+
+
+def decide(
+    model: str,
+    state: JSONContent,
+    questions: QuestionsInput,
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> DecideResponse:
+    """Answer named yes/no, choice, and score questions about a state.
+
+    Args:
+        model: Provider-prefixed model ID (e.g., "typesafe:jev-latest").
+        state: Text, a JSON object, or an array the questions refer to.
+        questions: Names mapped to `Noul`, `Choice` or `Score` questions, their dict forms, or
+            objects with the same attributes.
+        provider: Provider name or enum. Inferred from model string if omitted.
+        api_key: Provider API key. Falls back to environment variable.
+        api_base: Provider API base URL. Falls back to environment variable.
+        client_args: Additional arguments passed to the provider client constructor.
+        **kwargs: Additional arguments for the call, such as `timeout` in seconds.
+
+    Returns:
+        DecideResponse with one answer per question, keyed by question name.
+
+    Raises:
+        NotImplementedError: If the provider does not support decide. Raised as is, with or
+            without unified exceptions.
+        pydantic.ValidationError: If `questions` is not a mapping of valid questions.
+
+    """
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
+    return llm.decide(model_name, state, questions, **kwargs)
+
+
+async def adecide(
+    model: str,
+    state: JSONContent,
+    questions: QuestionsInput,
+    *,
+    provider: str | LLMProvider | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> DecideResponse:
+    """Answer named yes/no, choice, and score questions about a state (async).
+
+    See decide() for full documentation.
+    """
+    llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
+    return await llm.adecide(model_name, state, questions, **kwargs)
 
 
 def list_models(

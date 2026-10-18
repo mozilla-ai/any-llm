@@ -1,9 +1,22 @@
 import os
+from pathlib import Path
 
 import pytest
 
 from any_llm.constants import LLMProvider
 from tests.constants import EXPECTED_PROVIDERS
+
+_INTEGRATION_DIR = Path(__file__).parent
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Retry integration tests, which fail transiently on provider overload and rate limits."""
+    # This hook receives every item collected in the session, including tests/unit and tests/docs
+    # when they run together, so the retry is limited to items under this directory.
+    for item in items:
+        if _INTEGRATION_DIR in item.path.parents:
+            item.add_marker(pytest.mark.flaky(reruns=5, reruns_delay=10))
+
 
 # otari is a hosted gateway (like openrouter). It has no server started in CI by default, so its
 # integration tests can only run against a real endpoint. otari authenticates with a platform
@@ -38,6 +51,8 @@ def _skip_unconfigured_gateway_providers(request: pytest.FixtureRequest) -> None
 _OTARI_SKIPPED_TESTS: dict[str, str] = {
     # Account / gateway capability gaps
     "test_embedding_providers_async": "no embedding model on the test account (otari-ai#1036)",
+    "test_rerank_providers_async": "test account routes only Anthropic upstreams, which have no rerank endpoint",
+    "test_rerank_top_n_async": "test account routes only Anthropic upstreams, which have no rerank endpoint",
     "test_list_models": "gateway /v1/models returns 404 (otari-ai#758)",
     "test_responses_async": "no Responses-API upstream on the test account (otari-ai#907)",
     "test_responses_format_basemodel": "no Responses-API upstream on the test account (otari-ai#907)",
@@ -48,6 +63,11 @@ _OTARI_SKIPPED_TESTS: dict[str, str] = {
     "test_retrieve_batch_results_with_api_function": "batch endpoints return 404 on the hosted platform (otari-ai#1117)",
     "test_completion_with_image": "gateway returns 502 on multimodal image content (otari#183)",
     "test_completion_with_pdf": "gateway returns 502 on multimodal pdf content (otari#183)",
+    # Checked 2026-10-09: the hosted control plane answers 404 for /audio/transcriptions instead of
+    # forwarding it to the data plane the way it forwards /chat/completions.
+    "test_transcription_named_file_object": "hosted api.otari.ai returns 404 on /audio/transcriptions",
+    "test_transcription_bare_bytes": "hosted api.otari.ai returns 404 on /audio/transcriptions",
+    "test_transcription_path": "hosted api.otari.ai returns 404 on /audio/transcriptions",
 }
 
 

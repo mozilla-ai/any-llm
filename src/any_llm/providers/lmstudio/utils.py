@@ -19,6 +19,7 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.types.model import Model
+from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -72,17 +73,24 @@ def _split_reasoning_from_content(content: str) -> tuple[str, str | None]:
     """Extract reasoning from the content (if present).
 
     Handles the two shapes LM Studio surfaces depending on the model:
-    - reasoning wrapped in <think></think> tags, where any text before the opening tag or
-      after the closing tag is preserved as content
+    - reasoning wrapped in XML tags, where any text before the opening tag or after the closing
+      tag is preserved as content. Parsing is delegated to
+      normalize_reasoning_from_provider_fields_and_xml_tags so every tagged block is collected
+      and no tag is left behind, and so the tag names stay in step with the rest of the library
+      rather than being just <think>.
     - a reasoning prefix terminated by a synthetic
       __LM_STUDIO_INTERNAL_LSEP_SYNTHETIC_REASONING_END_<hex>__ marker, emitted by reasoning
       models when a response_format is requested; the prefix is reasoning and the trailing text
-      (the structured JSON answer) is the content
+      (the structured JSON answer) is the content. This shape is LM Studio specific, so it stays
+      here.
     """
-    if "<think>" in content and "</think>" in content:
-        before, after_open = content.split("<think>", 1)
-        reasoning, after_close = after_open.split("</think>", 1)
-        return before + after_close, reasoning
+    message: dict[str, Any] = {"content": content}
+    normalize_reasoning_from_provider_fields_and_xml_tags(message)
+    reasoning = message.get("reasoning")
+    if reasoning is not None:
+        reasoning_text = reasoning.get("content") if isinstance(reasoning, dict) else None
+        return message["content"], reasoning_text or None
+
     match = _SYNTHETIC_REASONING_END.search(content)
     if match:
         return content[match.end() :], content[: match.start()]

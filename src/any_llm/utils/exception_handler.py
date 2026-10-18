@@ -4,7 +4,9 @@ import functools
 import os
 import re
 import warnings
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
+from collections.abc import Callable
+from decimal import Decimal, InvalidOperation
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, TypeVar
 
 from pydantic import ValidationError
 
@@ -18,15 +20,19 @@ from any_llm.exceptions import (
     InvalidRequestError,
     ModelNotFoundError,
     ProviderError,
+    ProviderFileNotFoundError,
     RateLimitError,
     UpstreamProviderError,
 )
 from any_llm.utils.aio import aclose_quietly
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import AsyncIterator
 
 F = TypeVar("F", bound="Callable[..., Any]")
+
+# A provider's own pick for an SDK exception; None defers to the shared classification.
+ExceptionClassifier: TypeAlias = Callable[[Exception], type[AnyLLMError] | None]
 
 
 ANY_LLM_UNIFIED_EXCEPTIONS_ENV = "ANY_LLM_UNIFIED_EXCEPTIONS"
@@ -34,7 +40,8 @@ ANY_LLM_UNIFIED_EXCEPTIONS_ENV = "ANY_LLM_UNIFIED_EXCEPTIONS"
 _DEPRECATION_WARNING = (
     "Provider-specific exceptions will be converted to unified any-llm exceptions "
     "(e.g., RateLimitError, AuthenticationError) in a future version. "
-    "To enable this behavior now, set the environment variable ANY_LLM_UNIFIED_EXCEPTIONS=1. "
+    "To enable this behavior now, pass unified_exceptions=True when creating a provider "
+    "or set the environment variable ANY_LLM_UNIFIED_EXCEPTIONS=1. "
     "The original exception will be available in the original_exception attribute."
 )
 
@@ -43,6 +50,22 @@ _DEPRECATION_WARNING = (
 # specific patterns must stay ahead of broader ones (for example the API-key
 # patterns before the bare "invalid"). Anything unmatched becomes a ProviderError.
 _ERROR_PATTERNS: tuple[tuple[str, type[AnyLLMError]], ...] = (
+    # The interpreter's own wording for a bad call, raised before anything is sent.
+    # First, because parameter names in the message ("safety_settings", "auth_token")
+    # would otherwise match the broader patterns below.
+    (
+        (
+            r"got an unexpected keyword argument|got multiple values for (?:keyword )?argument|"
+            r"missing \d+ required (?:positional |keyword-only )?arguments?|"
+            r"takes (?:from \d+ to )?\d+ positional arguments? but"
+        ),
+        InvalidRequestError,
+    ),
+    # A 200 body the SDK cannot parse (openai-style APIResponseValidationError, mistralai's
+    # ResponseValidationError) is a provider fault. Ahead of the broad patterns, because the
+    # SDK's "invalid" wording and the field paths it embeds would otherwise pick the class.
+    # Matched by name, not by 2xx status: Anthropic raises mid-stream errors with the stream's 200.
+    (r"responsevalidation", ProviderError),
     (r"ratelimit|rate_limit|too many requests|rate limit|quota exceeded", RateLimitError),
     (
         (
@@ -87,6 +110,22 @@ _STATUS_ERROR_CLASSES: dict[int, type[AnyLLMError]] = {
 # bad API key as a 400, so the patterns still decide here. InvalidRequestError
 # is the floor when nothing more specific matches.
 _REJECTED_REQUEST_STATUSES = frozenset({400, 422})
+
+# Every class the shared classification can pick. convert_exception passes the
+# metadata keywords to whichever class wins, and other AnyLLMError subclasses
+# (MissingApiKeyError, BatchNotCompleteError) reject them, so a provider's pick
+# is limited to this set.
+_CLASSIFIABLE_ERRORS: frozenset[type[AnyLLMError]] = frozenset(
+    {
+        *(error_class for _pattern, error_class in _ERROR_PATTERNS),
+        *_STATUS_ERROR_CLASSES.values(),
+        InvalidRequestError,
+        ProviderError,
+    }
+)
+
+
+_URL_PATTERN = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
 
 
 def _classify_by_message(exc_text: str) -> type[AnyLLMError]:
@@ -137,16 +176,18 @@ class _ErrorMetadata(NamedTuple):
 
 def _extract_status_code(exception: Exception) -> int | None:
     """Read the HTTP status off the exception, or off its attached response."""
-    status_code = getattr(exception, "status_code", None)
-    if isinstance(status_code, int):
-        return status_code
+    # Most SDKs spell it status_code; some (aiohttp, typesafe-sdk) spell it status
+    for name in ("status_code", "status"):
+        status_code = getattr(exception, name, None)
+        if isinstance(status_code, int) and not isinstance(status_code, bool):
+            return status_code
 
     response = getattr(exception, "response", None)
     if response is not None:
         # httpx and requests spell it status_code; aiohttp spells it status
         for name in ("status_code", "status"):
             response_status = getattr(response, name, None)
-            if isinstance(response_status, int):
+            if isinstance(response_status, int) and not isinstance(response_status, bool):
                 return response_status
 
     return None
@@ -204,39 +245,84 @@ def _extract_error_metadata(exception: Exception) -> _ErrorMetadata:
     )
 
 
-def _extract_retry_after(exception: Exception) -> str | None:
-    """Read the ``Retry-After`` header off the exception's attached response.
+def _header_value(exception: Exception, names: tuple[str, ...]) -> str | None:
+    """Return the first usable header among ``names`` from the exception, then its response.
 
-    Returned verbatim, because the header is either a number of seconds or an
-    HTTP-date and normalizing it would throw away the caller's ability to tell
-    the two apart. ``httpx.Headers`` lookups are case-insensitive, but a plain
-    dict is not, so both spellings are tried.
+    ``httpx.Headers`` lookups are case-insensitive, but a plain dict is not, so
+    callers pass both spellings. Only a string or a plain int is usable; bool is
+    excluded because ``True`` would stringify to ``"True"``.
     """
-    headers = getattr(getattr(exception, "response", None), "headers", None)
-    get_header = getattr(headers, "get", None)
-    if not callable(get_header):
-        return None
+    for headers in (
+        getattr(exception, "headers", None),
+        getattr(getattr(exception, "response", None), "headers", None),
+    ):
+        get_header = getattr(headers, "get", None)
+        if not callable(get_header):
+            continue
 
-    for name in ("retry-after", "Retry-After"):
-        value = get_header(name)
-        if isinstance(value, str):
-            return value
-        if isinstance(value, int) and not isinstance(value, bool):
-            return str(value)
+        for name in names:
+            value = get_header(name)
+            if isinstance(value, str):
+                return value
+            if isinstance(value, int) and not isinstance(value, bool):
+                return str(value)
 
     return None
+
+
+def _milliseconds_to_seconds(value: str) -> str | None:
+    """Convert a millisecond count to a decimal seconds string, or None if it is not a valid count."""
+    try:
+        milliseconds = Decimal(value.strip())
+    except InvalidOperation:
+        return None
+    if not milliseconds.is_finite() or milliseconds < 0:
+        return None
+    return format(milliseconds / 1000, "f")
+
+
+def _extract_retry_after(exception: Exception) -> str | None:
+    """Read the retry delay off the exception or its attached response.
+
+    ``Retry-After`` is returned verbatim, because it is either a number of
+    seconds or an HTTP-date and normalizing it would throw away the caller's
+    ability to tell the two apart. When it is absent, ``retry-after-ms`` (sent
+    by some SDKs and APIs) is converted to seconds.
+    """
+    retry_after = _header_value(exception, ("retry-after", "Retry-After"))
+    if retry_after is not None:
+        return retry_after
+
+    retry_after_ms = _header_value(exception, ("retry-after-ms", "Retry-After-Ms"))
+    if retry_after_ms is None:
+        return None
+    return _milliseconds_to_seconds(retry_after_ms)
+
+
+def _provider_pick(classify: ExceptionClassifier, exception: Exception) -> type[AnyLLMError] | None:
+    """Return the provider's class for ``exception``, or None to defer to the shared classification."""
+    try:
+        picked = classify(exception)
+        usable = picked in _CLASSIFIABLE_ERRORS
+    except Exception:
+        # A failing hook must not replace the provider's error with its own.
+        return None
+    return picked if usable else None
 
 
 def convert_exception(
     exception: Exception,
     provider_name: str,
+    *,
+    classify: ExceptionClassifier | None = None,
 ) -> AnyLLMError:
     """Convert a provider-specific exception to an AnyLLMError.
 
-    Classifies by the HTTP status the provider returned where that is
-    unambiguous, falling back to the exception's type name and message content
-    otherwise. Structured HTTP metadata the SDK exposed (``status_code``,
-    ``code``, ``param``, ``type``) is carried onto the unified exception so
+    Uses the class ``classify`` picks when it picks one of the shared classes.
+    Otherwise classifies by the HTTP status the provider returned where that is
+    unambiguous, falling back to the exception's type name and message content.
+    Structured HTTP metadata the SDK exposed (``status_code``, ``code``,
+    ``param``, ``type``) is carried onto the unified exception so
     consumers can classify a failure without unwrapping ``original_exception``,
     and a :class:`~any_llm.exceptions.RateLimitError` additionally carries the
     ``Retry-After`` header when the provider sent one.
@@ -244,6 +330,9 @@ def convert_exception(
     Args:
         exception: The original exception from the SDK
         provider_name: Name of the provider that raised the exception
+        classify: The provider's classification, for SDK exceptions whose
+            status and message mislead the shared one. Ignored when it raises
+            or returns a class outside the shared set.
 
     Returns:
         An AnyLLMError subclass instance
@@ -252,9 +341,14 @@ def convert_exception(
     if isinstance(exception, AnyLLMError):
         return exception
 
-    exc_text = f"{type(exception).__name__.lower()} {str(exception).lower()}"
     metadata = _extract_error_metadata(exception)
-    error_class = _classify(exc_text, metadata.status_code)
+    error_class = _provider_pick(classify, exception) if classify is not None else None
+    if error_class is None:
+        # URLs are dropped because some SDKs prefix the request endpoint, and a hostname such as
+        # "safety-api" or "auth-proxy" must not decide the class.
+        message = _URL_PATTERN.sub("", str(exception))
+        exc_text = f"{type(exception).__name__.lower()} {message.lower()}"
+        error_class = _classify(exc_text, metadata.status_code)
 
     error = error_class(
         message=str(exception),
@@ -273,17 +367,28 @@ def convert_exception(
     return error
 
 
-def _handle_exception(exception: Exception, provider_name: str) -> None:
+def _handle_exception(
+    exception: Exception,
+    provider_name: str,
+    *,
+    file_operation: bool = False,
+    unified_exceptions: bool | None = None,
+    classify: ExceptionClassifier | None = None,
+) -> None:
     """Handle an exception based on the unified exceptions flag.
 
     Args:
         exception: The original exception
         provider_name: Name of the provider for error context
+        file_operation: Whether a missing resource refers to a file.
+        unified_exceptions: Per-instance override; None defers to the environment variable.
+        classify: The provider's classification, passed to ``convert_exception``.
 
     Raises:
         AnyLLMError: If unified exceptions are enabled
         Exception: The original exception if unified exceptions are disabled
         pydantic.ValidationError: Always re-raised unchanged
+        NotImplementedError: Always re-raised unchanged
 
     """
     # AnyLLMError subclasses are already unified exceptions and should not be re-processed
@@ -298,8 +403,29 @@ def _handle_exception(exception: Exception, provider_name: str) -> None:
     if isinstance(exception, ValidationError):
         raise exception
 
-    if os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on"):
-        converted = convert_exception(exception, provider_name)
+    # A feature the provider does not implement is reported before anything is sent. That is a
+    # capability gap, not a provider fault, so it keeps its type for callers to catch.
+    if isinstance(exception, NotImplementedError):
+        raise exception
+
+    # Resolved at raise time rather than at construction, so a process that flips the
+    # environment variable after building a provider still sees the change.
+    if unified_exceptions is None:
+        unified_exceptions = os.environ.get(ANY_LLM_UNIFIED_EXCEPTIONS_ENV, "").lower() in ("1", "true", "yes", "on")
+
+    if unified_exceptions:
+        converted = convert_exception(exception, provider_name, classify=classify)
+        # Only the shared 404 outcome becomes a missing file, so a provider's own pick stands.
+        if file_operation and converted.status_code == 404 and isinstance(converted, ModelNotFoundError):
+            converted = ProviderFileNotFoundError(
+                message=converted.message,
+                original_exception=exception,
+                provider_name=provider_name,
+                status_code=404,
+                code=converted.code,
+                param=converted.param,
+                error_type=converted.error_type,
+            )
         raise converted from exception
 
     warnings.warn(
@@ -310,15 +436,69 @@ def _handle_exception(exception: Exception, provider_name: str) -> None:
     raise exception
 
 
-def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
+class _ExceptionHandlingAsyncIterator:
+    """Handle streaming exceptions while allowing immediate cleanup before iteration."""
+
+    def __init__(self, async_iter: Any, handle: Callable[[Exception], None]) -> None:
+        self._async_iter = async_iter
+        self._iterator: AsyncIterator[Any] | None = None
+        self._handle = handle
+        self._closed = False
+
+    def __aiter__(self) -> _ExceptionHandlingAsyncIterator:
+        return self
+
+    async def __anext__(self) -> Any:
+        if self._closed:
+            raise StopAsyncIteration
+        try:
+            if self._iterator is None:
+                self._iterator = aiter(self._async_iter)
+            return await anext(self._iterator)
+        except StopAsyncIteration:
+            await self.aclose()
+            raise
+        except Exception as exc:
+            try:
+                self._handle(exc)
+            finally:
+                await self.aclose()
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            self._closed = True
+            await aclose_quietly(self._async_iter)
+
+
+def provider_exception_handler(provider: Any, *, file_operation: bool = False) -> Callable[[Exception], None]:
+    """Bind ``_handle_exception`` to a provider's name, unified-exceptions setting and classifier.
+
+    A ``functools.partial`` rather than a closure, because a closure would add a
+    frame and the deprecation warning's ``stacklevel`` would no longer point at
+    the caller.
+    """
+    return functools.partial(
+        _handle_exception,
+        provider_name=getattr(provider, "PROVIDER_NAME", "unknown"),
+        file_operation=file_operation,
+        unified_exceptions=getattr(provider, "_unified_exceptions", None),
+        classify=getattr(provider, "_classify_exception", None),
+    )
+
+
+def handle_exceptions(*, wrap_streaming: bool = False, file_operation: bool = False) -> Callable[[F], F]:
     """Handle exceptions in async methods.
 
     This decorator wraps async methods to catch provider-specific exceptions
     and convert them to unified AnyLLMError subclasses (when enabled).
     It expects the decorated method to be a method on a class with a
-    `PROVIDER_NAME` attribute.
+    `PROVIDER_NAME` attribute, and uses its `_classify_exception` when present.
 
     Args:
+        file_operation: Classify a missing resource as a file rather than a model.
         wrap_streaming: If True, the result will be wrapped with an async iterator
             wrapper if it's an async iterator. This is useful for streaming responses
             where exceptions may occur during iteration.
@@ -331,32 +511,20 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
     def decorator(func: F) -> F:
         if wrap_streaming:
 
-            async def _wrap_async_iterator(
-                async_iter: Any,
-                provider_name: str,
-            ) -> Any:
-                """Wrap an async iterator to handle exceptions during iteration."""
-                try:
-                    async for item in async_iter:
-                        yield item
-                except Exception as e:
-                    _handle_exception(e, provider_name)
-                finally:
-                    await aclose_quietly(async_iter)
-
             @functools.wraps(func)
             async def streaming_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-                provider_name = getattr(self, "PROVIDER_NAME", "unknown")
                 try:
                     result = await func(self, *args, **kwargs)
                 except Exception as e:
-                    _handle_exception(e, provider_name)
+                    provider_exception_handler(self, file_operation=file_operation)(e)
                     return None  # unreachable, but helps type checkers
 
                 # Check if result is an async iterator (streaming response)
                 # If so, wrap it to handle exceptions during iteration
                 if hasattr(result, "__aiter__"):
-                    return _wrap_async_iterator(result, provider_name)
+                    return _ExceptionHandlingAsyncIterator(
+                        result, provider_exception_handler(self, file_operation=file_operation)
+                    )
 
                 # Non-streaming response, return as-is
                 return result
@@ -365,11 +533,10 @@ def handle_exceptions(*, wrap_streaming: bool = False) -> Callable[[F], F]:
 
         @functools.wraps(func)
         async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-            provider_name = getattr(self, "PROVIDER_NAME", "unknown")
             try:
                 return await func(self, *args, **kwargs)
             except Exception as e:
-                _handle_exception(e, provider_name)
+                provider_exception_handler(self, file_operation=file_operation)(e)
 
         return wrapper  # type: ignore[return-value]
 

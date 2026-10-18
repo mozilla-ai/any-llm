@@ -1,21 +1,35 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from anthropic import transform_schema
 from pydantic import BaseModel
 
-from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
+from any_llm.exceptions import (
+    AnyLLMError,
+    AuthenticationError,
+    BatchNotCompleteError,
+    GatewayTimeoutError,
+    InsufficientFundsError,
+    InvalidRequestError,
+    ModelNotFoundError,
+    ProviderError,
+    RateLimitError,
+)
 from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams
 from any_llm.types.batch import BatchResult
 from any_llm.types.completion import ChatCompletion, CompletionParams
 from any_llm.types.image import ImageGenerationParams
 from any_llm.types.model import Model
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 pytest.importorskip("otari")
 
@@ -29,6 +43,8 @@ from any_llm.providers.otari.otari import (
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
+    MessageDeltaEvent,
+    MessageIterationUsage,
     MessageResponse,
     MessagesParams,
     MessageStartEvent,
@@ -139,6 +155,65 @@ _OTARI_ENV_CLEARED = {
     "OTARI_API_BASE": "",
     "GATEWAY_API_BASE": "",
 }
+
+
+@pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
+@pytest.mark.parametrize("suffix", ["/v1", "/v1/", "/api/v1", "/api/v1/"])
+@pytest.mark.parametrize("ending", ["", "?x=1", "#tag", "?x=1#tag"])
+def test_otari_rejects_api_base_with_api_prefix(source: str, suffix: str, ending: str) -> None:
+    api_base = f"https://self.example.com{suffix}{ending}"
+    env = {**_OTARI_ENV_CLEARED}
+    if source != "explicit":
+        env[source] = api_base
+    with (
+        patch.dict("os.environ", env, clear=False),
+        patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client,
+        pytest.raises(ValueError, match="api_base must be the gateway origin") as exc_info,
+    ):
+        OtariProvider(api_base=api_base if source == "explicit" else None)
+
+    assert "Pass 'https://self.example.com' instead." in str(exc_info.value)
+    mock_client.assert_not_called()
+
+
+@pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
+@pytest.mark.parametrize("ending", ["?x=1", "#tag", "/?x=1#tag"])
+def test_otari_rejects_api_base_with_query_or_fragment(source: str, ending: str) -> None:
+    api_base = f"https://self.example.com{ending}"
+    env = {**_OTARI_ENV_CLEARED}
+    if source != "explicit":
+        env[source] = api_base
+    with (
+        patch.dict("os.environ", env, clear=False),
+        patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client,
+        pytest.raises(ValueError, match="without a query string or fragment"),
+    ):
+        OtariProvider(api_base=api_base if source == "explicit" else None)
+
+    mock_client.assert_not_called()
+
+
+@pytest.mark.parametrize("source", ["explicit", "OTARI_API_BASE", "GATEWAY_API_BASE"])
+@pytest.mark.parametrize("api_base", ["https://self.example.com", "https://self.example.com/"])
+def test_otari_accepts_gateway_origin(source: str, api_base: str) -> None:
+    env = {**_OTARI_ENV_CLEARED}
+    if source != "explicit":
+        env[source] = api_base
+    with (
+        patch.dict("os.environ", env, clear=False),
+        patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client,
+    ):
+        OtariProvider(api_base=api_base if source == "explicit" else None)
+
+    assert mock_client.call_args.kwargs["api_base"] == "https://self.example.com"
+
+
+@patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_API_BASE": "https://ignored.example.com/v1"}, clear=False)
+def test_otari_explicit_origin_takes_precedence_over_env() -> None:
+    with patch("any_llm.providers.otari.otari.AsyncOtariClient") as mock_client:
+        OtariProvider(api_base="https://self.example.com")
+
+    assert mock_client.call_args.kwargs["api_base"] == "https://self.example.com"
 
 
 @patch.dict("os.environ", {**_OTARI_ENV_CLEARED, "OTARI_API_KEY": "tk_platform"}, clear=False)
@@ -392,8 +467,50 @@ async def test_otari_transcription_json_format_returns_text() -> None:
 
     result = await provider._atranscription(params)
 
-    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio", language="en")
+    mocked_client.transcription.assert_awaited_once_with(
+        model="whisper", file=b"audio", filename="audio", language="en"
+    )
     assert result.text == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_otari_transcription_forwards_the_file_object_name() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hello world"}, text=None)
+    provider = _build_provider(mocked_client)
+    stream = io.BytesIO(b"audio")
+    stream.name = "audio_message.m4a"
+    params = AudioTranscriptionParams(model_id="whisper", file=stream)
+
+    await provider._atranscription(params)
+
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio", filename="audio_message.m4a")
+
+
+@pytest.mark.asyncio
+async def test_otari_transcription_forwards_an_explicit_filename_for_bytes() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hello world"}, text=None)
+    provider = _build_provider(mocked_client)
+    params = AudioTranscriptionParams(model_id="whisper", file=b"audio", filename="clip.webm", mime_type="audio/webm")
+
+    await provider._atranscription(params)
+
+    # The otari SDK derives the content type from the filename, so only the name travels.
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio", filename="clip.webm")
+
+
+@pytest.mark.asyncio
+async def test_otari_transcription_names_unnamed_bytes_from_their_container() -> None:
+    mocked_client = _mock_otari_client()
+    mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hello world"}, text=None)
+    provider = _build_provider(mocked_client)
+    webm = b"\x1a\x45\xdf\xa3" + b"\x00" * 12
+    params = AudioTranscriptionParams(model_id="whisper", file=webm)
+
+    await provider._atranscription(params)
+
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=webm, filename="audio.webm")
 
 
 @pytest.mark.asyncio
@@ -410,18 +527,15 @@ async def test_otari_transcription_text_format_returns_text() -> None:
 
 @pytest.mark.asyncio
 async def test_otari_transcription_reads_file_handle() -> None:
-    import io
-
     mocked_client = _mock_otari_client()
     mocked_client.transcription.return_value = SimpleNamespace(json={"text": "hi"}, text=None)
     provider = _build_provider(mocked_client)
-    # IO handles do not pass AudioTranscriptionParams validation, so build the params
-    # without validation to exercise the file-handle (.read()) branch directly.
-    params = AudioTranscriptionParams.model_construct(model_id="whisper", file=io.BytesIO(b"audio-bytes"))
+    params = AudioTranscriptionParams(model_id="whisper", file=io.BytesIO(b"audio-bytes"))
 
     await provider._atranscription(params)
 
-    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio-bytes")
+    # No name on the handle and no recognizable container in the bytes: the SDK's default name.
+    mocked_client.transcription.assert_awaited_once_with(model="whisper", file=b"audio-bytes", filename="audio")
 
 
 @pytest.mark.asyncio
@@ -817,20 +931,76 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
-async def test_otari_amessages_rejects_container_until_sdk_supports_it() -> None:
+@pytest.mark.parametrize("stream", [False, True])
+async def test_otari_amessages_forwards_container(stream: bool) -> None:
     client = _mock_otari_client()
+    client.message.return_value = (
+        _MockMetadataStream([{"type": "message_stop"}])
+        if stream
+        else SimpleNamespace(data=_message_response_payload(), request_id=None)
+    )
     provider = _build_provider(client)
     params = MessagesParams(
         model="claude-sonnet-4-5",
         messages=[{"role": "user", "content": "Continue"}],
         max_tokens=100,
         container="container_123",
+        stream=stream,
     )
 
-    with pytest.raises(UnsupportedParameterError, match="container"):
-        await provider._amessages(params)
+    result = await provider._amessages(params)
+    if stream:
+        assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+        collected = [event async for event in result]
+        assert len(collected) == 1
+        assert isinstance(collected[0], MessageStopEvent)
+    else:
+        assert isinstance(result, MessageResponse)
+        assert result.id == "msg_1"
 
-    client.with_response_metadata.message.assert_not_called()
+    client.message.assert_awaited_once()
+    call_kwargs = client.message.call_args.kwargs
+    assert call_kwargs["container"] == "container_123"
+    if stream:
+        assert call_kwargs["stream"] is True
+    else:
+        assert "stream" not in call_kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_otari_amessages_forwards_container_skills_object(stream: bool) -> None:
+    client = _mock_otari_client()
+    client.message.return_value = (
+        _MockMetadataStream([{"type": "message_stop"}])
+        if stream
+        else SimpleNamespace(data=_message_response_payload(), request_id=None)
+    )
+    provider = _build_provider(client)
+    container = {
+        "id": "container_123",
+        "skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}],
+    }
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Continue"}],
+        max_tokens=100,
+        container=container,
+        stream=stream,
+    )
+
+    result = await provider._amessages(params)
+    if stream:
+        assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+        collected = [event async for event in result]
+        assert len(collected) == 1
+        assert isinstance(collected[0], MessageStopEvent)
+    else:
+        assert isinstance(result, MessageResponse)
+        assert result.id == "msg_1"
+
+    client.message.assert_awaited_once()
+    assert client.message.call_args.kwargs["container"] == container
 
 
 @pytest.mark.asyncio
@@ -1168,7 +1338,127 @@ async def test_otari_amessages_streaming_yields_typed_events_and_skips_unknown()
     assert client.message.call_args.kwargs["stream"] is True
 
 
+async def _open_otari_message_stream(
+    raw_events: list[dict[str, Any]], request_id: str | None = None
+) -> AsyncIterator[Any]:
+    client = _mock_otari_client()
+    client.with_response_metadata.message.return_value = _MockMetadataStream(raw_events, request_id=request_id)
+    provider = _build_provider(client)
+    params = MessagesParams(
+        model="claude-sonnet-4-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        stream=True,
+    )
+    result = await provider._amessages(params)
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    return result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_type", "expected_class"),
+    [
+        ("invalid_request_error", InvalidRequestError),
+        ("request_too_large", InvalidRequestError),
+        ("authentication_error", AuthenticationError),
+        ("permission_error", AuthenticationError),
+        ("billing_error", InsufficientFundsError),
+        ("not_found_error", ModelNotFoundError),
+        ("rate_limit_error", RateLimitError),
+        ("timeout_error", GatewayTimeoutError),
+        ("api_error", ProviderError),
+        ("overloaded_error", ProviderError),
+        ("some_future_error", ProviderError),
+    ],
+)
+async def test_otari_amessages_streaming_error_event_raises_mapped_exception(
+    error_type: str, expected_class: type[AnyLLMError]
+) -> None:
+    raw_events: list[dict[str, Any]] = [
+        {"type": "error", "error": {"type": error_type, "message": "Upstream went away"}},
+    ]
+    stream = await _open_otari_message_stream(raw_events, request_id="req-err-1")
+
+    with pytest.raises(expected_class) as exc_info:
+        _ = [event async for event in stream]
+
+    assert type(exc_info.value) is expected_class
+    assert exc_info.value.provider_name == "otari"
+    assert exc_info.value.error_type == error_type
+    assert "Upstream went away" in exc_info.value.message
+    assert error_type in exc_info.value.message
+    assert "req-err-1" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_error_event_after_content_raises() -> None:
+    raw_events: list[dict[str, Any]] = [
+        {"type": "message_start", "message": _message_response_payload()},
+        {"type": "ping"},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}},
+        {"type": "message_stop"},
+    ]
+    stream = await _open_otari_message_stream(raw_events)
+
+    collected = [await anext(stream) for _ in range(3)]
+    with pytest.raises(ProviderError, match="Overloaded") as exc_info:
+        await anext(stream)
+
+    # The ping is skipped and the content before the error is still delivered.
+    assert [type(event) for event in collected] == [
+        MessageStartEvent,
+        ContentBlockStartEvent,
+        ContentBlockDeltaEvent,
+    ]
+    assert exc_info.value.error_type == "overloaded_error"
+    assert "request_id" not in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_otari_amessages_streaming_malformed_error_event_raises_provider_error() -> None:
+    stream = await _open_otari_message_stream([{"type": "error", "error": "boom"}])
+
+    with pytest.raises(ProviderError) as exc_info:
+        _ = [event async for event in stream]
+
+    assert type(exc_info.value) is ProviderError
+    assert exc_info.value.error_type is None
+    assert "error type: unknown" in exc_info.value.message
+
+
 def test_message_stream_event_from_dict_returns_none_for_unknown_type() -> None:
     assert _message_stream_event_from_dict({"type": "ping"}) is None
     assert _message_stream_event_from_dict({"no_type": True}) is None
     assert isinstance(_message_stream_event_from_dict({"type": "message_stop"}), MessageStopEvent)
+
+
+def test_message_stream_event_from_dict_accepts_message_iteration_usage_without_model() -> None:
+    """A code-execution turn's message_delta reports iterations whose ``message`` entry has no ``model``."""
+    event = _message_stream_event_from_dict(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {
+                "input_tokens": 90,
+                "output_tokens": 12,
+                "iterations": [
+                    {
+                        "type": "message",
+                        "input_tokens": 90,
+                        "output_tokens": 12,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert isinstance(event, MessageDeltaEvent)
+    assert event.usage.iterations is not None
+    assert isinstance(event.usage.iterations[0], MessageIterationUsage)
+    assert event.usage.iterations[0].model is None

@@ -147,6 +147,25 @@ async def test_timeout_forwarded_to_provider_not_params(
 
 
 @pytest.mark.asyncio
+async def test_transport_options_forwarded_to_provider_not_params() -> None:
+    """extra_headers/extra_query are SDK request options, and ResponsesParams forbids them as fields."""
+    llm = AnyLLM.create("openai", api_key="test-key")
+    with patch.object(type(llm), "_aresponses", new=AsyncMock(return_value=object())) as mock_aresponses:
+        await llm.aresponses(
+            "gpt-4.1-mini",
+            "hello",
+            extra_headers={"x-request-id": "request-123"},
+            extra_query={"trace": "enabled"},
+        )
+
+    assert mock_aresponses.call_args.kwargs["extra_headers"] == {"x-request-id": "request-123"}
+    assert mock_aresponses.call_args.kwargs["extra_query"] == {"trace": "enabled"}
+    params = mock_aresponses.call_args.args[0].model_dump(exclude_none=True)
+    assert "extra_headers" not in params
+    assert "extra_query" not in params
+
+
+@pytest.mark.asyncio
 async def test_aresponses_helper_forwards_timeout_to_provider() -> None:
     """The public aresponses() helper routes timeout through to the provider call."""
     provider = AnyLLM.create("openai", api_key="test-key")

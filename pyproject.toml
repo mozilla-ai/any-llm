@@ -10,9 +10,9 @@ requires-python = ">=3.11"
 version = "0.0.0-dev" # There is a regex in the release.yaml file that looks for this version string to set the version in the pyproject.toml file. Do not change this version string without updating the regex.
 dependencies = [
   "pydantic>2,<3",
-  "openai>=2.18.0",
+  "openai>=2.18.0,<4",
   "openresponses-types>=2.4.0,<3",
-  "anthropic>=0.119.0,<1",
+  "anthropic>=0.124.0,<1",
   "rich",
   "httpx",
   "typing_extensions>=4.5.0",
@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 
 all = [
-  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,gmi,groq,bedrock,azure,azureanthropic,azureopenai,cascadia,watsonx,together,sambanova,ollama,moonshot,neosantara,nebius,xai,databricks,deepseek,inception,openai,otari,openrouter,portkey,qiniu,requesty,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,sagemaker,github,zai,minimax,mzai,vllm,dashscope,deepinfra,atlascloud,telnyx,edenai,kenari,meta]"
+  "any-llm-sdk[mistral,anthropic,huggingface,gemini,vertexai,vertexaianthropic,cohere,cerebras,fireworks,gmi,groq,bedrock,azure,azureanthropic,azureopenai,cascadia,watsonx,together,sambanova,ollama,moonshot,neosantara,nebius,xai,databricks,deepseek,inception,openai,otari,openrouter,portkey,qiniu,requesty,lmstudio,llama,voyage,perplexity,platform,llamafile,llamacpp,liner,sagemaker,github,zai,minimax,mzai,vllm,dashscope,deepinfra,atlascloud,telnyx,edenai,kenari,meta,typesafe]"
 ]
 
 platform = [
@@ -39,7 +39,8 @@ mistral = [
 anthropic = []
 
 gemini = [
-  "google-genai>=1.70.0",
+  # 2.17.0 first models the stable Interactions API's diagnostic errors field.
+  "google-genai>=2.17.0",
   "google-cloud-storage",
 ]
 
@@ -53,7 +54,7 @@ vertexaianthropic = [
 ]
 
 azureanthropic = [
-  "anthropic>=0.119.0,<1",
+  "anthropic>=0.124.0,<1",
 ]
 
 huggingface = [
@@ -61,7 +62,7 @@ huggingface = [
 ]
 
 cohere = [
-  "cohere",
+  "cohere>=7.0.5",
 ]
 
 cerebras = [
@@ -117,11 +118,12 @@ deepseek = []
 fireworks = []
 gmi = []
 otari = [
-  "otari>=0.3.0",
+  "otari>=0.4.0,<0.5",
 ]
 github = []
 inception = []
 kenari = []
+liner = []
 llama = []
 llamacpp = []
 llamafile = []
@@ -143,6 +145,10 @@ dashscope = []
 deepinfra = []
 edenai = []
 telnyx = []
+
+typesafe = [
+  "typesafe-sdk>=0.7.2,<0.8",
+]
 
 [project.urls]
 Documentation = "https://docs.mozilla.ai/any-llm/"
@@ -244,8 +250,6 @@ ignore_missing_imports = true # pytest related modules are not found
 
 [tool.pytest.ini_options]
 timeout = 120
-reruns = 5
-reruns_delay = 10
 filterwarnings = [
   # Silence Pydantic V1-style validator deprecation warnings coming from fireworks only
   "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",

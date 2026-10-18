@@ -133,6 +133,41 @@ def test_convert_completion_response_extracts_cached_tokens() -> None:
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 80
+    dumped = result.usage.model_dump()
+    assert dumped["prompt_cache_hit_tokens"] == 80
+    assert dumped["prompt_cache_miss_tokens"] == 20
+
+
+def test_convert_completion_response_preserves_zero_cache_hit_tokens() -> None:
+    """A reported zero hit count stays distinguishable from a response without cache accounting."""
+    response = OpenAIChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "deepseek-chat",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Hello!"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "prompt_cache_hit_tokens": 0,
+                "prompt_cache_miss_tokens": 100,
+            },
+        }
+    )
+
+    result = DeepseekProvider._convert_completion_response(response)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 0
 
 
 def test_convert_completion_response_without_cached_tokens() -> None:
@@ -466,6 +501,149 @@ def test_deepseek_treats_explicit_none_extra_body_as_absent(
     result = DeepseekProvider._convert_completion_params(params, extra_body=None)
 
     assert result["extra_body"] == expected_extra_body
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "auto", "low", "medium", "high", "xhigh", "max"])
+@pytest.mark.parametrize("tool_choice", ["auto", "none"])
+def test_deepseek_forwards_supported_tool_choice_when_thinking_effectively_enabled(
+    reasoning_effort: ReasoningEffort | None,
+    tool_choice: str,
+) -> None:
+    """Thinking supports both automatic tool selection and disabling tool calls."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort=reasoning_effort,
+        tool_choice=tool_choice,
+    )
+
+    result = DeepseekProvider._convert_completion_params(params)
+
+    assert result["tool_choice"] == tool_choice
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "auto", "low", "medium", "high", "xhigh", "max"])
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        "required",
+        {"type": "function", "function": {"name": "get_weather"}},
+    ],
+)
+def test_deepseek_rejects_forced_tool_choice_when_thinking_effectively_enabled(
+    reasoning_effort: ReasoningEffort | None, tool_choice: str | dict[str, Any]
+) -> None:
+    """DeepSeek thinking rejects required and named-function choices; refuse before sending."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort=reasoning_effort,
+        tool_choice=tool_choice,
+    )
+
+    with pytest.raises(InvalidRequestError, match="tool_choice"):
+        DeepseekProvider._convert_completion_params(params)
+
+
+@pytest.mark.parametrize(
+    "tool_choice", ["auto", "none", "required", {"type": "function", "function": {"name": "get_weather"}}]
+)
+def test_deepseek_forwards_tool_choice_unchanged_when_thinking_explicitly_disabled(
+    tool_choice: str | dict[str, Any],
+) -> None:
+    """DeepSeek's tool_choice restriction is specific to thinking mode; disabled thinking forwards it as-is."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="none",
+        tool_choice=tool_choice,
+    )
+
+    result = DeepseekProvider._convert_completion_params(params)
+
+    assert result["tool_choice"] == tool_choice
+    assert result["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_tool_choice_absent_is_unaffected_regardless_of_thinking() -> None:
+    """No tool_choice at all should not raise or synthesize one, whatever thinking mode resolves to."""
+    for reasoning_effort in (None, "high", "none"):
+        params = CompletionParams(
+            model_id="deepseek-v4-flash",
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort=reasoning_effort,
+        )
+
+        result = DeepseekProvider._convert_completion_params(params)
+
+        assert "tool_choice" not in result
+
+
+@pytest.mark.parametrize("tool_choice", ["auto", "none"])
+def test_deepseek_supported_tool_choice_forwarded_when_caller_extra_body_enables_thinking(tool_choice: str) -> None:
+    """Effective mode is resolved after the caller's extra_body.thinking override, not just reasoning_effort."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="none",
+        tool_choice=tool_choice,
+    )
+
+    result = DeepseekProvider._convert_completion_params(
+        params,
+        extra_body={"thinking": {"type": "enabled"}},
+    )
+
+    assert result["tool_choice"] == tool_choice
+    assert result["extra_body"]["thinking"] == {"type": "enabled"}
+
+
+def test_deepseek_tool_choice_rejected_when_caller_extra_body_enables_thinking() -> None:
+    """A caller override that turns thinking on must still gate tool_choice, even though reasoning_effort says none."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="none",
+        tool_choice="required",
+    )
+
+    with pytest.raises(InvalidRequestError, match="tool_choice"):
+        DeepseekProvider._convert_completion_params(params, extra_body={"thinking": {"type": "enabled"}})
+
+
+def test_deepseek_tool_choice_forwarded_when_caller_extra_body_disables_thinking() -> None:
+    """A caller override that turns thinking off must forward tool_choice even though reasoning_effort implies enabled."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        reasoning_effort="high",
+        tool_choice="required",
+    )
+
+    result = DeepseekProvider._convert_completion_params(
+        params,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+    assert result["tool_choice"] == "required"
+    assert result["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_tool_choice_does_not_mutate_caller_dict() -> None:
+    """The tool_choice gate must not mutate the caller's params or extra_body dicts."""
+    extra_body = {"thinking": {"type": "enabled"}}
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        tool_choice="auto",
+    )
+    params_before = params.model_copy(deep=True)
+
+    result = DeepseekProvider._convert_completion_params(params, extra_body=extra_body)
+
+    assert result["tool_choice"] == "auto"
+    assert extra_body == {"thinking": {"type": "enabled"}}
+    assert params == params_before
 
 
 def test_convert_completion_response_stashes_reasoning_into_extra_content() -> None:

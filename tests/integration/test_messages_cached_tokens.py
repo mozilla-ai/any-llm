@@ -45,7 +45,11 @@ async def test_messages_bridge_cached_tokens_non_streaming(openai_model: str) ->
     # The first call populates the cache; the prefix is only eligible for a hit afterwards.
     first = await llm.amessages(model=openai_model, messages=messages, max_tokens=2000)
     assert isinstance(first, MessageResponse)
-    prompt_total = first.usage.input_tokens + (first.usage.cache_read_input_tokens or 0)
+    prompt_total = (
+        first.usage.input_tokens
+        + (first.usage.cache_read_input_tokens or 0)
+        + (first.usage.cache_creation_input_tokens or 0)
+    )
 
     result = await llm.amessages(model=openai_model, messages=messages, max_tokens=2000)
     assert isinstance(result, MessageResponse)
@@ -55,12 +59,15 @@ async def test_messages_bridge_cached_tokens_non_streaming(openai_model: str) ->
 
     # The two fields are disjoint, so they must still sum to the same prompt total the
     # uncached call reported. Copying cached_tokens across without subtracting inflates this sum.
-    assert result.usage.input_tokens + result.usage.cache_read_input_tokens == prompt_total
+    assert (
+        result.usage.input_tokens
+        + result.usage.cache_read_input_tokens
+        + (result.usage.cache_creation_input_tokens or 0)
+        == prompt_total
+    )
     # Most of this prompt is the cached prefix, so the fresh remainder must be the smaller of
     # the two. Reporting the whole prompt as input_tokens alongside the cache count fails here.
     assert result.usage.input_tokens < result.usage.cache_read_input_tokens
-    # Automatic caching has no write step to report, so this stays unset.
-    assert result.usage.cache_creation_input_tokens is None
 
 
 @pytest.mark.asyncio
@@ -71,7 +78,11 @@ async def test_messages_bridge_cached_tokens_streaming(openai_model: str) -> Non
 
     non_streamed = await llm.amessages(model=openai_model, messages=messages, max_tokens=2000)
     assert isinstance(non_streamed, MessageResponse)
-    prompt_total = non_streamed.usage.input_tokens + (non_streamed.usage.cache_read_input_tokens or 0)
+    prompt_total = (
+        non_streamed.usage.input_tokens
+        + (non_streamed.usage.cache_read_input_tokens or 0)
+        + (non_streamed.usage.cache_creation_input_tokens or 0)
+    )
 
     stream = await llm.amessages(model=openai_model, messages=messages, max_tokens=2000, stream=True)
     assert isinstance(stream, AsyncIterator)
@@ -86,8 +97,10 @@ async def test_messages_bridge_cached_tokens_streaming(openai_model: str) -> Non
         pytest.skip("provider served no cached tokens: automatic prefix caching did not engage for this prompt")
 
     assert delta.usage.input_tokens is not None
-    assert delta.usage.input_tokens + delta.usage.cache_read_input_tokens == prompt_total
+    assert (
+        delta.usage.input_tokens + delta.usage.cache_read_input_tokens + (delta.usage.cache_creation_input_tokens or 0)
+        == prompt_total
+    )
     # Most of this prompt is the cached prefix, so the fresh remainder must be the smaller of
     # the two. Reporting the whole prompt as input_tokens alongside the cache count fails here.
     assert delta.usage.input_tokens < delta.usage.cache_read_input_tokens
-    assert delta.usage.cache_creation_input_tokens is None

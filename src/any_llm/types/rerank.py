@@ -27,6 +27,10 @@ class RerankResponse(BaseModel):
     """Normalized rerank response, provider-agnostic."""
 
     id: str | None = Field(default=None, description="Provider-assigned response ID")
+    model: str | None = Field(
+        default=None,
+        description="Model that served the request: the provider-reported one when available, else the requested model",
+    )
     results: list[RerankResult] = Field(description="Results sorted by relevance_score descending")
     meta: RerankMeta | None = None
     usage: RerankUsage | None = None

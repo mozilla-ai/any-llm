@@ -18,13 +18,29 @@ from any_llm.exceptions import (
     UnsupportedParameterError,
 )
 from any_llm.logging import logger
+from any_llm.providers.anthropic.base import _messages_betas
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessageStartEvent,
+    MessageStopEvent,
+    MessageStreamEvent,
+)
 from any_llm.types.model import Model
+
+# Outside the guarded block below: it needs no AWS SDK, and the per-model Messages answer must
+# work on the class even when boto3 is not installed.
+from .utils import _is_anthropic_model
 
 MISSING_PACKAGES_ERROR = None
 try:
     import boto3
     from botocore.config import Config
+    from botocore.exceptions import ClientError
     from botocore.tokens import ScopedEnvTokenProvider
 
     from .utils import (
@@ -43,6 +59,93 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 
     from any_llm.types.batch import Batch, BatchResult
+    from any_llm.types.messages import MessagesParams, ParsedBetaMessage, ParsedMessage
+
+# Claude's Messages body on Bedrock carries the API version and the betas in the body itself,
+# since InvokeModel has no Anthropic headers.
+_ANTHROPIC_BEDROCK_VERSION = "bedrock-2023-05-31"
+
+# The anthropic_beta values AWS documents for Claude on InvokeModel (the Bedrock user guide's
+# Claude Messages pages). Bedrock answers any other value with a 400 "invalid beta flag".
+_BEDROCK_BETAS = frozenset(
+    {
+        "compact-2026-01-12",
+        "compact-2026-09-04",
+        "computer-use-2024-10-22",
+        "computer-use-2025-01-24",
+        "computer-use-2025-11-24",
+        "context-1m-2025-08-07",
+        "context-management-2025-06-27",
+        "dev-full-thinking-2025-05-14",
+        "effort-2025-11-24",
+        "fallback-credit-2026-06-01",
+        "fine-grained-tool-streaming-2025-05-14",
+        "inline-tools-2026-09-15",
+        "interleaved-thinking-2025-05-14",
+        "mid-conversation-effort-2026-08-01",
+        "mid-conversation-output-config-2026-07-01",
+        "mid-conversation-tool-changes-2026-07-01",
+        "output-128k-2025-02-19",
+        "per-message-effort-2026-07-01",
+        "per-turn-control-2026-07-01",
+        "thinking-binding-controls-2026-08-01",
+        "thinking-display-updates-2026-08-18",
+        "token-efficient-tools-2025-02-19",
+        "tool-examples-2025-10-29",
+        "tool-search-tool-2025-10-19",
+    }
+)
+
+# `thinking.display: "updates"` is a beta on every platform; InvokeModel reads the beta only from
+# the body, and answers "updates" without it as an unknown display value.
+_THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
+_BEDROCK_THINKING_DISPLAYS = frozenset({"summarized", "omitted", "updates"})
+
+_MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
+    "message_start": MessageStartEvent,
+    "message_delta": MessageDeltaEvent,
+    "message_stop": MessageStopEvent,
+    "content_block_start": ContentBlockStartEvent,
+    "content_block_delta": ContentBlockDeltaEvent,
+    "content_block_stop": ContentBlockStopEvent,
+}
+
+
+def _is_cacheable(block: Any) -> bool:
+    return (
+        isinstance(block, dict)
+        and block.get("type") not in {"thinking", "redacted_thinking"}
+        and not (block.get("type") == "text" and not block.get("text"))
+        and not block.get("defer_loading")
+    )
+
+
+def _mark_last_cacheable(holder: dict[str, Any], key: str, cache_control: dict[str, Any]) -> bool:
+    content = holder.get(key)
+    if isinstance(content, str):
+        if not content:
+            return False
+        holder[key] = [{"type": "text", "text": content, "cache_control": cache_control}]
+        return True
+    for block in reversed(content or []):
+        if _is_cacheable(block):
+            block.setdefault("cache_control", cache_control)
+            return True
+    return False
+
+
+def _place_cache_breakpoint(body: dict[str, Any], cache_control: dict[str, Any]) -> None:
+    """Move a top-level `cache_control` onto the last cacheable block, where Anthropic's API applies it.
+
+    Bedrock's InvokeModel integration for Claude Opus 4.6 and earlier answers a top-level
+    `cache_control` with a 400 but accepts the same breakpoint on a block. The prompt prefix runs
+    tools, system, then messages, so the search runs backward from the last message. A block that
+    already carries its own `cache_control` keeps it.
+    """
+    holders = [(message, "content") for message in reversed(body["messages"])]
+    for holder, key in [*holders, (body, "system"), (body, "tools")]:
+        if _mark_last_cacheable(holder, key, cache_control):
+            return
 
 
 class BedrockProvider(AnyLLM):
@@ -63,6 +166,8 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
+    # Claude models only, see `serves_messages_natively`.
+    SUPPORTS_MESSAGES_NATIVE = True
 
     # boto3's Converse API has no per-request timeout, so it is translated into a per-timeout
     # boto3 client in _completion via _client_for_timeout. A caller-supplied `client=` can't be
@@ -145,12 +250,23 @@ class BedrockProvider(AnyLLM):
     @staticmethod
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
-        """Convert AWS Bedrock list models response to OpenAI format."""
-        models_list = response.get("modelSummaries", [])
-        # AWS doesn't provide a creation date for models
-        # AWS doesn't provide typing, but per https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock/client/list_foundation_models.html
-        # the modelId is a string and will not be None
-        return [Model(id=model["modelId"], object="model", created=0, owned_by="aws") for model in models_list]
+        """Convert Bedrock foundation models and inference profiles into the model IDs a caller can invoke.
+
+        ``response`` holds ``modelSummaries`` from ``ListFoundationModels`` and ``inferenceProfileSummaries``
+        from ``ListInferenceProfiles``, since no single Bedrock API returns both.
+        A foundation model is listed only when AWS reports on-demand support for it.
+        Any other foundation model is reachable only through an inference profile, which is listed by its own ID.
+        """
+        # NOTE: AWS marks inferenceTypesSupported as optional.
+        # A model that omits it is left out, not assumed to be invocable.
+        model_ids = [
+            model["modelId"]
+            for model in response.get("modelSummaries", [])
+            if "ON_DEMAND" in model.get("inferenceTypesSupported", [])
+        ]
+        model_ids += [profile["inferenceProfileId"] for profile in response.get("inferenceProfileSummaries", [])]
+        # AWS doesn't provide a creation date for models.
+        return [Model(id=model_id, object="model", created=0, owned_by="aws") for model_id in model_ids]
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -338,6 +454,100 @@ class BedrockProvider(AnyLLM):
                 self._timeout_clients[timeout] = cached
             return cached
 
+    @classmethod
+    @override
+    def serves_messages_natively(cls, model: str) -> bool:
+        """Claude models take Bedrock's Anthropic Messages body; every other model uses the bridge."""
+        return _is_anthropic_model(model)
+
+    @override
+    async def _amessages(
+        self, params: MessagesParams, **kwargs: Any
+    ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
+        """Send a Claude model's request to Bedrock as an Anthropic Messages body via InvokeModel.
+
+        This keeps `cache_control`, thinking blocks with their signatures, and the betas Bedrock
+        supports, which the Converse bridge drops. Other models, and `output_format` (which
+        Converse emulates with a forced tool call), still use the bridge. Extra keyword arguments
+        go to InvokeModel, as they go to Converse on the bridge.
+        """
+        if params.output_format is not None or not self.serves_messages_natively(params.model):
+            return await super()._amessages(params, **kwargs)
+
+        body = self._native_messages_body(params)
+        client = self._client_for_timeout(kwargs.pop("timeout", None))
+        request = {
+            "modelId": params.model,
+            "body": json.dumps(body),
+            "contentType": "application/json",
+            "accept": "application/json",
+            **kwargs,
+        }
+
+        if params.stream:
+            response = await asyncio.to_thread(client.invoke_model_with_response_stream, **request)
+            return self._stream_native_messages(response["body"])
+
+        response = await asyncio.to_thread(self._invoke_native_messages, client, request)
+        return MessageResponse.model_validate(response)
+
+    def _native_messages_body(self, params: MessagesParams) -> dict[str, Any]:
+        """Build the InvokeModel body from the Messages fields Bedrock accepts for Claude."""
+        if params.container is not None:
+            parameter_name = "container"
+            additional_message = "Bedrock does not support code execution or Agent Skills."
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+
+        # Anthropic's service_tier values mean nothing to Bedrock, whose own tiers are a separate
+        # InvokeModel parameter; the Converse bridge drops it too.
+        body = params.model_dump(
+            exclude_none=True,
+            exclude={"model", "stream", "betas", "output_format", "service_tier", "cache_control"},
+        )
+        if params.cache_control is not None:
+            _place_cache_breakpoint(body, params.cache_control)
+        body["anthropic_version"] = _ANTHROPIC_BEDROCK_VERSION
+
+        requested_betas = _messages_betas(params)
+        display = (params.thinking or {}).get("display")
+        if display == "updates" and _THINKING_DISPLAY_UPDATES_BETA not in requested_betas:
+            requested_betas.append(_THINKING_DISPLAY_UPDATES_BETA)
+        elif display is not None and display not in _BEDROCK_THINKING_DISPLAYS:
+            logger.debug("Sending thinking display %r as 'summarized', which Bedrock accepts", display)
+            body["thinking"] = {**body["thinking"], "display": "summarized"}
+
+        betas = []
+        for beta in requested_betas:
+            if beta in _BEDROCK_BETAS:
+                betas.append(beta)
+            else:
+                logger.debug("Dropping Anthropic beta %r, which Bedrock does not support", beta)
+        if betas:
+            body["anthropic_beta"] = betas
+        return body
+
+    @staticmethod
+    def _invoke_native_messages(client: Any, request: dict[str, Any]) -> Any:
+        response = client.invoke_model(**request)
+        return json.loads(response["body"].read())
+
+    @staticmethod
+    async def _stream_native_messages(event_stream: Any) -> AsyncIterator[MessageStreamEvent]:
+        """Yield the Anthropic stream events inside a Bedrock response stream.
+
+        Reading the stream blocks, so each event is read off the event loop. Bedrock raises its
+        error events from the read itself, so every event that arrives here is a chunk.
+        """
+        events = iter(event_stream)
+        try:
+            while (event := await asyncio.to_thread(next, events, None)) is not None:
+                payload = json.loads(event["chunk"]["bytes"])
+                event_model = _MESSAGE_STREAM_EVENT_TYPES.get(payload["type"])
+                if event_model is not None:
+                    yield event_model.model_validate(payload)
+        finally:
+            event_stream.close()
+
     @override
     async def _aembedding(
         self,
@@ -389,9 +599,53 @@ class BedrockProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        """List the model IDs this account can invoke.
+
+        Keyword arguments are ``ListFoundationModels`` filters such as ``byProvider``.
+        An inference profile is listed only when every model it routes to passes the same filters.
+        For example, ``byInferenceType="ON_DEMAND"`` leaves out the profiles of profile-only models.
+        """
+        return await asyncio.to_thread(self._list_models, **kwargs)
+
+    def _list_models(self, **kwargs: Any) -> Sequence[Model]:
         client = self._get_bedrock_control_client()
-        response = client.list_foundation_models(**kwargs)
-        return self._convert_list_models_response(response)
+        foundation_models = client.list_foundation_models(**kwargs).get("modelSummaries", [])
+        profiles = self._list_system_inference_profiles(client)
+        if kwargs:
+            matching_ids = {model["modelId"] for model in foundation_models}
+            profiles = [profile for profile in profiles if self._routes_only_to(profile, matching_ids)]
+        return self._convert_list_models_response(
+            {"modelSummaries": foundation_models, "inferenceProfileSummaries": profiles}
+        )
+
+    @staticmethod
+    def _routes_only_to(profile: dict[str, Any], model_ids: set[str]) -> bool:
+        """Return whether every foundation model behind ``profile`` has one of ``model_ids``."""
+        return all(model["modelArn"].partition("foundation-model/")[2] in model_ids for model in profile["models"])
+
+    @staticmethod
+    def _list_system_inference_profiles(client: Any) -> list[dict[str, Any]]:
+        """Return every system-defined inference profile, or none when listing them is denied.
+
+        Application inference profiles are left out because they are invoked by ARN, not by ID.
+
+        NOTE: A denial is not an error, so an IAM policy that allows only ``bedrock:ListFoundationModels`` still works.
+        """
+        paginator = client.get_paginator("list_inference_profiles")
+        try:
+            return [
+                profile
+                for page in paginator.paginate(typeEquals="SYSTEM_DEFINED")
+                for profile in page.get("inferenceProfileSummaries", [])
+            ]
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") != "AccessDeniedException":
+                raise
+            logger.warning(
+                "Listing Bedrock inference profiles was denied, so models that can only be invoked through an "
+                "inference profile are left out. Grant bedrock:ListInferenceProfiles to include them."
+            )
+            return []
 
     def _get_bedrock_control_client(self) -> Any:
         """Return a ``bedrock`` control-plane client for batch and model management operations.

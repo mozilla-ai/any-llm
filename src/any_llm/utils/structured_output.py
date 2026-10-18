@@ -201,6 +201,7 @@ def build_parsed_message(message: AnthropicMessage, output_format: type | dict[s
     ``dict``/``list``) and the generics are parametrized as ``Any``.
     """
     from anthropic.types import TextBlock
+    from anthropic.types.beta import BetaTextBlock
     from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 
     def _parse(text: str) -> object:
@@ -217,10 +218,15 @@ def build_parsed_message(message: AnthropicMessage, output_format: type | dict[s
     text_block_cls = parsed_text_block[type_param]
     message_cls = parsed_message[type_param]
 
+    # A refused turn's text is the refusal or a partial answer, never the requested JSON, so it is
+    # left unparsed, as the completion and Responses paths leave refusals unparsed.
+    refused = message.stop_reason == "refusal"
     content: list[Any] = []
     for block in message.content:
+        if isinstance(block, BetaTextBlock):
+            block = TextBlock.model_validate(block.model_dump())
         if isinstance(block, TextBlock):
-            parsed = _parse(block.text) if block.text else None
+            parsed = _parse(block.text) if block.text and not refused else None
             content.append(
                 text_block_cls(type="text", text=block.text, citations=block.citations, parsed_output=parsed)
             )

@@ -9,7 +9,13 @@ from any_llm.constants import LLMProvider
 
 
 def test_default_headers_passed_to_init_client(provider: LLMProvider) -> None:
-    """Verify default_headers kwarg flows through to _init_client for all providers."""
+    """Verify provider kwargs reach _init_client, and that library options do not.
+
+    ``custom_headers`` stands in for any provider-specific kwarg, which must arrive at
+    ``_init_client`` untouched. ``unified_exceptions`` is the opposite case: it configures
+    any-llm rather than the SDK, so it must land on the instance and never be forwarded,
+    or every provider's client constructor would reject it.
+    """
     if provider == LLMProvider.SAGEMAKER:
         pytest.skip("sagemaker requires AWS credentials on instantiation")
     if sys.version_info >= (3, 14) and provider.value in ("voyage", "watsonx"):
@@ -30,6 +36,7 @@ def test_default_headers_passed_to_init_client(provider: LLMProvider) -> None:
         "custom_headers": {
             "X-Custom-Header": "custom-value"
         },  # this test doesn't validate what the extra kwarg needs to be: that part is provider specific
+        "unified_exceptions": True,
     }
 
     if provider == LLMProvider.BEDROCK:
@@ -39,7 +46,14 @@ def test_default_headers_passed_to_init_client(provider: LLMProvider) -> None:
         base_kwargs["location"] = "test-location"
 
     with patch.object(provider_class, "_init_client", capture_init_client):
-        AnyLLM.create(provider.value, **base_kwargs)
+        instance = AnyLLM.create(provider.value, **base_kwargs)
 
     assert "custom_headers" in captured_kwargs, f"custom_headers not passed to {provider.value}'s _init_client"
     assert captured_kwargs["custom_headers"]["X-Custom-Header"] == "custom-value"
+
+    assert "unified_exceptions" not in captured_kwargs, (
+        f"unified_exceptions leaked into {provider.value}'s _init_client"
+    )
+    assert instance._unified_exceptions is True, (
+        f"{provider.value} dropped unified_exceptions instead of storing it on the instance"
+    )

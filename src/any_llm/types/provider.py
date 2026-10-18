@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from any_llm.constants import ProviderTier
+from any_llm.types.files import FileOperation
 
 
 class ProviderMetadata(BaseModel):
@@ -22,8 +23,14 @@ class ProviderMetadata(BaseModel):
     class_name: str
     list_models: bool
     messages: bool
+    messages_native: bool = False
     batch_completion: bool
     image_generation: bool = False
     audio_transcription: bool = False
     audio_speech: bool = False
     rerank: bool = False
+    decide: bool = False
+    """Whether the provider implements the decide API (`decide`/`adecide`)."""
+
+    files: bool = False
+    file_operations: tuple[FileOperation, ...] = ()

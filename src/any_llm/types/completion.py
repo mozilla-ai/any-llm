@@ -25,6 +25,46 @@ from openai.types.create_embedding_response import Usage as OpenAIUsage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 from pydantic import BaseModel, ConfigDict, field_validator, model_serializer, model_validator
 
+
+class CacheCreationTokenDetails(BaseModel):
+    """Cache writes split by time-to-live, as Anthropic reports them."""
+
+    ephemeral_5m_input_tokens: int | None = None
+    ephemeral_1h_input_tokens: int | None = None
+
+
+def _dump_foreign_model(model_cls: type[BaseModel], value: Any) -> Any:
+    # A field typed as an any-llm subclass rejects instances of the OpenAI parent model.
+    if isinstance(value, BaseModel) and not isinstance(value, model_cls):
+        return value.model_dump()
+    return value
+
+
+class PromptTokensDetails(OpenAIPromptTokensDetails):
+    """OpenAI prompt token breakdown extended with the TTL split of cache writes.
+
+    As in OpenAI, ``cached_tokens`` and ``cache_write_tokens`` are subsets of ``prompt_tokens``.
+    """
+
+    # Declared here because older openai-python releases do not define it on the parent model.
+    cache_write_tokens: int | None = None
+    cache_creation_token_details: CacheCreationTokenDetails | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_openai_model(cls, value: Any) -> Any:
+        return _dump_foreign_model(cls, value)
+
+
+class CompletionUsage(OpenAICompletionUsage):
+    prompt_tokens_details: PromptTokensDetails | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_openai_model(cls, value: Any) -> Any:
+        return _dump_foreign_model(cls, value)
+
+
 # See https://github.com/mozilla-ai/any-llm/issues/95:
 # OpenAI Completion API doesn't include reasoning information, so we need to extend the openai type
 
@@ -73,6 +113,33 @@ class ChatCompletionMessageFunctionToolCall(OpenAIChatCompletionMessageFunctionT
 ChatCompletionMessageToolCall = ChatCompletionMessageFunctionToolCall | OpenAIChatCompletionMessageToolCall
 
 
+class ImageURL(BaseModel):
+    """OpenAI-compatible URL for an image response part."""
+
+    url: str
+
+
+class ImageContent(BaseModel):
+    """OpenAI-compatible image response content."""
+
+    type: Literal["image_url"]
+    image_url: ImageURL
+
+
+class ChoiceDeltaAudio(BaseModel):
+    """Partial audio object emitted by a streaming chat completion.
+
+    Providers may send the identifier, transcript, data, and expiration timestamp in
+    separate chunks, so every field is optional. The data field contains the
+    base64-encoded bytes for the current chunk.
+    """
+
+    id: str | None = None
+    data: str | None = None
+    transcript: str | None = None
+    expires_at: int | None = None
+
+
 class ChatCompletionMessage(OpenAIChatCompletionMessage):
     tool_calls: list[ChatCompletionMessageToolCall] | None = None  # type: ignore[assignment]
     reasoning: Reasoning | None = None
@@ -87,6 +154,8 @@ class ChatCompletionMessage(OpenAIChatCompletionMessage):
         {"anthropic": {"signature": "<encrypted-signature>"}}
     """
 
+    images: list[ImageContent] | None = None
+
 
 class Choice(OpenAIChoice):
     message: ChatCompletionMessage
@@ -95,6 +164,7 @@ class Choice(OpenAIChoice):
 class ChatCompletion(OpenAIChatCompletion):
     choices: list[Choice]  # type: ignore[assignment]
     service_tier: str | None = None  # type: ignore[assignment]
+    usage: CompletionUsage | None = None
 
 
 ContentType = TypeVar("ContentType")
@@ -133,6 +203,9 @@ class ChoiceDelta(OpenAIChoiceDelta):
     that arrives as part of a streaming delta rather than the final message.
     """
 
+    images: list[ImageContent] | None = None
+    audio: ChoiceDeltaAudio | None = None  # type: ignore[assignment]
+
 
 class ChunkChoice(OpenAIChunkChoice):
     delta: ChoiceDelta
@@ -141,12 +214,11 @@ class ChunkChoice(OpenAIChunkChoice):
 class ChatCompletionChunk(OpenAIChatCompletionChunk):
     choices: list[ChunkChoice]  # type: ignore[assignment]
     service_tier: str | None = None  # type: ignore[assignment]
+    usage: CompletionUsage | None = None
 
 
 Function = OpenAIFunction
-CompletionUsage = OpenAICompletionUsage
 CompletionTokensDetails = OpenAICompletionTokensDetails
-PromptTokensDetails = OpenAIPromptTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage

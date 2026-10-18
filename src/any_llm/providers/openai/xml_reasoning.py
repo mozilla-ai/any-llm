@@ -12,8 +12,9 @@ from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatComple
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from typing_extensions import override
 
-from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Reasoning
+from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.reasoning import process_streaming_reasoning_chunks
 
 
@@ -74,14 +75,43 @@ def wrap_chunks_with_xml_reasoning(
     Returns:
         Async iterator with XML reasoning tags extracted and converted to Reasoning objects
     """
-    return process_streaming_reasoning_chunks(
-        chunks,
-        get_content=get_chunk_content,
-        set_content=set_chunk_content,
-        set_reasoning=set_chunk_reasoning,
-        is_terminal=is_terminal_chunk,
-        clear_stream_metadata=clear_chunk_stream_metadata,
-    )
+    return _XMLReasoningStream(chunks)
+
+
+class _XMLReasoningStream(AsyncIterator[ChatCompletionChunk]):
+    """Own both iterators so closing before the reasoning generator starts releases its source."""
+
+    def __init__(self, chunks: AsyncIterator[ChatCompletionChunk]) -> None:
+        self._chunks = chunks
+        self._iterator = process_streaming_reasoning_chunks(
+            chunks,
+            get_content=get_chunk_content,
+            set_content=set_chunk_content,
+            set_reasoning=set_chunk_reasoning,
+            is_terminal=is_terminal_chunk,
+            clear_stream_metadata=clear_chunk_stream_metadata,
+        )
+        self._started = False
+        self._closed = False
+
+    @override
+    async def __anext__(self) -> ChatCompletionChunk:
+        if self._closed:
+            raise StopAsyncIteration
+        self._started = True
+        try:
+            return await anext(self._iterator)
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            self._closed = True
+            await aclose_quietly(self._iterator)
+            # Once started, the reasoning generator closes its source in its finally block.
+            if not self._started:
+                await aclose_quietly(self._chunks)
 
 
 class XMLReasoningOpenAIProvider(BaseOpenAIProvider):
@@ -110,8 +140,4 @@ class XMLReasoningOpenAIProvider(BaseOpenAIProvider):
         if isinstance(response, OpenAIChatCompletion):
             return self._convert_completion_response(response)
 
-        async def chunk_iterator() -> AsyncIterator[ChatCompletionChunk]:
-            async for chunk in response:
-                yield self._convert_completion_chunk_response(chunk)
-
-        return wrap_chunks_with_xml_reasoning(chunk_iterator())
+        return wrap_chunks_with_xml_reasoning(OpenAIChunkStream(response, self._convert_completion_chunk_response))

@@ -341,6 +341,28 @@ def test_build_parsed_message_passes_non_text_blocks_through() -> None:
     assert parsed.parsed_output is None
 
 
+@pytest.mark.parametrize(
+    "output_format",
+    [PydanticModel, {"format": {"type": "json_schema", "schema": {"type": "object"}}}],
+)
+def test_build_parsed_message_leaves_refusal_text_unparsed(output_format: type | dict[str, Any]) -> None:
+    """A refused turn keeps its text but is not parsed, so the caller can read stop_reason instead of catching."""
+    from anthropic.types import TextBlock
+    from anthropic.types.parsed_message import ParsedTextBlock
+
+    message = _make_anthropic_message([TextBlock(type="text", text="I cannot help with that.")]).model_copy(
+        update={"stop_reason": "refusal"}
+    )
+    parsed = build_parsed_message(message, output_format)
+
+    assert parsed.stop_reason == "refusal"
+    block = parsed.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.text == "I cannot help with that."
+    assert block.parsed_output is None
+    assert parsed.parsed_output is None
+
+
 def test_build_parsed_message_raw_output_config_dict() -> None:
     """A raw output_config dict yields a ParsedMessage whose parsed_output is plain JSON."""
     from anthropic.types import TextBlock

@@ -1,6 +1,7 @@
 """Tests for messages()/amessages() SDK API."""
 
 import json
+import sys
 import threading
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,22 +13,23 @@ import pytest
 from anthropic.types.beta import (
     BetaCompactionIterationUsage,
     BetaContainer,
-    BetaIterationsUsage,
     BetaMessage,
     BetaMessageDeltaUsage,
+    BetaMessageIterationUsage,
     BetaSkill,
     BetaStopReason,
     BetaUsage,
 )
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
 from anthropic.types.beta.parsed_beta_message import ParsedBetaTextBlock
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.api import amessages, messages
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import (
+    CacheCreationTokenDetails,
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
@@ -42,9 +44,11 @@ from any_llm.types.messages import (
     BetaDiagnostics,
     ContentBlock,
     ContentBlockDeltaEvent,
+    IterationsUsage,
     MessageContentBlock,
     MessageDeltaEvent,
     MessageDeltaUsage,
+    MessageIterationUsage,
     MessageResponse,
     MessagesParams,
     MessageStopEvent,
@@ -102,6 +106,117 @@ def test_messages_params_exposes_container_in_schema() -> None:
     assert "container" in MessagesParams.model_json_schema()["properties"]
 
 
+def test_messages_params_accepts_container_skills_object() -> None:
+    """The public Messages API must accept Anthropic's container object, not only a string ID."""
+    container = {
+        "skills": [
+            {"type": "anthropic", "skill_id": "xlsx", "version": "latest"},
+        ]
+    }
+
+    try:
+        params = MessagesParams(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": "Create an Excel spreadsheet."}],
+            tools=[{"type": "code_execution_20250825", "name": "code_execution"}],
+            container=container,
+        )
+    except ValidationError as exc:
+        pytest.fail(f"container skills object should validate, got {exc}")
+
+    dumped = params.model_dump(exclude_none=True)["container"]
+    assert dumped == container
+    assert params.container == dumped
+
+
+def test_messages_params_accepts_container_reuse_and_custom_skills() -> None:
+    container = {
+        "id": "container_123",
+        "skills": [
+            {"type": "custom", "skill_id": "skill_abc"},
+            {"type": "anthropic", "skill_id": "pdf", "version": "latest"},
+        ],
+    }
+
+    params = MessagesParams(
+        model="claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "Continue in the same container."}],
+        max_tokens=1024,
+        container=container,
+    )
+
+    dumped = params.model_dump(exclude_none=True)["container"]
+    assert dumped["id"] == "container_123"
+    assert dumped["skills"][0] == {"type": "custom", "skill_id": "skill_abc"}
+    assert dumped["skills"][1]["skill_id"] == "pdf"
+    assert dumped["skills"][1]["version"] == "latest"
+
+
+def test_messages_params_rejects_malformed_container_skills() -> None:
+    with pytest.raises(ValidationError, match="skill_id"):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "anthropic"}]},
+        )
+
+    with pytest.raises(ValidationError):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "unknown", "skill_id": "xlsx"}]},
+        )
+
+    with pytest.raises(ValidationError):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container=123,  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValidationError, match="extra"):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx"}], "unexpected": True},
+        )
+
+    with pytest.raises(ValidationError, match="extra"):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx", "unexpected": True}]},
+        )
+
+
+@pytest.mark.parametrize(
+    "container",
+    [
+        {"skills": [{"type": "anthropic", "skill_id": ""}]},
+        {"skills": [{"type": "custom", "skill_id": "x" * 65}]},
+        {"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": ""}]},
+        {"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "v" * 65}]},
+        {"skills": [{"type": "anthropic", "skill_id": f"skill-{i}"} for i in range(21)]},
+        {},
+        {"id": None, "skills": None},
+    ],
+)
+def test_messages_params_rejects_container_skill_limits(container: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        MessagesParams(
+            model="claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            container=container,
+        )
+
+
 @pytest.mark.asyncio
 async def test_amessages_rejects_container_for_bridged_provider() -> None:
     provider = AnyLLM.create("openai", api_key="sk-test")
@@ -115,6 +230,24 @@ async def test_amessages_rejects_container_for_bridged_provider() -> None:
             messages=[{"role": "user", "content": "Hello"}],
             max_tokens=100,
             container="container_123",
+        )
+
+    mock_acompletion.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_amessages_rejects_container_skills_object_for_bridged_provider() -> None:
+    provider = AnyLLM.create("openai", api_key="sk-test")
+
+    with (
+        patch.object(provider, "_acompletion", new=AsyncMock()) as mock_acompletion,
+        pytest.raises(NotImplementedError, match="container"),
+    ):
+        await provider.amessages(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            container={"skills": [{"type": "anthropic", "skill_id": "xlsx", "version": "latest"}]},
         )
 
     mock_acompletion.assert_not_called()
@@ -289,8 +422,6 @@ def test_messages_params_accepts_context_management_and_betas() -> None:
 
 def test_messages_params_rejects_extra_fields() -> None:
     """Test MessagesParams rejects unknown fields (extra='forbid')."""
-    from pydantic import ValidationError
-
     from any_llm.types.messages import MessagesParams
 
     with pytest.raises(ValidationError):
@@ -343,7 +474,7 @@ def test_message_usage_preserves_typed_beta_iterations() -> None:
 
     usage = MessageUsage.model_validate(sdk_usage, from_attributes=True)
 
-    assert MessageUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert MessageUsage.model_fields["iterations"].annotation == IterationsUsage | None
     assert usage.iterations is not None
     assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
     assert usage.model_dump()["iterations"][0]["type"] == "compaction"
@@ -367,10 +498,67 @@ def test_message_delta_usage_preserves_typed_beta_iterations() -> None:
 
     usage = MessageDeltaUsage.model_validate(sdk_usage, from_attributes=True)
 
-    assert MessageDeltaUsage.model_fields["iterations"].annotation == BetaIterationsUsage | None
+    assert MessageDeltaUsage.model_fields["iterations"].annotation == IterationsUsage | None
     assert usage.iterations is not None
     assert isinstance(usage.iterations[0], BetaCompactionIterationUsage)
     assert usage.model_dump()["iterations"][0]["type"] == "compaction"
+
+
+_MESSAGE_ITERATION_WITHOUT_MODEL: dict[str, Any] = {
+    "type": "message",
+    "input_tokens": 90,
+    "output_tokens": 10,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+}
+
+
+@pytest.mark.parametrize("usage_type", [MessageUsage, MessageDeltaUsage])
+def test_usage_accepts_a_message_iteration_without_model(usage_type: type[BaseModel]) -> None:
+    """The Messages API omits ``model`` on a ``message`` iteration that the SDK types require."""
+    usage = usage_type.model_validate(
+        {"input_tokens": 100, "output_tokens": 20, "iterations": [_MESSAGE_ITERATION_WITHOUT_MODEL]}
+    )
+
+    iteration = usage.iterations[0]  # type: ignore[attr-defined]
+    assert isinstance(iteration, MessageIterationUsage)
+    assert isinstance(iteration, BetaMessageIterationUsage)
+    assert iteration.model is None
+    assert iteration.input_tokens == 90
+
+
+@pytest.mark.parametrize(
+    ("sdk_usage_type", "usage_type"), [(BetaUsage, MessageUsage), (BetaMessageDeltaUsage, MessageDeltaUsage)]
+)
+def test_usage_accepts_an_sdk_message_iteration_without_model(
+    sdk_usage_type: type[BaseModel], usage_type: type[BaseModel]
+) -> None:
+    """The SDK builds responses without validation, so its iteration can lack ``model`` too."""
+    sdk_usage = sdk_usage_type.model_construct(
+        input_tokens=100,
+        output_tokens=20,
+        iterations=[BetaMessageIterationUsage.model_construct(**_MESSAGE_ITERATION_WITHOUT_MODEL)],
+    )
+
+    usage = usage_type.model_validate(sdk_usage, from_attributes=True)
+
+    iteration = usage.iterations[0]  # type: ignore[attr-defined]
+    assert isinstance(iteration, MessageIterationUsage)
+    assert iteration.model is None
+    assert iteration.output_tokens == 10
+
+
+def test_usage_keeps_the_model_of_a_message_iteration() -> None:
+    usage = MessageUsage.model_validate(
+        {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "iterations": [{**_MESSAGE_ITERATION_WITHOUT_MODEL, "model": "claude-opus-5"}],
+        }
+    )
+
+    assert usage.iterations is not None
+    assert usage.iterations[0].model == "claude-opus-5"  # type: ignore[union-attr]
 
 
 def test_message_response_preserves_beta_usage_speed_and_container_skills() -> None:
@@ -1066,7 +1254,14 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
                 prompt_tokens=100,
                 completion_tokens=50,
                 total_tokens=150,
-                prompt_tokens_details=PromptTokensDetails(cached_tokens=80),
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=80,
+                    cache_write_tokens=12,
+                    cache_creation_token_details=CacheCreationTokenDetails(
+                        ephemeral_5m_input_tokens=7,
+                        ephemeral_1h_input_tokens=5,
+                    ),
+                ),
             ),
         )
 
@@ -1087,10 +1282,17 @@ async def test_default_amessages_streaming_usage_from_trailing_chunk() -> None:
     # Anthropic's input_tokens and cache_read_input_tokens are disjoint, so the cached
     # count is subtracted out of the 100-token OpenAI prompt total rather than copied
     # alongside it.
-    assert delta.usage.input_tokens == 20
+    assert delta.usage.input_tokens == 8
     assert delta.usage.output_tokens == 50
     assert delta.usage.cache_read_input_tokens == 80
-    assert delta.usage.input_tokens + delta.usage.cache_read_input_tokens == 100
+    assert delta.usage.cache_creation_input_tokens == 12
+    assert "cache_creation" not in delta.usage.model_dump()
+    assert (
+        delta.usage.input_tokens
+        + (delta.usage.cache_read_input_tokens or 0)
+        + (delta.usage.cache_creation_input_tokens or 0)
+        == 100
+    )
     assert delta.delta.stop_reason == "end_turn"
     assert events[-1].type == "message_stop"
 
@@ -1106,7 +1308,18 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
             created=0,
             object="chat.completion.chunk",
             choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
-            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
+            usage=CompletionUsage(
+                prompt_tokens=100,
+                completion_tokens=10,
+                total_tokens=110,
+                prompt_tokens_details=PromptTokensDetails(
+                    cache_write_tokens=12,
+                    cache_creation_token_details=CacheCreationTokenDetails(
+                        ephemeral_5m_input_tokens=7,
+                        ephemeral_1h_input_tokens=5,
+                    ),
+                ),
+            ),
         )
         msg = "provider stream dropped"
         raise RuntimeError(msg)
@@ -1133,8 +1346,10 @@ async def test_default_amessages_streaming_flushes_usage_when_stream_fails() -> 
         await consume()
 
     delta = next(e for e in seen if isinstance(e, MessageDeltaEvent))
-    assert delta.usage.input_tokens == 100
+    assert delta.usage.input_tokens == 88
     assert delta.usage.output_tokens == 10
+    assert delta.usage.cache_creation_input_tokens == 12
+    assert "cache_creation" not in delta.usage.model_dump()
     assert delta.delta.stop_reason is None
     assert all(e.type not in ("message_stop", "content_block_stop") for e in seen)
 
@@ -1371,6 +1586,59 @@ def test_supports_messages_flag() -> None:
     assert AnyLLM.SUPPORTS_MESSAGES is True
 
 
+def test_supports_messages_native_flags() -> None:
+    """Test that SUPPORTS_MESSAGES_NATIVE distinguishes native from bridged providers."""
+    from any_llm.providers.anthropic.base import BaseAnthropicProvider
+    from any_llm.providers.meta.meta import MetaProvider
+    from any_llm.providers.openai.base import BaseOpenAIProvider
+    from any_llm.providers.otari.otari import OtariProvider
+
+    assert AnyLLM.SUPPORTS_MESSAGES_NATIVE is False
+    assert BaseOpenAIProvider.SUPPORTS_MESSAGES_NATIVE is False
+    assert BaseAnthropicProvider.SUPPORTS_MESSAGES_NATIVE is True
+    assert MetaProvider.SUPPORTS_MESSAGES_NATIVE is True
+    assert OtariProvider.SUPPORTS_MESSAGES_NATIVE is True
+
+
+def test_supports_messages_native_matches_amessages_override() -> None:
+    """SUPPORTS_MESSAGES_NATIVE agrees with whether the provider overrides `_amessages`."""
+    for provider_name in AnyLLM.get_supported_providers():
+        if sys.version_info >= (3, 14) and provider_name in {"voyage", "watsonx"}:
+            continue
+        provider_class = AnyLLM.get_provider_class(provider_name)
+        overrides = provider_class._amessages is not AnyLLM._amessages
+        assert provider_class.SUPPORTS_MESSAGES_NATIVE is overrides, provider_name
+
+
+def test_provider_metadata_messages_native() -> None:
+    """Test that ProviderMetadata reports messages_native correctly."""
+    anthropic_meta = AnyLLM.get_provider_class("anthropic").get_provider_metadata()
+    assert anthropic_meta.messages is True
+    assert anthropic_meta.messages_native is True
+
+    meta_meta = AnyLLM.get_provider_class("meta").get_provider_metadata()
+    assert meta_meta.messages is True
+    assert meta_meta.messages_native is True
+
+    otari_meta = AnyLLM.get_provider_class("otari").get_provider_metadata()
+    assert otari_meta.messages is True
+    assert otari_meta.messages_native is True
+
+    bedrock_meta = AnyLLM.get_provider_class("bedrock").get_provider_metadata()
+    assert bedrock_meta.messages is True
+    assert bedrock_meta.messages_native is True
+
+    openai_meta = AnyLLM.get_provider_class("openai").get_provider_metadata()
+    assert openai_meta.messages is True
+    assert openai_meta.messages_native is False
+
+
+def test_serves_messages_natively_defaults_to_the_provider_flag() -> None:
+    """A provider that does not answer per model answers with SUPPORTS_MESSAGES_NATIVE for every model."""
+    assert AnyLLM.get_provider_class("anthropic").serves_messages_natively("claude-haiku-4-5") is True
+    assert AnyLLM.get_provider_class("openai").serves_messages_natively("gpt-5-nano") is False
+
+
 def test_sync_messages_returns_message_response() -> None:
     """Test that the sync messages() wrapper returns MessageResponse for non-streaming."""
     from any_llm.types.messages import MessageUsage, TextBlock
@@ -1550,12 +1818,12 @@ def test_messages_bridge_forwards_thinking_tool_result_and_parallel_flag_on_the_
 
     assistant = body["messages"][1]
     assert assistant["reasoning_content"] == "call the tool"
-    assert assistant["extra_content"] == {"anthropic": {"signature": "sig-abc"}}
+    assert "extra_content" not in assistant
 
     tool_message = body["messages"][2]
     assert tool_message["role"] == "tool"
-    assert tool_message["content"] == "partial capture:"
-    assert tool_message["is_error"] is True
+    assert tool_message["content"] == "Error: partial capture:"
+    assert "is_error" not in tool_message
 
     attachment = body["messages"][3]
     assert attachment["role"] == "user"
@@ -1765,6 +2033,50 @@ async def test_amessages_output_format_empty_content_leaves_parsed_none() -> Non
 
     assert isinstance(result, ParsedMessage)
     assert result.parsed_output is None
+
+
+@pytest.mark.asyncio
+async def test_amessages_output_format_refusal_returns_parsed_message() -> None:
+    """A refused structured-output turn returns stop_reason='refusal' with the refusal text instead of raising."""
+    from pydantic import BaseModel
+
+    from any_llm.types.completion import ChatCompletion
+
+    class City(BaseModel):
+        city_name: str
+
+    provider = _openai_provider()
+    provider._acompletion = AsyncMock(
+        return_value=ChatCompletion.model_validate(
+            {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": None, "refusal": "I cannot help with that."},
+                    }
+                ],
+            }
+        )
+    )
+
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=128,
+        output_format=City,
+    )
+
+    assert isinstance(result, ParsedMessage)
+    assert result.stop_reason == "refusal"
+    assert result.parsed_output is None
+    block = result.content[0]
+    assert isinstance(block, ParsedTextBlock)
+    assert block.text == "I cannot help with that."
 
 
 @pytest.mark.asyncio

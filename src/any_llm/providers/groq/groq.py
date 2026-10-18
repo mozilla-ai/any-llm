@@ -9,6 +9,7 @@ from typing_extensions import override
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
+from any_llm.utils.reasoning import replay_reasoning_content_as_reasoning
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
@@ -53,6 +54,8 @@ class GroqProvider(AnyLLM):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
+    # The SDK accepts n, but Groq's API answers any value other than 1 with HTTP 400.
+    SUPPORTS_COMPLETION_N = False
     SUPPORTS_RESPONSES = True
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False
@@ -64,6 +67,7 @@ class GroqProvider(AnyLLM):
 
     # The Groq SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
+    MAX_RETRIES_SUPPORT = "native"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -147,6 +151,7 @@ class GroqProvider(AnyLLM):
     async def _acompletion(
         self, params: CompletionParams, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        params.messages = replay_reasoning_content_as_reasoning(params.messages)
         if params.response_format:
             if is_structured_output_type(params.response_format):
                 kwargs["response_format"] = {

@@ -25,11 +25,12 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
-from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
+from any_llm.utils.messages_compat import prepare_blocks_for_native_messages
+from any_llm.utils.structured_output import get_json_schema, is_structured_output_type, normalize_output_config
 
 MISSING_PACKAGES_ERROR = None
 try:
-    from anthropic import AsyncAnthropic
+    from anthropic import AsyncAnthropic, transform_schema
 
     from .utils import (
         _convert_models_list,
@@ -44,7 +45,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator, Sequence
 
     from anthropic import AsyncAnthropic, AsyncAnthropicVertex
-    from anthropic.types import Message
+    from anthropic.lib.streaming import MessageStreamEvent as AnthropicStreamEvent
+    from anthropic.types import Message, RawMessageStreamEvent
     from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage
     from anthropic.types.messages.message_batch import MessageBatch
     from anthropic.types.model_info import ModelInfo as AnthropicModelInfo
@@ -94,16 +96,16 @@ _ANTHROPIC_TO_OPENAI_STATUS_MAP: dict[str, str] = {
 }
 
 
-def _get_context_edit_value(edit: Any, field: str) -> Any:
+def _get_context_edit_value(edit: object, field: str) -> object:
     return edit.get(field) if isinstance(edit, Mapping) else getattr(edit, field, None)
 
 
-def _get_context_edit_type(edit: Any) -> str | None:
+def _get_context_edit_type(edit: object) -> str | None:
     edit_type = _get_context_edit_value(edit, "type")
     return edit_type if isinstance(edit_type, str) else None
 
 
-def _validate_compaction_trigger(edit: Any) -> None:
+def _validate_compaction_trigger(edit: object) -> None:
     trigger = _get_context_edit_value(edit, "trigger")
     if trigger is None or _get_context_edit_value(trigger, "type") != "input_tokens":
         return
@@ -236,10 +238,12 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
+    SUPPORTS_MESSAGES_NATIVE = True
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING = True
 
     # The Anthropic SDK accepts a per-request `timeout` on messages.create, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
+    MAX_RETRIES_SUPPORT = "native"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -265,7 +269,9 @@ class BaseAnthropicProvider(AnyLLM, ABC):
 
     @staticmethod
     @override
-    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
+    def _convert_completion_chunk_response(
+        response: RawMessageStreamEvent | AnthropicStreamEvent, **kwargs: Any
+    ) -> ChatCompletionChunk:
         """Convert Anthropic streaming chunk to OpenAI ChatCompletionChunk format."""
         model_id = kwargs.get("model_id", "unknown")
         return _create_openai_chunk_from_anthropic_chunk(response, model_id)
@@ -320,8 +326,10 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         """Native Anthropic Messages API pass-through.
 
         When ``output_format`` is a structured-output type, uses native ``messages.parse``
-        (which drives the GA ``output_config`` primitive) and returns the SDK's ``ParsedMessage``
-        unchanged. When it is a raw ``output_config`` dict, passes it straight to native
+        and returns the SDK's ``ParsedMessage`` unchanged. The GA parse helper does not accept
+        ``container``, so that combination uses ``messages.create`` with the equivalent
+        schema and lets the public facade build the parsed result. When ``output_format`` is a
+        raw ``output_config`` dict, passes it straight to native
         ``messages.create(output_config=...)`` and returns a ``MessageResponse`` (the base layer
         then builds the matching ``ParsedMessage`` from its JSON text). Streaming requests use
         ``messages.stream`` with the matching typed or raw output configuration.
@@ -329,38 +337,47 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         header_betas = _pop_anthropic_beta_header(kwargs)
         betas = _messages_betas(params, header_betas)
         use_beta = params.context_management is not None or bool(betas)
-        messages_resource: Any
 
+        api_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream", "betas"})
+        api_kwargs["messages"] = prepare_blocks_for_native_messages(api_kwargs["messages"])
+        if betas:
+            api_kwargs["betas"] = betas
+        api_kwargs.update(kwargs)
+
+        # GA, beta, and Vertex resources have incompatible SDK method overloads.
+        # Keep the dynamic boundary here rather than duplicating request handling.
+        messages_resource: Any
         if params.output_format is not None:
             messages_resource = self.client.beta.messages if use_beta else self.client.messages
-            native_kwargs = params.model_dump(exclude_none=True, exclude={"output_format", "stream", "betas"})
-            if betas:
-                native_kwargs["betas"] = betas
-            native_kwargs.update(kwargs)
             if params.stream:
                 if is_structured_output_type(params.output_format):
-                    native_kwargs["output_format"] = params.output_format
+                    api_kwargs["output_format"] = params.output_format
                 else:
-                    native_kwargs["output_config"] = normalize_output_config(
-                        cast("dict[str, Any]", params.output_format)
-                    )
-                return self._stream_messages_async(use_beta=use_beta, **native_kwargs)
+                    api_kwargs["output_config"] = normalize_output_config(cast("dict[str, Any]", params.output_format))
+                return self._stream_messages_async(use_beta=use_beta, **api_kwargs)
             if is_structured_output_type(params.output_format):
+                # The GA messages.parse() helper has no container parameter (still absent on
+                # anthropic 1.7), so this combination has to go through messages.create(); the beta
+                # helper does accept it. Re-check when #1370 moves the pin to anthropic>=1.
+                if params.container is not None and not use_beta:
+                    output_config = {
+                        "format": {
+                            "type": "json_schema",
+                            "schema": transform_schema(get_json_schema(params.output_format)),
+                        }
+                    }
+                    with _translating_nonstreaming_guard(self, params.max_tokens):
+                        message = await messages_resource.create(output_config=cast("Any", output_config), **api_kwargs)
+                    return self._convert_native_message_to_response(message)
                 with _translating_nonstreaming_guard(self, params.max_tokens):
-                    parsed = await messages_resource.parse(output_format=params.output_format, **native_kwargs)
+                    parsed = await messages_resource.parse(output_format=params.output_format, **api_kwargs)
                 return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)
             # Normalize here as well as on the bridge so a bare format object means the same
             # thing on both paths; the native API requires the output_config nesting.
             output_config = normalize_output_config(cast("dict[str, Any]", params.output_format))
             with _translating_nonstreaming_guard(self, params.max_tokens):
-                message = await messages_resource.create(output_config=cast("Any", output_config), **native_kwargs)
+                message = await messages_resource.create(output_config=output_config, **api_kwargs)
             return self._convert_native_message_to_response(message)
-
-        api_kwargs = params.model_dump(exclude_none=True, exclude={"betas"})
-        api_kwargs.pop("stream", None)
-        if betas:
-            api_kwargs["betas"] = betas
-        api_kwargs.update(kwargs)
 
         if params.stream:
             return self._stream_messages_async(use_beta=use_beta, **api_kwargs)

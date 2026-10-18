@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -262,3 +263,84 @@ async def test_reasoning_effort_filtered_out(reasoning_effort: str) -> None:
 
         call_kwargs = mock_client.chat.completions.create.call_args[1]
         assert "reasoning_effort" not in call_kwargs
+
+
+async def _no_chunks() -> AsyncIterator[Any]:
+    return
+    yield
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_replayed_reasoning_content_sent_as_reasoning(stream: bool) -> None:
+    """Cerebras rejects reasoning_content and extra_content on a message, so a bridged replay carries reasoning instead."""
+    tool_calls = [{"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]
+    with patch("any_llm.providers.cerebras.cerebras.cerebras") as mock_cerebras:
+        mock_client = Mock()
+        mock_cerebras.AsyncCerebras.return_value = mock_client
+
+        mock_response = Mock()
+        mock_response.model_dump.return_value = {
+            "id": "test-id",
+            "model": "gpt-oss-120b",
+            "created": 1234567890,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        mock_client.chat.completions.create = AsyncMock(return_value=_no_chunks() if stream else mock_response)
+
+        provider = CerebrasProvider(api_key="test-api-key")
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="gpt-oss-120b",
+                messages=[
+                    {"role": "user", "content": "Weather in Paris?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": tool_calls,
+                        "reasoning_content": "need the tool",
+                        "extra_content": {"anthropic": {"signature": "sig"}},
+                    },
+                    {"role": "tool", "tool_call_id": "call_1", "content": "Error: unavailable"},
+                ],
+                stream=stream,
+            ),
+        )
+        if isinstance(result, AsyncIterator):
+            async for _ in result:
+                pass
+
+        sent = mock_client.chat.completions.create.call_args[1]["messages"]
+        assert sent[1] == {"role": "assistant", "content": None, "tool_calls": tool_calls, "reasoning": "need the tool"}
+
+
+def test_convert_chunk_keeps_every_choice() -> None:
+    from unittest.mock import Mock
+
+    def make_choice(index: int, content: str) -> Mock:
+        choice = Mock()
+        choice.index = index
+        choice.finish_reason = None
+        choice.delta = Mock(content=content, role=None, tool_calls=None, reasoning=None)
+        return choice
+
+    mock_chunk = Mock(id="chunk-id", model="llama-3.3-70b", created=1, usage=None)
+    mock_chunk.choices = [make_choice(0, "first"), make_choice(1, "second")]
+
+    result = _create_openai_chunk_from_cerebras_chunk(mock_chunk)
+
+    assert [(choice.index, choice.delta.content) for choice in result.choices] == [(0, "first"), (1, "second")]
+
+
+def test_convert_chunk_without_choices_keeps_one_empty_choice() -> None:
+    from unittest.mock import Mock
+
+    mock_chunk = Mock(id="chunk-id", model="llama-3.3-70b", created=1, usage=None)
+    mock_chunk.choices = []
+
+    result = _create_openai_chunk_from_cerebras_chunk(mock_chunk)
+
+    assert len(result.choices) == 1
+    assert result.choices[0].index == 0
+    assert result.choices[0].delta.content is None

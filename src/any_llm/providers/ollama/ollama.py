@@ -6,6 +6,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.logging import logger
+from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -111,7 +112,11 @@ class OllamaProvider(AnyLLM):
             if requested_max_tokens is not None:
                 converted_params["num_predict"] = requested_max_tokens
 
-        converted_params["num_ctx"] = converted_params.get("num_ctx", 32000)
+        # Only forward num_ctx when the caller set it. Injecting 32000 OOMs small
+        # hosts and overrides Ollama defaults (see jonigl/mcp-client-for-ollama#305).
+        num_ctx = converted_params.pop("num_ctx", None)
+        if num_ctx is not None:
+            converted_params["num_ctx"] = num_ctx
         return converted_params
 
     @staticmethod
@@ -327,12 +332,13 @@ class OllamaProvider(AnyLLM):
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
         """Generate embeddings using Ollama."""
+        encoding_format = pop_encoding_format(kwargs, self.PROVIDER_NAME)
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
         response = await self.client.embed(
             model=model,
             **embedding_kwargs,
         )
-        return self._convert_embedding_response(response)
+        return apply_encoding_format(self._convert_embedding_response(response), encoding_format)
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:

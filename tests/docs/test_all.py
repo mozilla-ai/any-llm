@@ -9,6 +9,7 @@ import pytest
 from mktestdocs import check_md_file
 
 from any_llm.constants import LLMProvider
+from any_llm.types.decide import ChoiceAnswer, DecideResponse, NoulAnswer, ScoreAnswer
 
 
 class FakeChatCompletion:
@@ -139,6 +140,7 @@ def _build_docs_patches() -> ExitStack:
     fake_chat_completion = fake_chat_completion_class()
     fake_chat_completion.model = "gpt-4.1-mini"
     fake_chat_completion.choices = [Mock(message=Mock(content="Hello!"), delta=Mock(content="Hello!"))]
+    fake_chat_completion.usage = Mock(prompt_tokens_details=Mock(cached_tokens=0, cache_write_tokens=0))
 
     fake_embedding = Mock()
     fake_embedding.data = [Mock(embedding=[0.1, 0.2, 0.3], index=0)]
@@ -149,6 +151,17 @@ def _build_docs_patches() -> ExitStack:
     fake_rerank.results = [Mock(index=0, relevance_score=0.95), Mock(index=2, relevance_score=0.80)]
     fake_rerank.meta = None
     fake_rerank.usage = Mock(total_tokens=50)
+
+    fake_decide = DecideResponse(
+        model="jev-1",
+        answers={
+            "billing": NoulAnswer(noul=0.98),
+            "tone": ChoiceAnswer(choice="angry", confidence=0.9, probabilities={"angry": 0.9, "calm": 0.1}),
+            "urgency": ScoreAnswer(
+                score=1.8, confidence=0.8, legend={0: "low", 1: "medium", 2: "high"}, probabilities={2: 0.8}
+            ),
+        },
+    )
 
     fake_response = Mock(output_text="Paris", id="resp_123")
     fake_message_response = Mock(content=[Mock(text="Hello!")])
@@ -187,6 +200,7 @@ def _build_docs_patches() -> ExitStack:
     provider_mock.responses.return_value = fake_response
     provider_mock.messages.return_value = fake_message_response
     provider_mock.list_models.return_value = fake_models
+    provider_mock.decide.return_value = fake_decide
     provider_mock.get_provider_metadata.return_value = fake_metadata
 
     def mock_completion_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -218,6 +232,8 @@ def _build_docs_patches() -> ExitStack:
     stack.enter_context(patch("any_llm.alist_models", new=AsyncMock(return_value=fake_models)))
     stack.enter_context(patch("any_llm.rerank", return_value=fake_rerank))
     stack.enter_context(patch("any_llm.arerank", new=AsyncMock(return_value=fake_rerank)))
+    stack.enter_context(patch("any_llm.decide", return_value=fake_decide))
+    stack.enter_context(patch("any_llm.adecide", new=AsyncMock(return_value=fake_decide)))
     stack.enter_context(patch("any_llm.create_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.retrieve_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.list_batches", return_value=[fake_batch]))

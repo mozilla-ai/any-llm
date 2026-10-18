@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 T = TypeVar("T")
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
+    from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Generator, Iterator
 
 RUNNER_THREAD_NAME = "any-llm-async-runner"
 
@@ -247,7 +247,12 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
         The result of the coroutine execution
 
     """
-    running_loop = _reject_running_loop_if_needed(allow_running_loop)
+    try:
+        running_loop = _reject_running_loop_if_needed(allow_running_loop)
+    except RuntimeError:
+        # Callers build the coroutine before this check, so close it to avoid a "never awaited" warning.
+        coro.close()
+        raise
     runner_loop = _get_runner_loop()
 
     if running_loop is runner_loop:
@@ -257,9 +262,12 @@ def run_async_in_sync(coro: Coroutine[Any, Any, T], allow_running_loop: bool = T
 
 
 def _async_source_to_sync_iter(
-    get_async_iter: Callable[[], Awaitable[AsyncIterator[T]]], allow_running_loop: bool = True
-) -> Iterator[T]:
-    """Bridge an async iterator source into a synchronous iterator."""
+    get_async_iter: Callable[[], Awaitable[AsyncIterator[T]]],
+    allow_running_loop: bool = True,
+    *,
+    on_demand: bool = False,
+) -> Generator[T, None, None]:
+    """Bridge an async source, optionally waiting for each sync read before advancing it."""
     running_loop = _reject_running_loop_if_needed(allow_running_loop)
 
     # The whole iterator is consumed by one task so the source keeps a single context, which async
@@ -272,6 +280,7 @@ def _async_source_to_sync_iter(
     else:
         loop, loop_thread = runner_loop, None
 
+    demand = asyncio.Event() if on_demand else None
     done_sentinel = object()
     output_queue: queue.Queue[object] = queue.Queue()
     cancel_event = threading.Event()
@@ -283,14 +292,23 @@ def _async_source_to_sync_iter(
         try:
             async_iter = await get_async_iter()
             try:
-                async for item in async_iter:
+                iterator = aiter(async_iter)
+                while True:
+                    if demand is not None:
+                        await demand.wait()
+                        demand.clear()
+                    try:
+                        item = await anext(iterator)
+                    except StopAsyncIteration:
+                        break
                     if cancel_event.is_set():
                         break
                     output_queue.put(item)
             finally:
                 await aclose_quietly(async_iter)
-        except asyncio.CancelledError:
-            pass
+        except asyncio.CancelledError as exc:
+            if on_demand and not cancel_event.is_set():
+                output_queue.put(exc)
         except Exception as exc:
             output_queue.put(exc)
         finally:
@@ -313,10 +331,12 @@ def _async_source_to_sync_iter(
 
     try:
         while True:
+            if demand is not None:
+                loop.call_soon_threadsafe(demand.set)
             result = output_queue.get()
             if result is done_sentinel:
                 break
-            if isinstance(result, Exception):
+            if isinstance(result, (Exception, asyncio.CancelledError)):
                 raise result
             yield cast("T", result)
     finally:

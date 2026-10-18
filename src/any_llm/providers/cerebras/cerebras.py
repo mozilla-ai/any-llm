@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.utils.reasoning import replay_reasoning_content_as_reasoning
 from any_llm.utils.structured_output import get_strict_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -38,6 +39,7 @@ class CerebrasProvider(AnyLLM):
 
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
+    SUPPORTS_COMPLETION_N = True
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = False
@@ -49,6 +51,7 @@ class CerebrasProvider(AnyLLM):
 
     # The Cerebras SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
+    MAX_RETRIES_SUPPORT = "native"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -122,6 +125,7 @@ class CerebrasProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        params.messages = replay_reasoning_content_as_reasoning(params.messages)
         if params.response_format:
             # See https://inference-docs.cerebras.ai/capabilities/structured-outputs for guide to creating schema.
             # Cerebras rejects a strict schema that omits additionalProperties with

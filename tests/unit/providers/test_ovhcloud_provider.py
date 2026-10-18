@@ -1,6 +1,7 @@
 import pytest
 
 from any_llm.any_llm import AnyLLM
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.registry import get_registry_config, get_registry_provider_class
 
@@ -79,6 +80,5 @@ def test_registered_in_registry_and_loader() -> None:
     assert get_registry_config("ovhcloud") is not None
     assert AnyLLM.get_provider_class("ovhcloud") is OvhcloudProvider
     assert "ovhcloud" in AnyLLM.get_supported_providers()
-    # No LLMProvider enum member: this is a brand-new registry-only row, not a
-    # migrated provider carrying a legacy folder/enum compat shim.
     assert "ovhcloud" in AnyLLM.get_registry_provider_names()
+    assert LLMProvider("ovhcloud") == "ovhcloud"

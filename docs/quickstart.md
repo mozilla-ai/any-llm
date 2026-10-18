@@ -135,6 +135,10 @@ for chunk in completion(
     output += chunk_content
 ```
 
+## Multiple Choices
+
+`n` asks for more than one choice in a single completion. `n=1` is OpenAI's default, so any-llm drops it before the request reaches any provider, and clients that always send it (Haystack's `OpenAIChatGenerator`, for example) work everywhere. Any other value is forwarded only to providers that can return several choices: the providers built on the OpenAI-compatible base (including registry gateways and `AnyLLM.create_openai_compatible` endpoints), `cerebras`, `huggingface`, `mistral` and `together`. `vertexai` forwards `n` for its partner models only and refuses values above 1 for Gemini models. `deepseek` drops `n`, like the other fields its API does not define. The rest raise `UnsupportedParameterError` naming `n` instead of silently returning one choice.
+
 ## Reasoning
 
 For [providers that support reasoning](providers.md), you can request thinking traces alongside the response using `reasoning_effort`:
@@ -158,6 +162,42 @@ print(response.choices[0].message.content)
 ```
 
 Reasoning also works with streaming — each chunk may include `chunk.choices[0].delta.reasoning`.
+
+## Responses
+
+For the [providers that support it](providers.md), `responses` and `aresponses` expose the OpenAI-style Responses API:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("openai")
+response = llm.responses(
+    model="gpt-5-nano",
+    input_data="Explain why the sky is blue.",
+)
+print(response.output_text)
+```
+
+Coverage varies by provider. Check the Responses column in [providers](providers.md), and the notes below for parameters a provider rejects.
+
+### Gemini
+
+Gemini maps text-only `responses()` calls to Google's [Interactions API](https://ai.google.dev/gemini-api/docs/interactions). The existing `completion()` method continues to use `generateContent`.
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("gemini")
+response = llm.responses(
+    model="gemini-3.8-flash",
+    input_data="Explain why the sky is blue.",
+)
+print(response.output_text)
+```
+
+Pass `stream=True` to `responses()` for a synchronous iterator of Responses events, or await `aresponses()` and consume the returned async iterator.
+
+Gemini text Interactions accept string input, instructions, maximum output tokens, per-request timeouts, and streaming. Omitting `store` uses Google's default storage behavior. Passing `store=True` or `store=False` raises `UnsupportedParameterError`. Other unsupported Responses parameters include media, tools, reasoning controls, structured output, chaining, metadata, and background execution.
 
 ## Embeddings
 
@@ -240,6 +280,44 @@ any-llm automatically converts your Python functions to OpenAI tools format. Fun
 - Type annotations for all parameters
 - A return type annotation
 
+## Retries
+
+Provider SDKs differ in how often they retry a failed request on their own: the OpenAI and
+Anthropic SDKs retry twice by default (honouring `Retry-After`), while the Google GenAI SDK
+used by `gemini` and `vertexai` does not retry unless configured to. Set `max_retries` to give
+every provider the same retry count, for example `0` when your own code or gateway already
+handles retries and failover:
+
+```python
+from any_llm import AnyLLM, completion
+
+llm = AnyLLM.create("gemini", max_retries=0)
+
+response = completion(
+    model="gpt-4o-mini",
+    provider="openai",
+    messages=[{"role": "user", "content": "Hello!"}],
+    client_args={"max_retries": 0},
+)
+```
+
+`max_retries` counts retries after the first request, so `0` means one request in total.
+Omitting it, or passing `None`, keeps each SDK's own default. Each provider maps the value to
+its SDK's native setting:
+
+| Providers | SDK setting |
+|-----------|-------------|
+| OpenAI-compatible providers (`openai`, `azureopenai`, `deepseek`, `openrouter`, `meta`, registry gateways, `AnyLLM.create_openai_compatible()`, ...), `anthropic`, `azureanthropic`, `vertexaianthropic`, `groq`, `cerebras`, `together`, `cohere` | `max_retries` on the SDK client |
+| `gemini`, `vertexai` | `http_options.retry_options.attempts`, set to `max_retries + 1` (`vertexai` partner and Mistral models pass `max_retries` to their OpenAI SDK client) |
+| `voyage` | `max_retries` on the SDK client, set to `max_retries + 1` because the SDK counts the first request |
+
+The other providers (`azure`, `bedrock`, `huggingface`, `liner`, `lmstudio`, `mistral`,
+`ollama`, `otari`, `sagemaker`, `watsonx`, `xai`) raise `UnsupportedParameterError` for `max_retries`,
+because their SDK has no single retry count to set. Configure retries for them through the
+SDK's own options in `client_args`, for example `retry_config` for Mistral or a botocore
+`Config` for Bedrock. For `gemini` and `vertexai`, `retry_options` that you pass in
+`http_options` take precedence over `max_retries`.
+
 ## Exception Handling
 
 The `any-llm` package provides a unified exception hierarchy that works consistently across all LLM providers.
@@ -255,6 +333,21 @@ export ANY_LLM_UNIFIED_EXCEPTIONS=1
 ```
 
 When enabled, provider-specific exceptions are automatically converted to `any-llm` exception types. When disabled (default), the original provider exceptions are raised with a deprecation warning.
+
+To configure a single client without changing the environment for other callers, pass
+`unified_exceptions` when creating the provider:
+
+```python
+from any_llm import AnyLLM
+
+llm = AnyLLM.create("openai", unified_exceptions=True)
+```
+
+An explicit `True` or `False` takes precedence over the environment variable for that
+instance, including errors raised while iterating a streaming response or downloading
+a file. Omitting the
+argument, or passing `None`, preserves the environment-controlled behavior. This option
+is also accepted by provider constructors and `AnyLLM.create_openai_compatible()`.
 
 ### Basic Usage
 

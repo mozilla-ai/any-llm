@@ -219,6 +219,7 @@ async def test_aretrieve_batch_results_completed_mixed() -> None:
             output_tokens=5,
             cache_read_input_tokens=0,
             cache_creation_input_tokens=0,
+            cache_creation=None,
         )
         mock_message.created_at = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         success_entry.result.message = mock_message

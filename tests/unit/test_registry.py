@@ -1,9 +1,12 @@
+import threading
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from any_llm import constants
 from any_llm.any_llm import AnyLLM
 from any_llm.api import (
     acancel_batch,
@@ -24,7 +27,7 @@ from any_llm.api import (
     retrieve_batch_results,
 )
 from any_llm.constants import LLMProvider
-from any_llm.exceptions import UnsupportedProviderError
+from any_llm.exceptions import MissingApiKeyError, UnsupportedProviderError
 from any_llm.providers import registry
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.registry import (
@@ -46,6 +49,21 @@ def community_row(monkeypatch: pytest.MonkeyPatch) -> Generator[OpenAICompatible
     monkeypatch.setitem(registry.PROVIDER_REGISTRY, "testgateway", config)
     yield config
     registry._class_cache.pop("testgateway", None)
+
+
+@pytest.fixture
+def optional_key_row(monkeypatch: pytest.MonkeyPatch) -> Generator[OpenAICompatibleProviderConfig, None, None]:
+    """Inject a registry row for a gateway with optional API key."""
+    config = OpenAICompatibleProviderConfig(
+        name="optionalgateway",
+        api_base="https://optionalgateway.example/v1",
+        env_api_key_name="OPTIONALGATEWAY_API_KEY",
+        provider_documentation_url="https://optionalgateway.example/docs",
+        api_key_optional=True,
+    )
+    monkeypatch.setitem(registry.PROVIDER_REGISTRY, "optionalgateway", config)
+    yield config
+    registry._class_cache.pop("optionalgateway", None)
 
 
 def test_config_lookup_normalizes_name() -> None:
@@ -103,8 +121,59 @@ def test_registry_only_name_resolves_without_enum_entry(community_row: OpenAICom
     assert isinstance(provider, BaseOpenAIProvider)
     assert provider.PROVIDER_NAME == "testgateway"
     assert str(provider.client.base_url).rstrip("/") == "https://testgateway.example/v1"
-    with pytest.raises(UnsupportedProviderError):
-        LLMProvider.from_string("testgateway")
+
+
+def test_llm_provider_resolves_registry_only_row(community_row: OpenAICompatibleProviderConfig) -> None:
+    member = LLMProvider("testgateway")
+    assert isinstance(member, LLMProvider)
+    assert member == "testgateway"
+    assert member.value == "testgateway"
+    assert member.name == "TESTGATEWAY"
+    assert LLMProvider("testgateway") is member
+    assert LLMProvider.from_string(" TestGateway ") is member
+    assert AnyLLM.get_provider_class(member) is get_registry_provider_class("testgateway")
+
+
+def test_llm_provider_concurrent_first_lookups_share_one_member(
+    community_row: OpenAICompatibleProviderConfig,
+) -> None:
+    constants._REGISTRY_MEMBERS.pop("testgateway", None)
+    barrier = threading.Barrier(16)
+
+    def resolve(_: int) -> LLMProvider:
+        barrier.wait()
+        return LLMProvider("testgateway")
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        members = list(pool.map(resolve, range(16)))
+    assert all(member is members[0] for member in members)
+
+
+def test_llm_provider_iteration_omits_registry_only_rows(community_row: OpenAICompatibleProviderConfig) -> None:
+    LLMProvider("testgateway")
+    assert "testgateway" not in [provider.value for provider in LLMProvider]
+    assert "testgateway" in AnyLLM.get_registry_provider_names()
+
+
+def test_llm_provider_rejects_unknown_and_non_string_values() -> None:
+    with pytest.raises(ValueError, match="nonexistent"):
+        LLMProvider("nonexistent")
+    with pytest.raises(ValueError, match="42"):
+        LLMProvider(42)  # type: ignore[arg-type]
+
+
+def test_llm_provider_rejects_row_once_removed(community_row: OpenAICompatibleProviderConfig) -> None:
+    LLMProvider("testgateway")
+    del registry.PROVIDER_REGISTRY["testgateway"]
+    with pytest.raises(ValueError, match="testgateway"):
+        LLMProvider("testgateway")
+
+
+def test_from_string_error_lists_registry_only_rows(community_row: OpenAICompatibleProviderConfig) -> None:
+    with pytest.raises(UnsupportedProviderError) as excinfo:
+        LLMProvider.from_string("nonexistent")
+    assert excinfo.value.supported_providers == AnyLLM.get_supported_providers()
+    assert "testgateway" in excinfo.value.supported_providers
 
 
 def test_row_defaults_are_conservative(community_row: OpenAICompatibleProviderConfig) -> None:
@@ -121,6 +190,60 @@ def test_row_defaults_are_conservative(community_row: OpenAICompatibleProviderCo
     assert not cls.SUPPORTS_BATCH
     assert not cls.SUPPORTS_IMAGE_GENERATION
     assert not cls.SUPPORTS_RERANK
+    assert not community_row.api_key_optional
+
+
+def test_row_api_key_required_by_default(
+    community_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(community_row.env_api_key_name, raising=False)
+    with pytest.raises(MissingApiKeyError):
+        AnyLLM.create("testgateway")
+
+
+def test_row_optional_api_key_defaults_to_placeholder(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(optional_key_row.env_api_key_name, raising=False)
+    provider = AnyLLM.create("optionalgateway")
+    assert isinstance(provider, BaseOpenAIProvider)
+    assert provider.client.api_key == "no-key-required"
+
+
+def test_row_optional_api_key_honors_explicit_key(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(optional_key_row.env_api_key_name, "env-key")
+    provider = AnyLLM.create("optionalgateway", api_key="explicit-key")
+    assert isinstance(provider, BaseOpenAIProvider)
+    assert provider.client.api_key == "explicit-key"
+
+
+def test_row_optional_api_key_honors_env_var(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(optional_key_row.env_api_key_name, "env-key")
+    provider = AnyLLM.create("optionalgateway")
+    assert isinstance(provider, BaseOpenAIProvider)
+    assert provider.client.api_key == "env-key"
+
+
+def test_row_optional_api_key_is_resolved_per_instance_not_per_class(
+    optional_key_row: OpenAICompatibleProviderConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The minted class is cached for the lifetime of the process, so resolving the env
+    # var when the class is built rather than when it is instantiated would pin the
+    # first value every later caller sees.
+    monkeypatch.delenv(optional_key_row.env_api_key_name, raising=False)
+    before = AnyLLM.create("optionalgateway")
+    monkeypatch.setenv(optional_key_row.env_api_key_name, "late-env-key")
+    after = AnyLLM.create("optionalgateway")
+
+    assert type(before) is type(after)
+    assert isinstance(before, BaseOpenAIProvider)
+    assert isinstance(after, BaseOpenAIProvider)
+    assert before.client.api_key == "no-key-required"
+    assert after.client.api_key == "late-env-key"
 
 
 def test_unregistered_name_still_raises_unsupported_provider() -> None:
@@ -134,6 +257,24 @@ def test_import_shim_returns_registry_class() -> None:
 
     assert AtlascloudProvider is get_registry_provider_class("atlascloud")
     assert DeepAtlascloudProvider is AtlascloudProvider
+
+    from any_llm.providers.cascadia import CascadiaProvider
+    from any_llm.providers.cascadia.cascadia import CascadiaProvider as DeepCascadiaProvider
+
+    assert CascadiaProvider is get_registry_provider_class("cascadia")
+    assert DeepCascadiaProvider is CascadiaProvider
+
+    from any_llm.providers.llamacpp import LlamacppProvider
+    from any_llm.providers.llamacpp.llamacpp import LlamacppProvider as DeepLlamacppProvider
+
+    assert LlamacppProvider is get_registry_provider_class("llamacpp")
+    assert DeepLlamacppProvider is LlamacppProvider
+
+    from any_llm.providers.vllm import VllmProvider
+    from any_llm.providers.vllm.vllm import VllmProvider as DeepVllmProvider
+
+    assert VllmProvider is get_registry_provider_class("vllm")
+    assert DeepVllmProvider is VllmProvider
 
 
 def test_registry_only_name_is_listed_as_supported(community_row: OpenAICompatibleProviderConfig) -> None:
@@ -236,14 +377,11 @@ def test_unsupported_provider_error_lists_registry_names_from_get_provider_enum(
     assert "testgateway" in excinfo.value.supported_providers
 
 
-def test_get_provider_enum_still_rejects_registry_only_names(
+def test_get_provider_enum_accepts_registry_only_names(
     community_row: OpenAICompatibleProviderConfig,
 ) -> None:
-    """A registry row has no enum member, so the enum accessor raises by design."""
-    with pytest.raises(UnsupportedProviderError):
-        AnyLLM.get_provider_enum("testgateway")
-    # ...while the resolver accepts it.
-    assert AnyLLM.resolve_provider_key("testgateway") == "testgateway"
+    assert AnyLLM.get_provider_enum("testgateway") is LLMProvider("testgateway")
+    assert AnyLLM.resolve_provider_key("testgateway") is LLMProvider("testgateway")
 
 
 def test_create_unsupported_error_lists_registry_names(community_row: OpenAICompatibleProviderConfig) -> None:

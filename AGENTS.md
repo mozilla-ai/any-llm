@@ -2,24 +2,19 @@
 
 Every `CLAUDE.md` in this repo is a symlink to the `AGENTS.md` beside it. Always edit `AGENTS.md` directly; never modify a `CLAUDE.md`, and never create one that holds content.
 
+Put guidance in the narrowest file that covers it: `docs/AGENTS.md` for documentation, a skill under `.claude/skills/` for a multi-step procedure, and this file only for what applies repo-wide. Link to the source of truth (CONTRIBUTING.md, config, scripts) instead of restating it; a fact kept in two places goes stale in one of them.
+
 ## Where to Look First
 
-- [CONTRIBUTING.md](CONTRIBUTING.md): canonical dev setup, test matrix, and contribution workflow.
-
-## Build, Test, and Development Commands
-
-This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date command set, follow [CONTRIBUTING.md](CONTRIBUTING.md).
-
-- Create env + install dev deps: `uv venv && source .venv/bin/activate && uv sync --all-extras -U`
-- Integration tests (often require API keys): `uv run pytest -v tests/integration -n auto`
+- [CONTRIBUTING.md](CONTRIBUTING.md): canonical dev setup, commands, test matrix, and contribution workflow.
 
 ## Coding Style & Naming Conventions
 
 - Provider code lives under `src/any_llm/providers/<provider>/` (keep provider-specific behavior isolated there).
 - **Override decorator**: When overriding methods from base classes (like `AnyLLM`), always use the `@override` decorator from `typing_extensions`. This is enforced by mypy's `explicit-override` error code. For static methods, the order is `@staticmethod` followed by `@override`.
 - Prefer direct attribute access (e.g., `obj.field`) over `getattr(obj, "field")` when the field is typed. This enables `ruff` and `mypy` to catch errors at lint time. Only use `getattr`/`setattr` when working with truly dynamic attributes or when type information is unavailable.
-- Please add code comments if you find them helpful to accomplish your objective. However, please remove any comments you added that describe obvious behavior before finishing your task.
-- Never use emdashes or -- in any comments or descriptions.
+- Comment only what the code cannot say: a non-obvious reason, a workaround, or a constraint. Narration of the change and of prior behavior belongs in the commit message.
+- In prose (docs, comments, docstrings, commit messages, PR descriptions), separate clauses with commas, semicolons, colons, parentheses, or periods instead of em dashes or `--`. Code, CLI flags such as `--all-extras`, and en-dash ranges such as `3–4` are unaffected.
 
 ## Testing Guidelines
 
@@ -28,6 +23,7 @@ This repo uses `uv` for local dev (Python 3.11+). For the full, up-to-date comma
 - Do not use class-based test grouping (`class TestFoo:`). All tests should be standalone functions.
 - Do not add decorative section-separator comments (e.g., `# -----------` banners). Well-named test functions and natural file ordering are sufficient.
 - Place imports at the top of test files unless the import is for an optional dependency that may not be installed (e.g., provider-specific SDKs like `mistralai`, `cohere`). In that case, inline imports inside the test function are acceptable to avoid breaking the entire file.
+- Retries apply only to `tests/integration`, where provider overload and rate limits cause transient failures; `tests/integration/conftest.py` marks those tests `flaky`. Unit and docs tests run once, so a failure there is a real failure.
 - When the integration suite is red, follow the `integration-test-triage` skill (`.claude/skills/integration-test-triage/SKILL.md`) before assuming a regression.
 - The dataclass/dict structured-output path (`parse_responses_output`) is separate from the Pydantic `responses.parse()` path; a bug can hit one and not the other, so test both.
 

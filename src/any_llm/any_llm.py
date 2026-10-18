@@ -5,13 +5,15 @@ import importlib
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
 
 from openresponses_types import ResponseResource
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
+from any_llm._files import FilesMixin
 from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
+    AnyLLMError,
     ContentFilterFinishReasonError,
     LengthFinishReasonError,
     MissingApiKeyError,
@@ -19,7 +21,7 @@ from any_llm.exceptions import (
     UnsupportedProviderError,
 )
 from any_llm.tools import _flatten_responses_tool, prepare_tools
-from any_llm.types.audio import AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.audio import AudioInput, AudioSpeechParams, AudioTranscriptionParams, Transcription
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -27,6 +29,7 @@ from any_llm.types.completion import (
     ParsedChatCompletion,
     ReasoningEffort,
 )
+from any_llm.types.decide import Question, QuestionsInput
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import (
     MessageDelta,
@@ -50,7 +53,7 @@ from any_llm.types.responses import (
     ResponseStreamEvent,
 )
 from any_llm.utils.aio import aclose_quietly, async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
-from any_llm.utils.exception_handler import handle_exceptions
+from any_llm.utils.exception_handler import handle_exceptions, provider_exception_handler
 from any_llm.utils.structured_output import (
     build_parsed_message,
     is_structured_output_type,
@@ -61,17 +64,21 @@ from any_llm.utils.structured_output import (
 
 ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 
+# Validated as one mapping, so every invalid question is reported under its name.
+_QUESTIONS_ADAPTER: TypeAdapter[dict[str, Question]] = TypeAdapter(dict[str, Question])
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
 
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
+    from any_llm.types.decide import DecideResponse, JSONContent
     from any_llm.types.model import Model
     from any_llm.types.moderation import ModerationResponse
     from any_llm.types.rerank import RerankResponse
 
 
-class AnyLLM(ABC):
+class AnyLLM(FilesMixin, ABC):
     """Provider for the LLM."""
 
     # === Provider-specific configuration (to be overridden by subclasses) ===
@@ -130,14 +137,35 @@ class AnyLLM(ABC):
     SUPPORTS_RERANK: bool = False
     """Rerank API - reorder documents by relevance to a query."""
 
+    SUPPORTS_DECIDE: bool = False
+    """Decide API - answer named yes/no, choice, and score questions about a state."""
+
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
+
+    SUPPORTS_MESSAGES_NATIVE: bool = False
+    """Whether the provider implements `_amessages` against a real Anthropic Messages
+    endpoint, rather than inheriting the Messages-to-Completions bridge.
+
+    A provider that serves only some of its models natively sets this and answers per model
+    in `serves_messages_natively`."""
 
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
     """Whether Messages structured output can be streamed by this provider."""
 
+    SUPPORTS_COMPLETION_N: bool = False
+    """Whether the provider can return more than one choice per request (OpenAI's ``n``).
+
+    ``n=1`` is OpenAI's default, so it is dropped for every provider before conversion. Any
+    other value reaches only a provider that sets this flag, and is rejected elsewhere rather
+    than silently answered with a single choice.
+    """
+
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
+
+    _READS_CACHE_CONTROL_SIDE_CHANNEL: ClassVar[bool] = False
+    """Whether the Messages bridge should pass ``cache_control`` breakpoints in ``extra_content``."""
 
     TIMEOUT_SUPPORT: Literal["unsupported", "native", "mapped"] = "unsupported"
     """How the provider honors a per-request ``timeout`` (in seconds).
@@ -147,6 +175,15 @@ class AnyLLM(ABC):
     ``unsupported`` providers have no per-request timeout, so a caller-supplied value is rejected.
     The default is ``unsupported`` so a new provider must opt in explicitly rather than silently
     mis-send or drop the value.
+    """
+
+    MAX_RETRIES_SUPPORT: Literal["unsupported", "native", "mapped"] = "unsupported"
+    """How the provider honors the ``max_retries`` client option.
+
+    ``native`` providers pass ``max_retries`` unchanged to an SDK client that accepts it.
+    ``mapped`` providers translate it to the SDK's own retry setting in ``_apply_max_retries``.
+    ``unsupported`` providers have no client-level retry count, so a caller-supplied value is
+    rejected rather than silently dropped.
     """
 
     API_BASE: str | None = None
@@ -166,13 +203,52 @@ class AnyLLM(ABC):
     For example, in `gemini` provider, this could include `google.genai.types.Tool`.
     """
 
-    def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+    _unified_exceptions: bool | None = None
+    """Per-instance override for unified exception conversion.
+
+    ``None`` defers to ``ANY_LLM_UNIFIED_EXCEPTIONS`` at raise time. Declared here so
+    every provider carries the attribute even if a subclass skips ``super().__init__``.
+    """
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        *,
+        unified_exceptions: bool | None = None,
+        max_retries: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._unified_exceptions = unified_exceptions
         self._verify_no_missing_packages()
-        self._init_client(
-            api_key=self._verify_and_set_api_key(api_key),
-            api_base=self._resolve_api_base(api_base),
-            **kwargs,
-        )
+        if max_retries is not None:
+            self._apply_max_retries(self._validate_max_retries(max_retries), kwargs)
+        api_key = self._verify_and_set_api_key(api_key)
+        api_base = self._resolve_api_base(api_base)
+        try:
+            self._init_client(api_key=api_key, api_base=api_base, **kwargs)
+        except Exception as e:
+            provider_exception_handler(self)(e)
+
+    @staticmethod
+    def _validate_max_retries(max_retries: int) -> int:
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
+            msg = "max_retries must be a non-negative integer"
+            raise ValueError(msg)
+        return max_retries
+
+    def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
+        """Translate ``max_retries`` into this provider's client constructor arguments.
+
+        ``mapped`` providers override this method. Settings that ``client_kwargs`` already
+        carries in the SDK's own retry format take precedence over ``max_retries``.
+        """
+        if self.MAX_RETRIES_SUPPORT == "native":
+            client_kwargs["max_retries"] = max_retries
+            return
+        parameter_name = "max_retries"
+        additional_message = "Configure retries with the SDK's own client options in client_args instead."
+        raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
 
     def _verify_no_missing_packages(self) -> None:
         if self.MISSING_PACKAGES_ERROR is not None:
@@ -205,7 +281,14 @@ class AnyLLM(ABC):
 
     @classmethod
     def create(
-        cls, provider: str | LLMProvider, api_key: str | None = None, api_base: str | None = None, **kwargs: Any
+        cls,
+        provider: str | LLMProvider,
+        api_key: str | None = None,
+        api_base: str | None = None,
+        *,
+        unified_exceptions: bool | None = None,
+        max_retries: int | None = None,
+        **kwargs: Any,
     ) -> AnyLLM:
         """Create a provider instance using the given provider name and config.
 
@@ -213,13 +296,25 @@ class AnyLLM(ABC):
             provider: The provider name (e.g., 'openai', 'anthropic')
             api_key: API key for the provider
             api_base: Base URL for the provider API
+            unified_exceptions: Convert provider exceptions for this instance when True,
+                or preserve them when False. None (default) uses ANY_LLM_UNIFIED_EXCEPTIONS.
+            max_retries: How many times the provider's SDK client retries a failed request
+                (0 disables retries). None (default) keeps the SDK's own default. Raises
+                UnsupportedParameterError for providers whose SDK has no retry count to set.
             **kwargs: Additional provider-specific arguments
 
         Returns:
             Provider instance for the specified provider
 
         """
-        return cls._create_provider(provider, api_key=api_key, api_base=api_base, **kwargs)
+        return cls._create_provider(
+            provider,
+            api_key=api_key,
+            api_base=api_base,
+            unified_exceptions=unified_exceptions,
+            max_retries=max_retries,
+            **kwargs,
+        )
 
     @classmethod
     def create_openai_compatible(cls, name: str, api_base: str, api_key: str | None = None, **kwargs: Any) -> AnyLLM:
@@ -234,7 +329,8 @@ class AnyLLM(ABC):
             name: Identifier for the endpoint (e.g. ``"mygateway"``). Reported as the provider name.
             api_base: Base URL of the OpenAI-compatible endpoint (e.g. ``"https://mygateway.example/v1"``).
             api_key: API key, if the endpoint requires one. Optional for keyless local servers.
-            **kwargs: Additional arguments forwarded to the underlying OpenAI client.
+            **kwargs: Additional provider arguments. ``unified_exceptions`` is consumed by the
+                provider; everything else is forwarded to the underlying OpenAI client.
 
         Returns:
             A provider instance bound to the given endpoint.
@@ -351,18 +447,17 @@ class AnyLLM(ABC):
     def get_supported_providers(cls) -> list[str]:
         """Get a list of supported provider keys.
 
-        Includes registry-only gateways, which resolve by name without an
-        ``LLMProvider`` member.
+        Includes registry-only gateways, which ``LLMProvider(name)`` resolves
+        even though enum iteration does not list them.
         """
         return [provider.value for provider in LLMProvider] + cls.get_registry_provider_names()
 
     @classmethod
     def resolve_provider_key(cls, provider_key: str | LLMProvider) -> str | LLMProvider:
-        """Resolve a provider key to an ``LLMProvider`` member where one exists.
+        """Resolve a provider key to its ``LLMProvider`` member.
 
-        Registry-only gateways have no enum member, so their name is returned
-        unchanged. Everything downstream (``create``, ``get_provider_class``)
-        accepts either form.
+        Registry rows without a declared member resolve too, through
+        ``LLMProvider``'s value lookup.
 
         Raises:
             UnsupportedProviderError: The key is neither an enum member nor a
@@ -373,14 +468,9 @@ class AnyLLM(ABC):
             return provider_key
         # Match LLMProvider.from_string's normalization so both resolution paths
         # accept the same spellings.
-        normalized = provider_key.strip().lower()
         try:
-            return LLMProvider(normalized)
+            return LLMProvider(provider_key.strip().lower())
         except ValueError:
-            from any_llm.providers.registry import get_registry_config
-
-            if get_registry_config(normalized) is not None:
-                return normalized
             raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from None
 
     @classmethod
@@ -403,11 +493,7 @@ class AnyLLM(ABC):
 
     @classmethod
     def get_provider_enum(cls, provider_key: str) -> LLMProvider:
-        """Convert a string provider key to a ProviderName enum.
-
-        Registry-only gateways have no enum member, so this raises for them even
-        though they are resolvable. Use ``resolve_provider_key`` to accept both.
-        """
+        """Convert a string provider key to a ProviderName enum, registry rows included."""
         try:
             return LLMProvider(provider_key)
         except ValueError as e:
@@ -416,16 +502,18 @@ class AnyLLM(ABC):
             raise UnsupportedProviderError(provider_key, cls.get_supported_providers()) from e
 
     @classmethod
-    def split_model_provider(cls, model: str) -> tuple[str | LLMProvider, str]:
+    def split_model_provider(cls, model: str, *, stacklevel: int = 3) -> tuple[str | LLMProvider, str]:
         """Extract the provider key from the model identifier.
 
         Supports both new format 'provider:model' (e.g., 'mistral:mistral-small')
         and legacy format 'provider/model' (e.g., 'mistral/mistral-small').
 
-        The legacy format will be deprecated in version 1.0.
+        The legacy format will be deprecated in version 1.0. Its warning points
+        ``stacklevel`` frames up, at the caller of the function that called this
+        one; a helper in between should raise it by one.
 
-        Returns an ``LLMProvider`` member when the provider has one, and the bare
-        name for registry-only gateways. Both forms are accepted by ``create``.
+        The provider is returned as an ``LLMProvider`` member, registry-only
+        gateways included.
         """
         colon_index = model.find(":")
         slash_index = model.find("/")
@@ -440,7 +528,7 @@ class AnyLLM(ABC):
                 f"Model format 'provider/model' is deprecated and will be removed in version 1.0. "
                 f"Please use 'provider:model' format instead. Got: '{model}'",
                 DeprecationWarning,
-                stacklevel=3,
+                stacklevel=stacklevel,
             )
             provider, model_name = model.split("/", 1)
         else:
@@ -498,6 +586,16 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
+    @staticmethod
+    def _classify_exception(exception: Exception) -> type[AnyLLMError] | None:
+        """Pick the unified exception class for an SDK exception, or None to use the shared classification.
+
+        Override when the SDK's exception types say more than its status and message do,
+        for example an error the SDK raises before sending anything. A class the shared
+        classification never picks, or an exception raised here, falls back to it.
+        """
+        return None
+
     @classmethod
     def get_provider_metadata(cls) -> ProviderMetadata:
         """Get provider metadata without requiring instantiation.
@@ -527,9 +625,26 @@ class AnyLLM(ABC):
             audio_transcription=cls.SUPPORTS_AUDIO_TRANSCRIPTION,
             audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
             rerank=cls.SUPPORTS_RERANK,
+            decide=cls.SUPPORTS_DECIDE,
+            files=bool(cls.SUPPORTED_FILE_OPERATIONS),
+            file_operations=tuple(sorted(cls.SUPPORTED_FILE_OPERATIONS)),
             messages=cls.SUPPORTS_MESSAGES,
+            messages_native=cls.SUPPORTS_MESSAGES_NATIVE,
             class_name=cls.__name__,
         )
+
+    @classmethod
+    def serves_messages_natively(cls, model: str) -> bool:
+        """Whether this provider serves `model` through a real Anthropic Messages endpoint.
+
+        Only those requests keep what the Messages-to-Completions bridge cannot carry, such as
+        `betas` and `context_management`.
+
+        Args:
+            model: The provider's own model id, without a ``provider:`` prefix.
+
+        """
+        return cls.SUPPORTS_MESSAGES_NATIVE
 
     @abstractmethod
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
@@ -771,7 +886,7 @@ class AnyLLM(ABC):
             max_tokens=max_tokens,
             response_format=response_format,
             stream=stream,
-            n=n,
+            n=self._validate_n(n, model),
             stop=stop,
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
@@ -812,6 +927,19 @@ class AnyLLM(ABC):
             return parsed_completion
 
         return result
+
+    def _supports_completion_n(self, model: str) -> bool:
+        """Whether ``model`` can return more than one choice; override when it varies by model."""
+        return self.SUPPORTS_COMPLETION_N
+
+    def _validate_n(self, n: int | None, model: str) -> int | None:
+        if n is None or n == 1:
+            return None
+        if not self._supports_completion_n(model):
+            parameter_name = "n"
+            additional_message = f"{self.PROVIDER_NAME} returns one choice per request; omit n or set it to 1."
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
+        return n
 
     def _validate_prompt_cache_key(self, prompt_cache_key: str | None) -> None:
         if prompt_cache_key is not None and self.PROMPT_CACHE_KEY_SUPPORT == "unsupported":
@@ -854,7 +982,7 @@ class AnyLLM(ABC):
         service_tier: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
-        container: str | None = None,
+        container: str | dict[str, Any] | None = None,
         timeout: float | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
@@ -927,7 +1055,7 @@ class AnyLLM(ABC):
         service_tier: str | None = None,
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
-        container: str | None = None,
+        container: str | dict[str, Any] | None = None,
         output_format: type | dict[str, Any] | None = None,
         timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
@@ -942,9 +1070,9 @@ class AnyLLM(ABC):
             messages: List of messages in Anthropic format.
             max_tokens: Maximum number of tokens to generate.
             system: System prompt (string or list of content blocks with optional cache_control).
-            temperature: Controls randomness (0.0 to 1.0).
-            top_p: Controls diversity via nucleus sampling.
-            top_k: Only sample from the top K options.
+            temperature: Controls randomness. Anthropic deprecates this for current Claude models.
+            top_p: Controls nucleus sampling. Anthropic deprecates this for current Claude models.
+            top_k: Restricts sampling to the top K options. Anthropic deprecates this for current Claude models.
             stream: Whether to stream the response.
             stop_sequences: Custom stop sequences.
             tools: List of tools in Anthropic format.
@@ -959,13 +1087,19 @@ class AnyLLM(ABC):
                 trigger value must be at least 50,000 when provided; see
                 [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction).
             betas: Anthropic beta identifiers.
-            container: Container identifier for continuing a previous top-level container.
+            container: Container identifier, or an object with optional ``id`` and ``skills``.
+                A string reuses an existing container. An object selects Skills for a fresh
+                container or reuses one while attaching Skills. See
+                [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
-                JSON schemas (``parsed_output`` holds the parsed JSON). The call returns
-                Anthropic's ``ParsedMessage`` for non-streaming requests. Providers with native
-                support can stream schema-constrained Messages events instead.
+                JSON schemas (``parsed_output`` holds the parsed JSON). Non-streaming calls return
+                Anthropic's ``ParsedMessage`` for types or mappings with a non-empty schema dict;
+                mappings without one return ``MessageResponse``. Providers with native support
+                can stream schema-constrained Messages events instead.
+                Native Anthropic typed beta requests return ``ParsedBetaMessage`` when
+                ``context_management`` is set or beta identifiers are supplied.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
                 An explicit ``None`` is treated the same as omitting it (the provider's default
                 applies), so it cannot request an unbounded timeout. Providers that have no
@@ -974,8 +1108,9 @@ class AnyLLM(ABC):
             **kwargs: Additional provider-specific arguments.
 
         Returns:
-            MessageResponse (or ParsedMessage when `output_format` is given), or an async
-            iterator of MessageStreamEvent (if streaming).
+            MessageResponse, or ParsedMessage for a typed or schema-backed `output_format`.
+            Native Anthropic typed beta requests return ParsedBetaMessage instead.
+            Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
             ValueError: If `output_format` is combined with `stream=True` for a provider that
@@ -1054,7 +1189,9 @@ class AnyLLM(ABC):
             split_cached_input_tokens,
         )
 
-        completion_kwargs = messages_params_to_completion_params(params)
+        completion_kwargs = messages_params_to_completion_params(
+            params, cache_breakpoints=self._READS_CACHE_CONTROL_SIDE_CHANNEL
+        )
         completion_params = CompletionParams(**completion_kwargs)
         try:
             result = await self._acompletion(completion_params, **kwargs)
@@ -1073,7 +1210,11 @@ class AnyLLM(ABC):
             state = StreamingState()
 
             def usage_delta(stop_reason: StopReason | None) -> MessageDeltaEvent:
-                input_tokens, cache_read = split_cached_input_tokens(state.input_tokens, state.cache_read_input_tokens)
+                input_tokens, cache_read = split_cached_input_tokens(
+                    state.input_tokens,
+                    state.cache_read_input_tokens,
+                    state.cache_creation_input_tokens,
+                )
                 return MessageDeltaEvent(
                     type="message_delta",
                     delta=MessageDelta(stop_reason=stop_reason),
@@ -1081,6 +1222,7 @@ class AnyLLM(ABC):
                         output_tokens=state.output_tokens,
                         input_tokens=input_tokens,
                         cache_read_input_tokens=cache_read,
+                        cache_creation_input_tokens=state.cache_creation_input_tokens,
                     ),
                 )
 
@@ -1330,6 +1472,9 @@ class AnyLLM(ABC):
                 _flatten_responses_tool(tool) for tool in prepare_tools(tools, built_in_tools=self.BUILT_IN_TOOLS)
             ]
 
+        provider_kwargs: dict[str, Any] = {
+            name: kwargs.pop(name) for name in ("extra_headers", "extra_query") if name in kwargs
+        }
         params = ResponsesParams(
             model=model,
             input=cast("ResponseInputPayload", input_data),
@@ -1363,7 +1508,6 @@ class AnyLLM(ABC):
             **kwargs,
         )
 
-        provider_kwargs: dict[str, Any] = {}
         self._validate_and_forward_timeout(timeout, provider_kwargs)
         if extra_body is not None:
             provider_kwargs["extra_body"] = extra_body
@@ -1432,7 +1576,7 @@ class AnyLLM(ABC):
         msg = "Subclasses must implement _aimage_generation method"
         raise NotImplementedError(msg)
 
-    def _transcription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+    def _transcription(self, model: str, file: AudioInput, **kwargs: Any) -> Transcription:
         """Transcribe audio synchronously.
 
         See [AnyLLM.atranscription][any_llm.any_llm.AnyLLM.atranscription]
@@ -1441,14 +1585,15 @@ class AnyLLM(ABC):
         return run_async_in_sync(self.atranscription(model, file, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def atranscription(self, model: str, file: bytes | IO[bytes], **kwargs: Any) -> Transcription:
+    async def atranscription(self, model: str, file: AudioInput, **kwargs: Any) -> Transcription:
         """Transcribe audio asynchronously.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='whisper-1' for LLMProvider.OPENAI).
-            file: Audio file content as bytes or file-like object.
+            file: Audio to transcribe: bytes, a readable binary file object, or a path.
                 Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
-            **kwargs: Additional parameters (language, prompt, response_format, temperature, timestamp_granularities).
+            **kwargs: Additional parameters (filename, mime_type, language, prompt, response_format,
+                temperature, timestamp_granularities). See [atranscription][any_llm.api.atranscription].
 
         Returns:
             The transcription response from the provider.
@@ -1575,13 +1720,83 @@ class AnyLLM(ABC):
             NotImplementedError: If the provider does not support reranking.
 
         """
-        return await self._arerank(model, query, documents, **kwargs)
+        response = await self._arerank(model, query, documents, **kwargs)
+        if not response.model:
+            response.model = model
+        return response
 
     async def _arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
         if not self.SUPPORTS_RERANK:
             msg = "Provider doesn't support rerank."
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _arerank method"
+        raise NotImplementedError(msg)
+
+    def decide(
+        self,
+        model: str,
+        state: JSONContent,
+        questions: QuestionsInput,
+        **kwargs: Any,
+    ) -> DecideResponse:
+        """Answer named questions about a state synchronously.
+
+        See [AnyLLM.adecide][any_llm.any_llm.AnyLLM.adecide]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.adecide(model, state, questions, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def adecide(
+        self,
+        model: str,
+        state: JSONContent,
+        questions: QuestionsInput,
+        *,
+        timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
+        **kwargs: Any,
+    ) -> DecideResponse:
+        """Answer named yes/no, choice, and score questions about a state.
+
+        Args:
+            model: Model identifier.
+            state: Text, a JSON object, or an array the questions refer to.
+            questions: Names mapped to `Noul`, `Choice` or `Score` questions, their dict forms, or
+                objects with the same attributes. The response uses the same names to key the answers.
+            timeout: Per-request timeout in seconds. Providers that have no per-request timeout
+                raise `UnsupportedParameterError`.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            DecideResponse with one answer per question.
+
+        Raises:
+            NotImplementedError: If the provider does not support decide. Raised as is, with or
+                without unified exceptions.
+            pydantic.ValidationError: If `questions` is not a mapping of valid questions. Raised
+                before anything is sent, with or without unified exceptions.
+
+        """
+        if not self.SUPPORTS_DECIDE:
+            # Checked before the parameters, so an unsupported provider is reported as such rather
+            # than as a timeout problem.
+            msg = "Provider doesn't support decide."
+            raise NotImplementedError(msg)
+        self._validate_and_forward_timeout(timeout, kwargs)
+        # from_attributes accepts question objects of the same shape, such as the typesafe_sdk classes.
+        validated = _QUESTIONS_ADAPTER.validate_python(questions, from_attributes=True)
+        response = await self._adecide(model, state, validated, **kwargs)
+        if not response.model:
+            response.model = model
+        return response
+
+    async def _adecide(
+        self, model: str, state: JSONContent, questions: dict[str, Question], **kwargs: Any
+    ) -> DecideResponse:
+        if not self.SUPPORTS_DECIDE:
+            msg = "Provider doesn't support decide."
+            raise NotImplementedError(msg)
+        msg = "Subclasses must implement _adecide method"
         raise NotImplementedError(msg)
 
     def list_models(self, **kwargs: Any) -> Sequence[Model]:

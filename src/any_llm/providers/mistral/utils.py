@@ -505,14 +505,36 @@ def _build_mistral_assistant_content(message: dict[str, Any]) -> list[dict[str, 
     return chunks
 
 
+def _is_empty_assistant_content(content: Any) -> bool:
+    """Whether assistant content is absent, an empty string, or only empty text parts."""
+    if content is None or content == "":
+        return True
+    if isinstance(content, list):
+        return all(isinstance(part, dict) and part.get("type") == "text" and not part.get("text") for part in content)
+    return False
+
+
+def _is_empty_assistant_message(message: dict[str, Any]) -> bool:
+    """Whether a message is an assistant turn with no content, tool calls, or reasoning to replay."""
+    return (
+        message.get("role") == "assistant"
+        and _is_empty_assistant_content(message.get("content"))
+        and not message.get("tool_calls")
+        and not _extract_reasoning_text(message)
+    )
+
+
 def _patch_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Patches messages for Mistral API compatibility.
 
+    - Drops assistant messages that carry nothing, since Mistral rejects an empty assistant
+      content and, when such a message ends the conversation, also rejects it as the last role.
     - Rebuilds assistant thinking blocks so reasoning traces survive multi-turn replay.
     - Inserts an assistant message with "OK" content between a tool message and a user message.
     - Validates the message sequence to ensure correctness.
     """
+    messages = [msg for msg in messages if not _is_empty_assistant_message(msg)]
     processed_msg: list[dict[str, Any]] = []
     for i, msg in enumerate(messages):
         if msg.get("role") == "assistant":

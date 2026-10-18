@@ -1,12 +1,18 @@
 """Tests for bidirectional Anthropic Messages ↔ OpenAI Chat Completions conversion."""
 
 import json
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Literal
 
 import pytest
+from anthropic.types import CodeExecutionToolResultBlock, ServerToolUseBlock
+from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
+from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
+from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.types.completion import (
+    CacheCreationTokenDetails,
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
@@ -36,11 +42,13 @@ from any_llm.utils.messages_compat import (
     _cached_tokens_from_usage,
     _convert_assistant_blocks_to_openai,
     _convert_system_to_openai,
+    _convert_tools_to_openai,
     _convert_user_blocks_to_openai,
     chat_completion_chunk_to_message_stream_events,
     chat_completion_to_message_response,
     close_open_blocks,
     messages_params_to_completion_params,
+    prepare_blocks_for_native_messages,
     split_cached_input_tokens,
 )
 from any_llm.utils.structured_output import normalize_output_config
@@ -63,7 +71,6 @@ def test_basic_text_message_conversion() -> None:
 
 def test_output_format_type_passes_through_as_response_format() -> None:
     """A structured-output type is forwarded to the bridge as the completion response_format."""
-    from pydantic import BaseModel
 
     class Schema(BaseModel):
         city: str
@@ -468,6 +475,37 @@ def test_chat_completion_cache_creation_tokens_never_synthesized() -> None:
     assert usage.cache_creation_input_tokens is None
 
 
+def test_chat_completion_preserves_canonical_cache_creation_tokens() -> None:
+    """Cache writes reported in prompt_tokens_details survive the completion-to-Messages bridge."""
+    completion = ChatCompletion(
+        id="cmpl-cache-write",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            prompt_tokens_details=PromptTokensDetails(cache_write_tokens=12),
+        ),
+    )
+
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.cache_creation_input_tokens == 12
+    assert usage.input_tokens == 88
+
+
+def test_completion_usage_accepts_openai_parent_model() -> None:
+    """A base OpenAI usage model remains valid when wrapped by the extended type."""
+    source = OpenAICompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
+
+    usage = CompletionUsage.model_validate(source)
+
+    assert usage.prompt_tokens == 10
+    assert usage.completion_tokens == 1
+
+
 def test_chat_completion_without_prompt_tokens_details_reports_full_input_tokens() -> None:
     """A provider that reports no cache accounting is unchanged: input_tokens is the full prompt."""
     completion = ChatCompletion(
@@ -484,7 +522,7 @@ def test_chat_completion_without_prompt_tokens_details_reports_full_input_tokens
 
 
 def test_chat_completion_zero_cached_tokens_reports_full_input_tokens() -> None:
-    """A cache miss (cached_tokens=0) leaves input_tokens whole and cache_read unset."""
+    """An explicit cache miss leaves input_tokens whole while preserving the zero meter."""
     completion = ChatCompletion(
         id="cmpl-1",
         model="some-model",
@@ -500,12 +538,13 @@ def test_chat_completion_zero_cached_tokens_reports_full_input_tokens() -> None:
     )
     usage = chat_completion_to_message_response(completion).usage
     assert usage.input_tokens == 10_000
-    assert usage.cache_read_input_tokens is None
+    assert usage.cache_read_input_tokens == 0
 
 
-def test_split_cached_input_tokens_returns_none_for_zero_cache() -> None:
-    """The helper reports no-cache as None so the field is omitted rather than reported as 0."""
-    assert split_cached_input_tokens(100, 0) == (100, None)
+def test_split_cached_input_tokens_preserves_explicit_zero_cache() -> None:
+    """An explicitly reported zero remains distinct from an absent cache meter."""
+    assert split_cached_input_tokens(100, 0) == (100, 0)
+    assert split_cached_input_tokens(100, None) == (100, None)
     assert split_cached_input_tokens(100, 80) == (20, 80)
 
 
@@ -529,6 +568,14 @@ def test_split_cached_input_tokens_floors_negative_cached_at_zero() -> None:
     input_tokens, cache_read = split_cached_input_tokens(100, -1)
     assert input_tokens == 100
     assert cache_read is None
+
+
+def test_split_cached_input_tokens_subtracts_cache_writes() -> None:
+    """Cache writes are part of the OpenAI prompt total, so they come out of input_tokens too."""
+    assert split_cached_input_tokens(100, 20, 12) == (68, 20)
+    assert split_cached_input_tokens(100, None, 12) == (88, None)
+    assert split_cached_input_tokens(100, 0, 0) == (100, 0)
+    assert split_cached_input_tokens(10, 20, 30) == (0, None)
 
 
 def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -> None:
@@ -558,9 +605,9 @@ def test_streaming_message_start_cached_without_prompt_total_is_not_negative() -
     assert start.message.usage.cache_read_input_tokens is None
 
 
-def test_cached_tokens_from_usage_defaults_to_zero() -> None:
-    """cached_tokens reads as 0 when details are absent or the field itself is None."""
-    assert _cached_tokens_from_usage(CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)) == 0
+def test_cached_tokens_from_usage_preserves_presence() -> None:
+    """cached_tokens reads as None when absent and preserves an explicit zero."""
+    assert _cached_tokens_from_usage(CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)) is None
     assert (
         _cached_tokens_from_usage(
             CompletionUsage(
@@ -570,7 +617,7 @@ def test_cached_tokens_from_usage_defaults_to_zero() -> None:
                 prompt_tokens_details=PromptTokensDetails(),
             )
         )
-        == 0
+        is None
     )
 
 
@@ -1031,7 +1078,7 @@ def test_finish_reason_content_filter() -> None:
     """Test content_filter and function_call finish_reason mappings."""
     from any_llm.utils.messages_compat import _finish_reason_to_stop_reason
 
-    assert _finish_reason_to_stop_reason("content_filter") == "end_turn"
+    assert _finish_reason_to_stop_reason("content_filter") == "refusal"
     assert _finish_reason_to_stop_reason("function_call") == "tool_use"
 
 
@@ -1382,6 +1429,182 @@ def test_streaming_finish_reason_length() -> None:
     assert state.stop_reason == "max_tokens"
 
 
+def test_finish_reason_content_filter_maps_to_refusal() -> None:
+    """Test finish_reason='content_filter' maps to stop_reason='refusal'."""
+    completion = ChatCompletion(
+        id="chatcmpl-blocked",
+        model="gpt-4",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="content_filter",
+                message=ChatCompletionMessage(role="assistant", content="Blocked content"),
+            )
+        ],
+        usage=CompletionUsage(prompt_tokens=10, completion_tokens=0, total_tokens=10),
+    )
+    result = chat_completion_to_message_response(completion)
+    assert result.stop_reason == "refusal"
+
+
+def test_message_refusal_maps_to_stop_reason_refusal_with_text_preserved() -> None:
+    """Test a completion with message.refusal maps to stop_reason='refusal' with refusal text preserved."""
+    completion = ChatCompletion(
+        id="chatcmpl-refused",
+        model="gpt-4",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="stop",
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content=None,
+                    refusal="I cannot help with that request.",
+                ),
+            )
+        ],
+        usage=CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+    )
+    result = chat_completion_to_message_response(completion)
+    assert result.stop_reason == "refusal"
+    assert len(result.content) == 1
+    assert result.content[0].type == "text"
+    assert result.content[0].text == "I cannot help with that request."
+
+
+def test_streaming_refusal_delta_maps_to_stop_reason_refusal() -> None:
+    """Test streaming refusal delta maps to stop_reason='refusal' with refusal text in content."""
+    state = StreamingState()
+
+    chunk = ChatCompletionChunk(
+        id="chunk-refusal",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[
+            ChunkChoice(
+                index=0,
+                delta=ChoiceDelta(refusal="I cannot assist with that."),
+                finish_reason=None,
+            )
+        ],
+    )
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+
+    assert any(e.type == "content_block_start" for e in events)
+    assert any(e.type == "content_block_delta" for e in events)
+    delta_event = next(e for e in events if e.type == "content_block_delta")
+    assert isinstance(delta_event, ContentBlockDeltaEvent)
+    assert delta_event.delta.type == "text_delta"
+    assert delta_event.delta.text == "I cannot assist with that."
+    assert state.stop_reason == "refusal"
+
+
+def test_content_filter_with_partial_content_keeps_content_and_refusal() -> None:
+    """A filtered completion keeps its partial answer and appends the refusal as a separate block."""
+    completion = ChatCompletion(
+        id="chatcmpl-filtered",
+        model="gemini-2.5-flash",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="content_filter",
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content="partial answer",
+                    refusal="Response blocked by Gemini content filtering.",
+                ),
+            )
+        ],
+    )
+    result = chat_completion_to_message_response(completion)
+    assert result.stop_reason == "refusal"
+    assert [block.model_dump(include={"type", "text"}) for block in result.content] == [
+        {"type": "text", "text": "partial answer"},
+        {"type": "text", "text": "Response blocked by Gemini content filtering."},
+    ]
+
+
+def _refusal_chunk(
+    delta: ChoiceDelta, finish_reason: Literal["stop", "content_filter"] | None = None
+) -> ChatCompletionChunk:
+    return ChatCompletionChunk(
+        id="chunk-refusal",
+        model="gpt-4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=delta, finish_reason=finish_reason)],
+    )
+
+
+def test_streaming_refusal_survives_terminal_stop_chunk() -> None:
+    """OpenAI ends a streamed refusal with finish_reason='stop'; the stop_reason must stay 'refusal'."""
+    state = StreamingState()
+    events = []
+    for chunk in (
+        _refusal_chunk(ChoiceDelta(role="assistant", refusal="")),
+        _refusal_chunk(ChoiceDelta(refusal="I cannot ")),
+        _refusal_chunk(ChoiceDelta(refusal="assist with that.")),
+        _refusal_chunk(ChoiceDelta(), finish_reason="stop"),
+    ):
+        events.extend(chat_completion_chunk_to_message_stream_events(chunk, state))
+
+    assert state.stop_reason == "refusal"
+    assert [e.type for e in events] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_delta",
+        "content_block_stop",
+    ]
+
+
+def test_streaming_content_filter_without_refusal_text_maps_to_refusal() -> None:
+    """A provider that reports only finish_reason='content_filter' (no refusal text) still ends with 'refusal'."""
+    state = StreamingState()
+    events = []
+    for chunk in (
+        _refusal_chunk(ChoiceDelta(role="assistant", content="partial")),
+        _refusal_chunk(ChoiceDelta(), finish_reason="content_filter"),
+    ):
+        events.extend(chat_completion_chunk_to_message_stream_events(chunk, state))
+
+    assert state.stop_reason == "refusal"
+    assert [e.type for e in events] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+    ]
+
+
+def test_streaming_content_and_refusal_in_one_chunk_use_separate_blocks() -> None:
+    """A chunk carrying both partial content and a refusal emits both, each in its own text block."""
+    state = StreamingState()
+    events = chat_completion_chunk_to_message_stream_events(
+        _refusal_chunk(
+            ChoiceDelta(content="partial", refusal="Response blocked by Gemini content filtering."),
+            finish_reason="content_filter",
+        ),
+        state,
+    )
+
+    starts = [e for e in events if isinstance(e, ContentBlockStartEvent)]
+    deltas = [e for e in events if isinstance(e, ContentBlockDeltaEvent)]
+    assert [e.index for e in starts] == [0, 1]
+    assert [(e.index, e.delta.text) for e in deltas if e.delta.type == "text_delta"] == [
+        (0, "partial"),
+        (1, "Response blocked by Gemini content filtering."),
+    ]
+    assert state.stop_reason == "refusal"
+
+
 def test_streaming_usage_cache_read_from_prompt_tokens_details() -> None:
     """A usage chunk's prompt_tokens_details.cached_tokens is recorded as cache_read on state."""
     state = StreamingState()
@@ -1442,8 +1665,8 @@ def test_streaming_message_start_without_cache_reports_full_input_tokens() -> No
     assert start.message.usage.cache_read_input_tokens is None
 
 
-def test_streaming_usage_zero_cached_tokens_leaves_cache_read_unset() -> None:
-    """cached_tokens=0 is falsy and must not set cache_read_input_tokens."""
+def test_streaming_usage_preserves_zero_cached_tokens() -> None:
+    """cached_tokens=0 is explicit usage and must remain distinguishable from absence."""
     state = StreamingState()
     chunk = ChatCompletionChunk(
         id="chunk-1",
@@ -1478,7 +1701,7 @@ def test_streaming_usage_no_prompt_tokens_details_leaves_cache_read_unset() -> N
         ),
     )
     chat_completion_chunk_to_message_stream_events(chunk, state)
-    assert state.cache_read_input_tokens == 0
+    assert state.cache_read_input_tokens is None
 
 
 def test_close_current_block_when_none() -> None:
@@ -1644,6 +1867,229 @@ def test_streaming_usage_with_zero_tokens() -> None:
     chat_completion_chunk_to_message_stream_events(chunk, state)
     assert state.input_tokens == 100
     assert state.output_tokens == 50
+
+
+def test_completion_usage_accepts_nested_openai_parent_models() -> None:
+    """OpenAI SDK instances validate into the extended usage and prompt details types."""
+    source = OpenAICompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        prompt_tokens_details=OpenAIPromptTokensDetails(cached_tokens=4, cache_write_tokens=2),
+    )
+
+    from_model = CompletionUsage.model_validate(source)
+    from_field = CompletionUsage.model_validate(
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 1,
+            "total_tokens": 11,
+            "prompt_tokens_details": OpenAIPromptTokensDetails(cached_tokens=4),
+        }
+    )
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "cmpl-parent",
+            "model": "some-model",
+            "created": 0,
+            "object": "chat.completion",
+            "choices": [],
+            "usage": source,
+        }
+    )
+
+    assert isinstance(from_model.prompt_tokens_details, PromptTokensDetails)
+    assert from_model.prompt_tokens_details.cache_write_tokens == 2
+    assert isinstance(from_field.prompt_tokens_details, PromptTokensDetails)
+    assert from_field.prompt_tokens_details.cached_tokens == 4
+    assert isinstance(completion.usage, CompletionUsage)
+
+
+def test_completion_usage_keeps_provider_cache_meters_on_the_wire() -> None:
+    """Provider counters with no OpenAI equivalent survive serialization unchanged."""
+    usage = CompletionUsage.model_validate(
+        {
+            "prompt_tokens": 100,
+            "completion_tokens": 5,
+            "total_tokens": 105,
+            "prompt_cache_hit_tokens": 80,
+            "prompt_cache_miss_tokens": 20,
+        }
+    )
+
+    dumped = usage.model_dump()
+    assert dumped["prompt_cache_hit_tokens"] == 80
+    assert dumped["prompt_cache_miss_tokens"] == 20
+
+
+def test_completion_usage_without_cache_data_serializes_unchanged() -> None:
+    """Providers that report no cache accounting keep the OpenAI usage shape on the wire."""
+    plain = CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
+    openai_shape = OpenAICompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
+
+    assert plain.model_dump() == openai_shape.model_dump()
+    assert json.loads(plain.model_dump_json()) == json.loads(openai_shape.model_dump_json())
+
+
+def test_prompt_tokens_details_round_trips_cache_write_ttl() -> None:
+    usage = CompletionUsage(
+        prompt_tokens=10,
+        completion_tokens=1,
+        total_tokens=11,
+        prompt_tokens_details=PromptTokensDetails(
+            cached_tokens=0,
+            cache_write_tokens=6,
+            cache_creation_token_details=CacheCreationTokenDetails(ephemeral_5m_input_tokens=6),
+        ),
+    )
+
+    dumped = usage.model_dump(exclude_none=True)
+    assert dumped["prompt_tokens_details"] == {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6,
+        "cache_creation_token_details": {"ephemeral_5m_input_tokens": 6},
+    }
+    assert CompletionUsage.model_validate(json.loads(usage.model_dump_json())) == usage
+
+
+def test_chat_completion_preserves_cache_creation_ttl_details() -> None:
+    """Cache write totals and TTL buckets survive the completion-to-Messages bridge."""
+    completion = ChatCompletion(
+        id="cmpl-cache-write",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            prompt_tokens_details=PromptTokensDetails(
+                cache_write_tokens=12,
+                cache_creation_token_details=CacheCreationTokenDetails(
+                    ephemeral_5m_input_tokens=7,
+                    ephemeral_1h_input_tokens=5,
+                ),
+            ),
+        ),
+    )
+
+    usage = chat_completion_to_message_response(completion).usage
+    assert usage.input_tokens == 88
+    assert usage.cache_creation_input_tokens == 12
+    assert usage.cache_creation is not None
+    assert usage.cache_creation.ephemeral_5m_input_tokens == 7
+    assert usage.cache_creation.ephemeral_1h_input_tokens == 5
+
+
+def test_chat_completion_wrappers_validate_raw_cache_details() -> None:
+    """Raw dictionaries produce the typed prompt details on completions and chunks."""
+    usage = {
+        "prompt_tokens": 10,
+        "completion_tokens": 1,
+        "total_tokens": 11,
+        "prompt_tokens_details": {
+            "cached_tokens": 4,
+            "cache_write_tokens": 3,
+            "cache_creation_token_details": {"ephemeral_1h_input_tokens": 3},
+        },
+    }
+    completion = ChatCompletion.model_validate(
+        {
+            "id": "raw",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": usage,
+        }
+    )
+    chunk = ChatCompletionChunk.model_validate(
+        {
+            "id": "raw",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": usage,
+        }
+    )
+
+    for wrapped in (completion.usage, chunk.usage):
+        assert wrapped is not None
+        assert wrapped.prompt_tokens_details is not None
+        assert wrapped.prompt_tokens_details.cache_write_tokens == 3
+        ttl = wrapped.prompt_tokens_details.cache_creation_token_details
+        assert isinstance(ttl, CacheCreationTokenDetails)
+        assert ttl.ephemeral_1h_input_tokens == 3
+
+
+def test_streaming_usage_preserves_cache_creation_details() -> None:
+    chunk = ChatCompletionChunk(
+        id="c-cache",
+        model="claude",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[],
+        usage=CompletionUsage(
+            prompt_tokens=100,
+            completion_tokens=5,
+            total_tokens=105,
+            prompt_tokens_details=PromptTokensDetails(
+                cache_write_tokens=12,
+                cache_creation_token_details=CacheCreationTokenDetails(
+                    ephemeral_5m_input_tokens=7,
+                    ephemeral_1h_input_tokens=5,
+                ),
+            ),
+        ),
+    )
+    state = StreamingState()
+    events = chat_completion_chunk_to_message_stream_events(chunk, state)
+
+    assert state.cache_creation_input_tokens == 12
+    assert state.cache_creation is not None
+    assert state.cache_creation.ephemeral_5m_input_tokens == 7
+    start = next(e for e in events if isinstance(e, MessageStartEvent))
+    assert start.message.usage.input_tokens == 88
+    assert start.message.usage.cache_creation_input_tokens == 12
+    assert start.message.usage.cache_creation is not None
+    assert start.message.usage.cache_creation.ephemeral_1h_input_tokens == 5
+
+
+def test_partial_cache_creation_ttl_does_not_break_messages_bridge() -> None:
+    """A single reported TTL bucket cannot fill Anthropic's two-field CacheCreation, so it is omitted."""
+    details = PromptTokensDetails(
+        cache_write_tokens=12,
+        cache_creation_token_details=CacheCreationTokenDetails(ephemeral_5m_input_tokens=12),
+    )
+    completion = ChatCompletion(
+        id="cmpl-partial-ttl",
+        model="some-model",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="hi"))],
+        usage=CompletionUsage(prompt_tokens=100, completion_tokens=5, total_tokens=105, prompt_tokens_details=details),
+    )
+    message_usage = chat_completion_to_message_response(completion).usage
+    assert message_usage.cache_creation_input_tokens == 12
+    assert message_usage.cache_creation is None
+
+    chunk = ChatCompletionChunk(
+        id="c-partial-ttl",
+        model="some-model",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hi"), finish_reason=None)],
+        usage=CompletionUsage(prompt_tokens=100, completion_tokens=5, total_tokens=105, prompt_tokens_details=details),
+    )
+    state = StreamingState()
+    start = next(
+        e for e in chat_completion_chunk_to_message_stream_events(chunk, state) if isinstance(e, MessageStartEvent)
+    )
+    assert start.message.usage.cache_creation_input_tokens == 12
+    assert start.message.usage.cache_creation is None
+    assert state.cache_creation is None
 
 
 def test_output_config_bare_format_object_translated_to_json_schema_response_format() -> None:
@@ -1840,8 +2286,8 @@ def test_assistant_blocks_thinking_alongside_tool_use_preserved() -> None:
     assert result[0]["tool_calls"][0]["function"]["name"] == "get_weather"
 
 
-def test_user_blocks_tool_result_is_error_preserved() -> None:
-    """A failed tool result stays distinguishable from a successful one."""
+def test_user_blocks_tool_result_is_error_prefixes_content() -> None:
+    """A failed tool result carries the error in its text, never as a message key strict backends reject."""
     result = _convert_user_blocks_to_openai(
         [
             {
@@ -1852,29 +2298,132 @@ def test_user_blocks_tool_result_is_error_preserved() -> None:
             },
         ]
     )
-    assert result[0]["role"] == "tool"
-    assert result[0]["content"] == "permission denied"
-    assert result[0]["is_error"] is True
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "Error: permission denied"}]
 
 
-def test_user_blocks_tool_result_without_is_error_omits_flag() -> None:
+def test_user_blocks_tool_result_is_error_with_empty_content() -> None:
+    """A failed tool result with no text still reads as an error."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {"type": "tool_result", "tool_use_id": "call_1", "is_error": True, "content": ""},
+        ]
+    )
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "Error"}]
+
+
+def test_user_blocks_tool_result_without_is_error_leaves_content() -> None:
     """A successful tool result carries no error marker."""
     result = _convert_user_blocks_to_openai(
         [
             {"type": "tool_result", "tool_use_id": "call_1", "content": "ok"},
         ]
     )
-    assert "is_error" not in result[0]
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "ok"}]
 
 
-def test_user_blocks_tool_result_is_error_false_omits_flag() -> None:
+def test_user_blocks_tool_result_is_error_does_not_double_prefix() -> None:
+    """Tool text that already carries the marker is left as it is."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {"type": "tool_result", "tool_use_id": "call_1", "is_error": True, "content": "Error: timed out"},
+        ]
+    )
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "Error: timed out"}]
+
+
+def test_user_blocks_tool_result_search_result_rendered_as_text() -> None:
+    """A search_result block has no OpenAI part, so its title, source and text ride the tool message."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "Found:"},
+                    {
+                        "type": "search_result",
+                        "title": "Paris weather",
+                        "source": "https://example.com/paris",
+                        "content": [{"type": "text", "text": "Sunny, "}, {"type": "text", "text": "15C"}],
+                    },
+                    {"type": "text", "text": "Done."},
+                ],
+            },
+        ]
+    )
+    assert result[0]["content"] == "Found:\nParis weather\nhttps://example.com/paris\nSunny, 15C\nDone."
+
+
+def test_user_blocks_tool_result_search_result_skips_missing_fields_and_non_text_parts() -> None:
+    """Absent fields leave no blank lines, and only text parts of a search result are kept."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {
+                        "type": "search_result",
+                        "source": "https://example.com",
+                        "content": [{"type": "image", "source": {}}, {"type": "text", "text": "body"}],
+                    },
+                ],
+            },
+        ]
+    )
+    assert result[0]["content"] == "https://example.com\nbody"
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ([{"type": "text", "text": ""}, {"type": "tool_reference", "tool_name": "t"}], "Tool reference: t"),
+        ([{"type": "search_result", "title": "", "source": "", "content": []}, {"type": "text", "text": "x"}], "x"),
+        ([{"type": "tool_reference", "tool_name": "t"}, {"type": "text", "text": ""}], "Tool reference: t"),
+    ],
+)
+def test_user_blocks_tool_result_rendered_block_separators_skip_empty_neighbours(
+    content: list[dict[str, Any]], expected: str
+) -> None:
+    """A newline separates rendered text only from non-empty text, never from an empty block."""
+    result = _convert_user_blocks_to_openai([{"type": "tool_result", "tool_use_id": "call_1", "content": content}])
+    assert result[0]["content"] == expected
+
+
+def test_user_blocks_tool_result_tool_reference_and_browser_state_rendered_as_text() -> None:
+    """Consecutive rendered blocks are separated by newlines; browser_state keeps only its data fields."""
+    tabs = [{"id": "t1", "url": "https://example.com", "title": "Example", "active": True}]
+    changes = [{"type": "tab_opened", "tab_id": "t1"}]
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": [
+                    {"type": "tool_reference", "tool_name": "get_weather"},
+                    {"type": "browser_state", "tabs": tabs, "state_changes": changes, "cache_control": None},
+                    {"type": "browser_state", "tabs": []},
+                ],
+            },
+        ]
+    )
+    assert result[0]["content"] == "\n".join(
+        [
+            "Tool reference: get_weather",
+            json.dumps({"tabs": tabs, "state_changes": changes}),
+            json.dumps({"tabs": []}),
+        ]
+    )
+
+
+def test_user_blocks_tool_result_is_error_false_leaves_content() -> None:
     """An explicit false is not an error marker."""
     result = _convert_user_blocks_to_openai(
         [
             {"type": "tool_result", "tool_use_id": "call_1", "is_error": False, "content": "ok"},
         ]
     )
-    assert "is_error" not in result[0]
+    assert result == [{"role": "tool", "tool_call_id": "call_1", "content": "ok"}]
 
 
 def test_user_blocks_tool_result_image_emitted_as_following_user_message() -> None:
@@ -2284,3 +2833,771 @@ def test_assistant_blocks_redacted_thinking_is_dropped() -> None:
     assert result[0]["content"] == "answer"
     assert "reasoning_content" not in result[0]
     assert "extra_content" not in result[0]
+
+
+_GEMINI_SIGNATURE = {"google": {"thought_signature": "c2ln"}}
+_CODE_EXECUTION_ITEMS = [
+    {"type": "executable_code", "id": "exec_1", "language": "PYTHON", "code": "print(1)"},
+    {"type": "code_execution_result", "id": "exec_1", "outcome": "OUTCOME_OK", "output": "1\n"},
+    {"type": "executable_code", "id": "exec_2", "language": "PYTHON", "code": "1/0"},
+    {"type": "code_execution_result", "id": "exec_2", "outcome": "OUTCOME_FAILED", "output": "ZeroDivisionError"},
+]
+
+
+def _block_event_indexes(events: Sequence[object]) -> list[tuple[str, int]]:
+    """Return the ``(type, index)`` of each content block event, skipping ``message_start``."""
+    return [
+        (e.type, e.index)
+        for e in events
+        if isinstance(e, ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent)
+    ]
+
+
+def _gemini_completion(message: ChatCompletionMessage, finish_reason: Literal["stop", "tool_calls"]) -> ChatCompletion:
+    return ChatCompletion(
+        id="chatcmpl-gemini",
+        model="gemini-3-pro",
+        created=0,
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason=finish_reason, message=message)],
+    )
+
+
+def _gemini_chunk(delta: ChoiceDelta) -> ChatCompletionChunk:
+    return ChatCompletionChunk(
+        id="chunk",
+        model="gemini-3-pro",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=delta, finish_reason=None)],
+    )
+
+
+def test_response_tool_use_blocks_carry_tool_call_extra_content() -> None:
+    """Gemini signs only the first of parallel calls, so only that block carries extra_content."""
+    message = ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_a",
+                type="function",
+                function=Function(name="get_weather", arguments='{"city": "Paris"}'),
+                extra_content=_GEMINI_SIGNATURE,
+            ),
+            ChatCompletionMessageFunctionToolCall(
+                id="call_b", type="function", function=Function(name="get_time", arguments="{}")
+            ),
+        ],
+    )
+    result = chat_completion_to_message_response(_gemini_completion(message, "tool_calls"))
+
+    dumped = [block.model_dump(exclude_none=True) for block in result.content]
+    assert [block["type"] for block in dumped] == ["tool_use", "tool_use"]
+    assert dumped[0]["extra_content"] == _GEMINI_SIGNATURE
+    assert "extra_content" not in dumped[1]
+
+
+def test_response_text_block_carries_message_thought_signature() -> None:
+    message = ChatCompletionMessage(role="assistant", content="Hello", extra_content=_GEMINI_SIGNATURE)
+    result = chat_completion_to_message_response(_gemini_completion(message, "stop"))
+
+    assert len(result.content) == 1
+    assert result.content[0].model_dump(exclude_none=True) == {
+        "type": "text",
+        "text": "Hello",
+        "extra_content": _GEMINI_SIGNATURE,
+    }
+
+
+def test_response_thought_signature_does_not_add_a_text_block() -> None:
+    """A signature with no text to sit on is dropped rather than carried by a fabricated block."""
+    message = ChatCompletionMessage(
+        role="assistant",
+        content=None,
+        extra_content=_GEMINI_SIGNATURE,
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_a", type="function", function=Function(name="get_time", arguments="{}")
+            )
+        ],
+    )
+    result = chat_completion_to_message_response(_gemini_completion(message, "tool_calls"))
+
+    assert [block.type for block in result.content] == ["tool_use"]
+
+
+def test_response_thought_signature_rides_the_empty_fallback_text_block() -> None:
+    message = ChatCompletionMessage(role="assistant", content=None, extra_content=_GEMINI_SIGNATURE)
+    result = chat_completion_to_message_response(_gemini_completion(message, "stop"))
+
+    assert len(result.content) == 1
+    assert result.content[0].model_dump(exclude_none=True) == {
+        "type": "text",
+        "text": "",
+        "extra_content": _GEMINI_SIGNATURE,
+    }
+
+
+def test_response_code_execution_items_become_server_tool_blocks_before_text() -> None:
+    message = ChatCompletionMessage(
+        role="assistant",
+        content="Done",
+        reasoning=Reasoning(content="thinking"),
+        extra_content={"google": {"code_execution": _CODE_EXECUTION_ITEMS, "thought_signature": "c2ln"}},
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_a", type="function", function=Function(name="get_time", arguments="{}")
+            )
+        ],
+    )
+    result = chat_completion_to_message_response(_gemini_completion(message, "tool_calls"))
+
+    assert [block.type for block in result.content] == [
+        "thinking",
+        "server_tool_use",
+        "code_execution_tool_result",
+        "server_tool_use",
+        "code_execution_tool_result",
+        "text",
+        "tool_use",
+    ]
+    code = result.content[1]
+    assert isinstance(code, ServerToolUseBlock)
+    assert (code.id, code.name, code.input) == ("exec_1", "code_execution", {"code": "print(1)", "language": "PYTHON"})
+    ok = result.content[2]
+    assert isinstance(ok, CodeExecutionToolResultBlock)
+    assert ok.tool_use_id == "exec_1"
+    assert ok.content.model_dump() == {
+        "type": "code_execution_result",
+        "stdout": "1\n",
+        "stderr": "",
+        "return_code": 0,
+        "content": [],
+    }
+    failed = result.content[4]
+    assert isinstance(failed, CodeExecutionToolResultBlock)
+    assert failed.content.model_dump() == {
+        "type": "code_execution_result",
+        "stdout": "",
+        "stderr": "ZeroDivisionError",
+        "return_code": 1,
+        "content": [],
+    }
+    assert result.content[5].model_dump(exclude_none=True)["extra_content"] == _GEMINI_SIGNATURE
+
+
+def test_response_code_execution_skips_malformed_items() -> None:
+    message = ChatCompletionMessage(
+        role="assistant",
+        content="Done",
+        extra_content={"google": {"code_execution": ["not a dict", {"type": "unknown", "id": "x"}]}},
+    )
+    result = chat_completion_to_message_response(_gemini_completion(message, "stop"))
+
+    assert [block.type for block in result.content] == ["text"]
+
+
+def test_response_code_execution_ignores_non_list_value() -> None:
+    message = ChatCompletionMessage(
+        role="assistant", content="Done", extra_content={"google": {"code_execution": "nope"}}
+    )
+    result = chat_completion_to_message_response(_gemini_completion(message, "stop"))
+
+    assert [block.type for block in result.content] == ["text"]
+
+
+def test_streaming_tool_use_start_carries_extra_content_of_opening_fragment() -> None:
+    state = StreamingState()
+    chunk = _tool_calls_chunk(
+        ChoiceDeltaToolCall(
+            index=0,
+            id="call_a",
+            function=ChoiceDeltaToolCallFunction(name="get_weather", arguments=""),
+            extra_content=_GEMINI_SIGNATURE,
+        ),
+        ChoiceDeltaToolCall(index=1, id="call_b", function=ChoiceDeltaToolCallFunction(name="get_time", arguments="")),
+    )
+    starts = [
+        e for e in chat_completion_chunk_to_message_stream_events(chunk, state) if e.type == "content_block_start"
+    ]
+
+    assert len(starts) == 2
+    assert starts[0].content_block.model_dump(exclude_none=True)["extra_content"] == _GEMINI_SIGNATURE
+    assert "extra_content" not in starts[1].content_block.model_dump(exclude_none=True)
+
+
+def test_streaming_code_execution_items_become_complete_blocks() -> None:
+    """Each block opens with its full payload on the start event and closes at once, with no deltas.
+
+    The result is held back until the next delta that brings something else, so it lands on the
+    index after the code even though the text that flushes it arrives a chunk later.
+    """
+    state = StreamingState()
+    chat_completion_chunk_to_message_stream_events(_gemini_chunk(ChoiceDelta(content="Let me run it. ")), state)
+
+    events = chat_completion_chunk_to_message_stream_events(
+        _gemini_chunk(ChoiceDelta(extra_content={"google": {"code_execution": _CODE_EXECUTION_ITEMS[:2]}})), state
+    )
+
+    assert _block_event_indexes(events) == [
+        ("content_block_stop", 0),
+        ("content_block_start", 1),
+        ("content_block_stop", 1),
+    ]
+    code_start = events[1]
+    assert isinstance(code_start, ContentBlockStartEvent)
+    assert isinstance(code_start.content_block, ServerToolUseBlock)
+    assert code_start.content_block.input == {"code": "print(1)", "language": "PYTHON"}
+
+    text_events = chat_completion_chunk_to_message_stream_events(_gemini_chunk(ChoiceDelta(content="1")), state)
+    assert _block_event_indexes(text_events) == [
+        ("content_block_start", 2),
+        ("content_block_stop", 2),
+        ("content_block_start", 3),
+        ("content_block_delta", 3),
+    ]
+    result_start = text_events[0]
+    assert isinstance(result_start, ContentBlockStartEvent)
+    assert isinstance(result_start.content_block, CodeExecutionToolResultBlock)
+    assert result_start.content_block.content.model_dump()["stdout"] == "1\n"
+    assert "inline_outputs" not in result_start.content_block.content.model_dump()
+
+
+def _code_execution_chunk(*items: dict[str, Any], finish: bool = False) -> ChatCompletionChunk:
+    return ChatCompletionChunk(
+        id="chunk",
+        model="gemini-3-pro",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[
+            ChunkChoice(
+                index=0,
+                delta=ChoiceDelta(extra_content={"google": {"code_execution": list(items)}}),
+                finish_reason="stop" if finish else None,
+            )
+        ],
+    )
+
+
+_PNG_OUTPUT = {"type": "code_execution_output", "id": "exec_1", "mime_type": "image/png", "data": "iVBO"}
+
+
+def test_streaming_code_execution_result_folds_outputs_from_later_chunks() -> None:
+    state = StreamingState()
+    events = chat_completion_chunk_to_message_stream_events(_code_execution_chunk(*_CODE_EXECUTION_ITEMS[:2]), state)
+    events += chat_completion_chunk_to_message_stream_events(_code_execution_chunk(_PNG_OUTPUT), state)
+    events += chat_completion_chunk_to_message_stream_events(
+        _code_execution_chunk({**_PNG_OUTPUT, "id": "unknown", "mime_type": "text/csv", "data": "YSxi"}), state
+    )
+    events += chat_completion_chunk_to_message_stream_events(_code_execution_chunk(finish=True), state)
+
+    assert _block_event_indexes(events) == [
+        ("content_block_start", 0),
+        ("content_block_stop", 0),
+        ("content_block_start", 1),
+        ("content_block_stop", 1),
+    ]
+    result_start = events[-2]
+    assert isinstance(result_start, ContentBlockStartEvent)
+    assert result_start.content_block.model_dump()["content"]["inline_outputs"] == [
+        {"mime_type": "image/png", "data": "iVBO"},
+        {"mime_type": "text/csv", "data": "YSxi"},
+    ]
+    assert close_open_blocks(state) == []
+
+
+def test_streaming_code_execution_result_flushed_by_next_code_item() -> None:
+    """A second code item emits the held result first; an output for that emitted result is dropped."""
+    state = StreamingState()
+    chat_completion_chunk_to_message_stream_events(_code_execution_chunk(*_CODE_EXECUTION_ITEMS[:2]), state)
+    events = chat_completion_chunk_to_message_stream_events(
+        _code_execution_chunk(*_CODE_EXECUTION_ITEMS[2:], _PNG_OUTPUT), state
+    )
+
+    assert _block_event_indexes(events) == [
+        ("content_block_start", 1),
+        ("content_block_stop", 1),
+        ("content_block_start", 2),
+        ("content_block_stop", 2),
+    ]
+    assert isinstance(events[0], ContentBlockStartEvent)
+    assert events[0].content_block.model_dump()["tool_use_id"] == "exec_1"
+
+    closing = close_open_blocks(state)
+    assert _block_event_indexes(closing) == [("content_block_start", 3), ("content_block_stop", 3)]
+    held = closing[0]
+    assert isinstance(held, ContentBlockStartEvent)
+    assert held.content_block.model_dump()["tool_use_id"] == "exec_2"
+    assert "inline_outputs" not in held.content_block.model_dump()["content"]
+
+
+def test_streaming_code_execution_output_without_result_and_unknown_items_are_dropped() -> None:
+    state = StreamingState()
+    events = chat_completion_chunk_to_message_stream_events(
+        _code_execution_chunk(_PNG_OUTPUT, {"type": "unknown", "id": "x"}), state
+    )
+
+    assert [e.type for e in events] == ["message_start"]
+    assert close_open_blocks(state) == []
+
+
+def test_streaming_close_open_blocks_stops_open_block_before_held_result() -> None:
+    state = StreamingState()
+    chat_completion_chunk_to_message_stream_events(_code_execution_chunk(_CODE_EXECUTION_ITEMS[1]), state)
+    state.current_block_index += 1
+    state.current_block_type = "text"
+
+    closing = close_open_blocks(state)
+
+    assert _block_event_indexes(closing) == [
+        ("content_block_stop", 0),
+        ("content_block_start", 1),
+        ("content_block_stop", 1),
+    ]
+
+
+def test_response_code_execution_outputs_fold_into_matching_or_last_result() -> None:
+    items = [
+        *_CODE_EXECUTION_ITEMS,
+        _PNG_OUTPUT,
+        {"type": "code_execution_output", "id": "orphan", "mime_type": "text/plain", "data": "eA=="},
+    ]
+    message = ChatCompletionMessage(
+        role="assistant", content="Done", extra_content={"google": {"code_execution": items}}
+    )
+    result = chat_completion_to_message_response(_gemini_completion(message, "stop"))
+
+    first, last = result.content[1], result.content[3]
+    assert isinstance(first, CodeExecutionToolResultBlock)
+    assert isinstance(last, CodeExecutionToolResultBlock)
+    assert first.model_dump()["content"]["inline_outputs"] == [{"mime_type": "image/png", "data": "iVBO"}]
+    assert last.model_dump()["content"]["inline_outputs"] == [{"mime_type": "text/plain", "data": "eA=="}]
+
+
+def test_response_code_execution_output_without_result_is_dropped() -> None:
+    message = ChatCompletionMessage(
+        role="assistant",
+        content="Done",
+        extra_content={"google": {"code_execution": [_CODE_EXECUTION_ITEMS[0], _PNG_OUTPUT]}},
+    )
+    result = chat_completion_to_message_response(_gemini_completion(message, "stop"))
+
+    assert [block.type for block in result.content] == ["server_tool_use", "text"]
+
+
+def test_request_code_execution_drops_produced_files() -> None:
+    """Neither inline_outputs nor file_id blocks, nor code_execution in a text block, are replayed."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "server_tool_use", "id": "exec_1", "name": "code_execution", "input": {"code": "plot()"}},
+            {
+                "type": "code_execution_tool_result",
+                "tool_use_id": "exec_1",
+                "content": {
+                    "type": "code_execution_result",
+                    "stdout": "",
+                    "stderr": "",
+                    "return_code": 0,
+                    "content": [{"type": "code_execution_output", "file_id": "file_1"}],
+                    "inline_outputs": [{"mime_type": "image/png", "data": "iVBO"}],
+                },
+            },
+            {"type": "text", "text": "Done", "extra_content": {"google": {"code_execution": [_PNG_OUTPUT]}}},
+        ]
+    )
+
+    assert result[0]["extra_content"] == {
+        "google": {
+            "code_execution": [
+                {"type": "executable_code", "id": "exec_1", "language": "PYTHON", "code": "plot()"},
+                {"type": "code_execution_result", "id": "exec_1", "outcome": "OUTCOME_OK", "output": ""},
+            ]
+        }
+    }
+
+
+def test_request_tool_use_extra_content_becomes_tool_call_extra_content() -> None:
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {
+                "type": "tool_use",
+                "id": "call_a",
+                "name": "get_weather",
+                "input": {},
+                "extra_content": _GEMINI_SIGNATURE,
+            },
+            {"type": "tool_use", "id": "call_b", "name": "get_time", "input": {}},
+        ]
+    )
+
+    tool_calls = result[0]["tool_calls"]
+    assert tool_calls[0]["extra_content"] == _GEMINI_SIGNATURE
+    assert "extra_content" not in tool_calls[1]
+    assert "extra_content" not in result[0]
+
+
+def test_request_text_extra_content_merges_beside_anthropic_signature() -> None:
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "thinking", "thinking": "hmm", "signature": "anthropic-sig"},
+            {"type": "text", "text": "Hello", "extra_content": {**_GEMINI_SIGNATURE, "other": {"x": 1}}},
+        ]
+    )
+
+    assert result[0]["extra_content"] == {
+        "anthropic": {"signature": "anthropic-sig"},
+        "google": {"thought_signature": "c2ln"},
+    }
+
+
+def test_request_code_execution_blocks_become_google_items_in_block_order() -> None:
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "server_tool_use", "id": "exec_1", "name": "code_execution", "input": {"code": "print(1)"}},
+            {
+                "type": "code_execution_tool_result",
+                "tool_use_id": "exec_1",
+                "content": {
+                    "type": "code_execution_result",
+                    "stdout": "1\n",
+                    "stderr": "",
+                    "return_code": 0,
+                    "content": [],
+                },
+            },
+            {
+                "type": "server_tool_use",
+                "id": "exec_2",
+                "name": "code_execution",
+                "input": {"code": "x", "language": "PYTHON"},
+            },
+            {
+                "type": "code_execution_tool_result",
+                "tool_use_id": "exec_2",
+                "content": {
+                    "type": "code_execution_result",
+                    "stdout": "partial ",
+                    "stderr": "boom",
+                    "return_code": 2,
+                    "content": [],
+                },
+            },
+            {"type": "server_tool_use", "id": "exec_3", "name": "code_execution", "input": {"code": "y"}},
+            {
+                "type": "code_execution_tool_result",
+                "tool_use_id": "exec_3",
+                "content": {"type": "code_execution_tool_result_error", "error_code": "execution_time_exceeded"},
+            },
+            {"type": "text", "text": "Done", "extra_content": _GEMINI_SIGNATURE},
+        ]
+    )
+
+    assert result[0]["content"] == "Done"
+    assert result[0]["extra_content"] == {
+        "google": {
+            "thought_signature": "c2ln",
+            "code_execution": [
+                {"type": "executable_code", "id": "exec_1", "language": "PYTHON", "code": "print(1)"},
+                {"type": "code_execution_result", "id": "exec_1", "outcome": "OUTCOME_OK", "output": "1\n"},
+                {"type": "executable_code", "id": "exec_2", "language": "PYTHON", "code": "x"},
+                {
+                    "type": "code_execution_result",
+                    "id": "exec_2",
+                    "outcome": "OUTCOME_FAILED",
+                    "output": "partial boom",
+                },
+                {"type": "executable_code", "id": "exec_3", "language": "PYTHON", "code": "y"},
+                {
+                    "type": "code_execution_result",
+                    "id": "exec_3",
+                    "outcome": "OUTCOME_FAILED",
+                    "output": "execution_time_exceeded",
+                },
+            ],
+        }
+    }
+
+
+def test_request_other_server_tool_blocks_are_dropped() -> None:
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": {"query": "q"}},
+            {"type": "server_tool_use", "id": "srv_2", "name": "code_execution", "input": "not a dict"},
+            {"type": "code_execution_tool_result", "tool_use_id": "srv_2", "content": None},
+        ]
+    )
+
+    assert result[0]["extra_content"] == {
+        "google": {
+            "code_execution": [
+                {"type": "executable_code", "id": "srv_2", "language": "PYTHON", "code": ""},
+                {"type": "code_execution_result", "id": "srv_2", "outcome": "OUTCOME_FAILED", "output": ""},
+            ]
+        }
+    }
+
+
+def test_response_round_trips_through_request_conversion() -> None:
+    message = ChatCompletionMessage(
+        role="assistant",
+        content="Done",
+        extra_content={"google": {"code_execution": _CODE_EXECUTION_ITEMS, "thought_signature": "c2ln"}},
+        tool_calls=[
+            ChatCompletionMessageFunctionToolCall(
+                id="call_a",
+                type="function",
+                function=Function(name="get_time", arguments="{}"),
+                extra_content=_GEMINI_SIGNATURE,
+            )
+        ],
+    )
+    response = chat_completion_to_message_response(_gemini_completion(message, "tool_calls"))
+    blocks = [block.model_dump(exclude_none=True) for block in response.content]
+
+    replayed = _convert_assistant_blocks_to_openai(blocks)[0]
+
+    assert replayed["extra_content"] == message.extra_content
+    assert replayed["tool_calls"][0]["extra_content"] == _GEMINI_SIGNATURE
+
+
+def test_native_tools_pass_through_while_anthropic_tools_convert() -> None:
+    native: list[dict[str, Any]] = [{"google_search": {}}, {"code_execution": {}}, {"url_context": {}}]
+    server_tool = {"type": "web_search_20250305", "name": "web_search"}
+    function_tool = {"name": "get_time", "description": "Time", "input_schema": {"type": "object"}}
+
+    result = _convert_tools_to_openai([*native, server_tool, function_tool])
+
+    assert result[:3] == native
+    assert result[3] == {
+        "type": "function",
+        "function": {"name": "web_search", "description": "", "parameters": {}},
+    }
+    assert result[4] == {
+        "type": "function",
+        "function": {"name": "get_time", "description": "Time", "parameters": {"type": "object"}},
+    }
+
+
+def test_prepare_blocks_for_native_messages_copies_only_what_it_changes() -> None:
+    signed_block = {"type": "text", "text": "Hello", "extra_content": _GEMINI_SIGNATURE}
+    plain_message = {"role": "user", "content": [{"type": "text", "text": "Hi"}]}
+    string_message = {"role": "user", "content": "Hi"}
+    signed_message = {"role": "assistant", "content": [signed_block, "raw"]}
+    messages: list[dict[str, Any]] = [plain_message, string_message, signed_message]
+
+    result = prepare_blocks_for_native_messages(messages)
+
+    assert result[0] is plain_message
+    assert result[1] is string_message
+    assert result[2] == {"role": "assistant", "content": [{"type": "text", "text": "Hello"}, "raw"]}
+    assert signed_block["extra_content"] == _GEMINI_SIGNATURE
+    assert signed_message["content"][0] is signed_block
+
+
+_FOREIGN_CODE_USE = {
+    "type": "server_tool_use",
+    "id": "exec_1",
+    "name": "code_execution",
+    "input": {"code": "print(1)", "language": "PYTHON"},
+}
+_FOREIGN_CODE_RESULT = {
+    "type": "code_execution_tool_result",
+    "tool_use_id": "exec_1",
+    "content": {"type": "code_execution_result", "stdout": "1\n", "stderr": "warn", "return_code": 0, "content": []},
+}
+
+
+def test_prepare_blocks_for_native_messages_renders_foreign_code_execution_pair_as_text() -> None:
+    message = {
+        "role": "assistant",
+        "content": [_FOREIGN_CODE_RESULT, _FOREIGN_CODE_USE, {"type": "text", "text": "Done"}],
+    }
+
+    result = prepare_blocks_for_native_messages([message])
+
+    assert result[0]["content"] == [
+        {"type": "text", "text": "Code execution (python):\n```python\nprint(1)\n```\nOutput:\n1\nwarn"},
+        {"type": "text", "text": "Done"},
+    ]
+    assert message["content"][0] is _FOREIGN_CODE_RESULT
+
+
+def test_prepare_blocks_for_native_messages_renders_orphans_without_the_missing_half() -> None:
+    orphan_use = {"type": "server_tool_use", "id": "exec_9", "name": "code_execution", "input": "not a dict"}
+    orphan_result = {"type": "code_execution_tool_result", "tool_use_id": "exec_8", "content": None}
+
+    result = prepare_blocks_for_native_messages([{"role": "assistant", "content": [orphan_use, orphan_result]}])
+
+    assert result[0]["content"] == [
+        {"type": "text", "text": "Code execution (python):\n```python\n\n```"},
+        {"type": "text", "text": "Output:\n"},
+    ]
+
+
+def test_prepare_blocks_for_native_messages_renders_error_result() -> None:
+    error_result = {
+        "type": "code_execution_tool_result",
+        "tool_use_id": "exec_1",
+        "content": {"type": "code_execution_tool_result_error", "error_code": "execution_time_exceeded"},
+    }
+
+    result = prepare_blocks_for_native_messages([{"role": "assistant", "content": [_FOREIGN_CODE_USE, error_result]}])
+
+    assert result[0]["content"] == [
+        {
+            "type": "text",
+            "text": "Code execution (python):\n```python\nprint(1)\n```\nOutput:\nError: execution_time_exceeded",
+        }
+    ]
+
+
+def test_prepare_blocks_for_native_messages_keeps_anthropic_server_tool_blocks() -> None:
+    message = {
+        "role": "assistant",
+        "content": [
+            {**_FOREIGN_CODE_USE, "id": "srvtoolu_1"},
+            {**_FOREIGN_CODE_RESULT, "tool_use_id": "srvtoolu_1"},
+            {"type": "server_tool_use", "id": "exec_2", "name": "web_search", "input": {}},
+        ],
+    }
+
+    assert prepare_blocks_for_native_messages([message])[0] is message
+
+
+def _bridged_messages(**kwargs: Any) -> list[dict[str, Any]]:
+    params = MessagesParams(model="gemini-2.5-flash", max_tokens=64, **kwargs)
+    messages: list[dict[str, Any]] = messages_params_to_completion_params(params, cache_breakpoints=True)["messages"]
+    return messages
+
+
+def test_cache_breakpoints_on_system_blocks_ride_the_side_channel_of_a_flat_system_message() -> None:
+    messages = _bridged_messages(
+        system=[
+            {"type": "text", "text": "Part one. "},
+            {"type": "text", "text": "Part two.", "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+        ],
+        messages=[{"role": "user", "content": "Hi"}],
+    )
+
+    assert messages[0] == {
+        "role": "system",
+        "content": "Part one. Part two.",
+        "extra_content": {"cache_control": {"type": "ephemeral", "ttl": "1h"}},
+    }
+    assert "extra_content" not in messages[1]
+
+
+def test_cache_breakpoints_on_user_and_tool_result_blocks_mark_the_messages_holding_them() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "user", "content": [{"type": "text", "text": "Doc", "cache_control": {"type": "ephemeral"}}]},
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "f", "input": {}}]},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": "out",
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": "Next"},
+                ],
+            },
+        ],
+    )
+
+    assert messages[0]["extra_content"] == {"cache_control": {"type": "ephemeral"}}
+    assert messages[0]["content"] == [{"type": "text", "text": "Doc"}]
+    assert "extra_content" not in messages[1]
+    assert messages[2]["role"] == "tool"
+    assert messages[2]["extra_content"] == {"cache_control": {"type": "ephemeral"}}
+    assert "extra_content" not in messages[3]
+
+
+def test_cache_breakpoint_nested_in_tool_result_content_marks_the_tool_message() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "f", "input": {}}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Before", "cache_control": {"type": "ephemeral", "ttl": "5m"}},
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "t1",
+                        "content": [{"type": "text", "text": "out", "cache_control": {"type": "ephemeral"}}],
+                    },
+                ],
+            },
+        ],
+    )
+
+    assert messages[1] == {
+        "role": "user",
+        "content": [{"type": "text", "text": "Before"}],
+        "extra_content": {"cache_control": {"type": "ephemeral", "ttl": "5m"}},
+    }
+    assert messages[2]["extra_content"] == {"cache_control": {"type": "ephemeral"}}
+
+
+def test_cache_breakpoint_on_an_assistant_block_sits_beside_its_google_state() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "user", "content": "Hi"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Hello",
+                        "extra_content": {"google": {"thought_signature": "sig"}},
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+        ],
+    )
+
+    assert messages[1]["extra_content"] == {
+        "google": {"thought_signature": "sig"},
+        "cache_control": {"type": "ephemeral"},
+    }
+
+
+def test_top_level_cache_control_marks_the_last_message_and_keeps_the_longest_ttl() -> None:
+    messages = _bridged_messages(
+        messages=[
+            {"role": "user", "content": "First"},
+            {"role": "assistant", "content": "Reply"},
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "Last", "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
+            },
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+
+    assert "extra_content" not in messages[0]
+    assert "extra_content" not in messages[1]
+    assert messages[2]["extra_content"] == {"cache_control": {"type": "ephemeral", "ttl": "1h"}}
+
+
+def test_cache_breakpoints_stay_out_of_the_conversion_unless_asked_for() -> None:
+    params = MessagesParams(
+        model="gpt-5.6",
+        max_tokens=64,
+        system=[{"type": "text", "text": "Sys", "cache_control": {"type": "ephemeral"}}],
+        messages=[
+            {"role": "user", "content": [{"type": "text", "text": "Hi", "cache_control": {"type": "ephemeral"}}]}
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+
+    messages = messages_params_to_completion_params(params)["messages"]
+
+    assert messages == [
+        {"role": "system", "content": "Sys"},
+        {"role": "user", "content": [{"type": "text", "text": "Hi"}]},
+    ]

@@ -14,8 +14,11 @@ provider policy in https://github.com/mozilla-ai/any-llm/issues/1197.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, cast
+
+from typing_extensions import override
 
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
@@ -26,8 +29,9 @@ class OpenAICompatibleProviderConfig:
 
     Capability flags default to the conservative gateway baseline (completion,
     streaming and model listing only); rows opt in to anything beyond that.
-    A gateway that needs behavior (custom auth, request/response translation,
-    param remaps) does not belong in the registry and keeps a code folder.
+    A gateway that needs behavior (request/response translation, param remaps,
+    or an auth scheme beyond ``api_key_optional``) does not belong in the registry
+    and keeps a code folder.
     """
 
     name: str
@@ -49,6 +53,11 @@ class OpenAICompatibleProviderConfig:
     supports_batch: bool = False
     supports_image_generation: bool = False
     supports_rerank: bool = False
+    api_key_optional: bool = False
+    """Resolve the key as the explicit argument, then the env var, then the
+    ``"no-key-required"`` placeholder, instead of raising ``MissingApiKeyError``.
+    For local runners that may serve keyless on a trusted network while still
+    accepting a key when one is configured."""
 
 
 # Rows replicate each migrated provider's effective flags, including values the
@@ -62,6 +71,15 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         env_api_base_name="ATLASCLOUD_API_BASE",
         provider_documentation_url="https://www.atlascloud.ai/docs",
         supports_completion_reasoning=True,
+    ),
+    "cascadia": OpenAICompatibleProviderConfig(
+        name="cascadia",
+        api_base="http://localhost:9090/v1",
+        env_api_key_name="CASCADIA_API_KEY",
+        env_api_base_name="CASCADIA_API_BASE",
+        provider_documentation_url="https://cascadia.to",
+        supports_completion_reasoning=True,
+        api_key_optional=True,
     ),
     "dashscope": OpenAICompatibleProviderConfig(
         name="dashscope",
@@ -103,6 +121,18 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         provider_documentation_url="https://kenari.id/docs",
         supports_completion_reasoning=True,
     ),
+    "llamacpp": OpenAICompatibleProviderConfig(
+        name="llamacpp",
+        api_base="http://127.0.0.1:8080/v1",
+        env_api_key_name="LLAMACPP_API_KEY",
+        env_api_base_name="LLAMACPP_API_BASE",
+        provider_documentation_url="https://github.com/ggml-org/llama.cpp",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+        api_key_optional=True,
+    ),
     "moonshot": OpenAICompatibleProviderConfig(
         name="moonshot",
         api_base="https://api.moonshot.ai/v1",
@@ -133,6 +163,7 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_image=True,
         supports_embedding=True,
         supports_moderation=True,
+        supports_responses=True,
     ),
     "neosantara": OpenAICompatibleProviderConfig(
         name="neosantara",
@@ -187,6 +218,18 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_image=True,
         supports_moderation=True,
     ),
+    "vllm": OpenAICompatibleProviderConfig(
+        name="vllm",
+        api_base="http://localhost:8000/v1",
+        env_api_key_name="VLLM_API_KEY",
+        env_api_base_name="VLLM_API_BASE",
+        provider_documentation_url="https://docs.vllm.ai/",
+        supports_completion_reasoning=True,
+        supports_completion_image=True,
+        supports_embedding=True,
+        supports_moderation=True,
+        api_key_optional=True,
+    ),
 }
 
 _class_cache: dict[str, type[BaseOpenAIProvider]] = {}
@@ -209,6 +252,20 @@ def get_registry_provider_class(name: str) -> type[BaseOpenAIProvider]:
     if key not in _class_cache:
         _class_cache[key] = _build_provider_class(config)
     return _class_cache[key]
+
+
+class _OptionalApiKeyProvider(BaseOpenAIProvider):
+    """Base for rows that set ``api_key_optional``.
+
+    A class body rather than a function injected into ``type()`` so that mypy
+    checks the signature against ``AnyLLM._verify_and_set_api_key``.
+    """
+
+    @override
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
+        # An explicit key and the env var still win, so the same row works against a
+        # runner that does enforce auth (vLLM's --api-key, a reverse proxy).
+        return api_key or os.getenv(self.ENV_API_KEY_NAME) or "no-key-required"
 
 
 def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOpenAIProvider]:
@@ -234,4 +291,5 @@ def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOp
     # The class name follows the same convention as folder-based providers so
     # metadata.class_name is stable across a migration.
     class_name = f"{config.name.capitalize()}Provider"
-    return cast("type[BaseOpenAIProvider]", type(class_name, (BaseOpenAIProvider,), attrs))
+    base = _OptionalApiKeyProvider if config.api_key_optional else BaseOpenAIProvider
+    return cast("type[BaseOpenAIProvider]", type(class_name, (base,), attrs))

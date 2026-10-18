@@ -1,7 +1,14 @@
 import json
 from typing import Any
 
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, PromptTokensDetails
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    CompletionParams,
+    CompletionUsage,
+    PromptTokensDetails,
+)
+from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 
@@ -54,15 +61,13 @@ def _reinject_reasoning_content(messages: list[dict[str, Any]], *, replay_reason
 
     Reference: https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
 
-    ``extra_content`` is an any_llm-internal side-channel and is stripped from every replayed
-    message here so it is never forwarded to DeepSeek's API: the OpenAI SDK passes unknown
-    message keys through verbatim, and only ``reasoning_content`` belongs on the wire.
+    ``extra_content`` is read here and then dropped with ``strip_extra_content``, so only
+    ``reasoning_content`` reaches DeepSeek's API.
     """
     result = []
-    for message in messages:
-        extra_content = message.get("extra_content")
-        cleaned = {k: v for k, v in message.items() if k != "extra_content"} if extra_content is not None else message
+    for message, cleaned in zip(messages, strip_extra_content(messages), strict=True):
         if replay_reasoning and message.get("role") == "assistant":
+            extra_content = message.get("extra_content")
             deepseek_extra = extra_content.get("deepseek") if isinstance(extra_content, dict) else None
             if isinstance(deepseek_extra, dict) and isinstance(deepseek_extra.get("reasoning_content"), str):
                 result.append({**cleaned, "reasoning_content": deepseek_extra["reasoning_content"]})
@@ -84,29 +89,32 @@ def _preprocess_messages(params: CompletionParams) -> CompletionParams:
     return params
 
 
-def _inject_cached_tokens(completion: ChatCompletion) -> ChatCompletion:
+def _apply_cache_hit_tokens(usage: CompletionUsage) -> None:
     """Populate ``prompt_tokens_details.cached_tokens`` from DeepSeek's ``prompt_cache_hit_tokens``.
 
     DeepSeek's ``prompt_tokens`` already includes cached tokens
-    (``prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens``).
+    (``prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens``). A reported zero is kept so
+    it stays distinguishable from a response without cache accounting.
 
     Reference: https://api-docs.deepseek.com/api/create-chat-completion
     """
-    if completion.usage is None:
-        return completion
-    cached = getattr(completion.usage, "prompt_cache_hit_tokens", None)
-    if cached:
-        completion.usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
+    cached = getattr(usage, "prompt_cache_hit_tokens", None)
+    if not isinstance(cached, int):
+        return
+    details = usage.prompt_tokens_details or PromptTokensDetails()
+    details.cached_tokens = cached
+    usage.prompt_tokens_details = details
+
+
+def _inject_cached_tokens(completion: ChatCompletion) -> ChatCompletion:
+    if completion.usage is not None:
+        _apply_cache_hit_tokens(completion.usage)
     return completion
 
 
 def _inject_cached_tokens_chunk(chunk: ChatCompletionChunk) -> ChatCompletionChunk:
-    """Same as ``_inject_cached_tokens`` but for streaming chunks."""
-    if chunk.usage is None:
-        return chunk
-    cached = getattr(chunk.usage, "prompt_cache_hit_tokens", None)
-    if cached:
-        chunk.usage.prompt_tokens_details = PromptTokensDetails(cached_tokens=cached)
+    if chunk.usage is not None:
+        _apply_cache_hit_tokens(chunk.usage)
     return chunk
 
 

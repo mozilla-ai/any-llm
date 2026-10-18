@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -13,12 +14,15 @@ from any_llm.exceptions import (
     GatewayTimeoutError,
     InsufficientFundsError,
     InvalidRequestError,
+    MissingApiKeyError,
     ModelNotFoundError,
     ProviderError,
+    ProviderFileNotFoundError,
     RateLimitError,
     UpstreamProviderError,
 )
 from any_llm.utils.exception_handler import (
+    _CLASSIFIABLE_ERRORS,
     _ERROR_PATTERNS,
     _STATUS_ERROR_CLASSES,
     _handle_exception,
@@ -78,6 +82,17 @@ def test_validation_error_bubbles_up_unchanged() -> None:
 
     with pytest.raises(ValidationError) as raised:
         _handle_exception(original, "openai")
+
+    assert raised.value is original
+
+
+@pytest.mark.parametrize("unified_exceptions", [False, True])
+def test_not_implemented_error_bubbles_up_unchanged(unified_exceptions: bool) -> None:
+    """A provider that does not implement a feature raises NotImplementedError before any request."""
+    original = NotImplementedError("Provider doesn't support decide.")
+
+    with pytest.raises(NotImplementedError) as raised:
+        _handle_exception(original, "openai", unified_exceptions=unified_exceptions)
 
     assert raised.value is original
 
@@ -320,9 +335,93 @@ def test_convert_exception_stringifies_numeric_retry_after() -> None:
     assert result.retry_after == "30"
 
 
+class _StatusHeadersError(Exception):
+    """An SDK error that keeps the status and headers on itself, as typesafe-sdk does."""
+
+    def __init__(self, status: int, message: str, headers: dict[str, str] | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.headers = headers or {}
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (402, InsufficientFundsError),
+        (422, InvalidRequestError),
+        (502, UpstreamProviderError),
+        (504, GatewayTimeoutError),
+    ],
+)
+def test_convert_exception_reads_status_off_the_exception(status: int, expected: type[AnyLLMError]) -> None:
+    result = convert_exception(_StatusHeadersError(status, "status code (no body)"), "typesafe")
+    assert type(result) is expected
+    assert result.status_code == status
+
+
+def test_convert_exception_reads_retry_after_off_the_exception() -> None:
+    error = _StatusHeadersError(429, "slow down", {"retry-after": "7"})
+    result = convert_exception(error, "typesafe")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "7"
+
+
+def test_convert_exception_falls_back_to_response_retry_after() -> None:
+    """Headers on the exception that lack Retry-After must not hide the response's."""
+    error = _StatusHeadersError(429, "slow down", {"x-request-id": "abc"})
+    error.response = MagicMock(headers={"retry-after": "9"})  # type: ignore[attr-defined]
+    result = convert_exception(error, "typesafe")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "9"
+
+
+@pytest.mark.parametrize("host", ["http://safety-api.acme.internal", "https://auth-proxy.local:8080"])
+def test_convert_exception_ignores_urls_in_the_message(host: str) -> None:
+    """A hostname in the endpoint prefix must not pick the class over the status."""
+    error = _StatusHeadersError(400, f"POST {host}/v1/systemone: 400 bad question")
+    result = convert_exception(error, "typesafe")
+    assert type(result) is InvalidRequestError
+
+
 def test_convert_exception_retry_after_is_none_without_the_header() -> None:
     error = _ResponseStatusError(429, "Rate limit exceeded")
     error.response.headers = {}  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after is None
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [
+        ({"retry-after-ms": "1500"}, "1.5"),
+        ({"Retry-After-Ms": "2000"}, "2"),
+        ({"retry-after-ms": 250}, "0.25"),
+        ({"retry-after-ms": "0"}, "0"),
+        ({"retry-after-ms": "1500", "retry-after": "30"}, "30"),
+    ],
+)
+def test_convert_exception_falls_back_to_retry_after_ms(headers: dict[str, object], expected: str) -> None:
+    """retry-after-ms becomes seconds, but only when retry-after is absent."""
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = headers  # type: ignore[attr-defined]
+    result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == expected
+
+
+def test_convert_exception_prefers_retry_after_from_the_response_over_ms_on_the_exception() -> None:
+    error = _StatusHeadersError(429, "slow down", {"retry-after-ms": "1500"})
+    error.response = MagicMock(headers={"retry-after": "9"})  # type: ignore[attr-defined]
+    result = convert_exception(error, "typesafe")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after == "9"
+
+
+@pytest.mark.parametrize("value", ["soon", "-5", "nan", "inf", "", True, 1.5, object()])
+def test_convert_exception_rejects_unusable_retry_after_ms_values(value: object) -> None:
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {"retry-after-ms": value}  # type: ignore[attr-defined]
     result = convert_exception(error, "openai")
     assert isinstance(result, RateLimitError)
     assert result.retry_after is None
@@ -405,20 +504,68 @@ def test_convert_exception_classification_order_is_pinned(message: str, expected
     assert type(convert_exception(Exception(message), "openai")) is expected
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "AsyncCompletions.create() got an unexpected keyword argument 'not_a_param'",
+        "AsyncCompletions.create() got an unexpected keyword argument 'safety_settings'",
+        "AsyncCompletions.create() got an unexpected keyword argument 'auth_token'",
+        "create() got multiple values for argument 'model'",
+        "create() got multiple values for keyword argument 'model'",
+        "create() missing 1 required positional argument: 'model'",
+        "create() missing 2 required keyword-only arguments: 'model' and 'messages'",
+        "create() takes 2 positional arguments but 3 were given",
+        "create() takes from 1 to 2 positional arguments but 3 were given",
+    ],
+)
+def test_local_call_signature_mistakes_are_invalid_requests(message: str) -> None:
+    """A TypeError raised before anything is sent is the caller's mistake, not a provider fault."""
+    assert type(convert_exception(TypeError(message), "openai")) is InvalidRequestError
+
+
+def test_malformed_response_value_error_is_still_a_provider_error() -> None:
+    """A type-based rule would misfile this; only the interpreter's wording marks a signature mistake."""
+    error = ValueError("Expecting value: line 1 column 1 (char 0)")
+    assert type(convert_exception(error, "openai")) is ProviderError
+
+
+@pytest.mark.parametrize(
+    ("sdk_module", "http_module"),
+    [
+        ("openai", "httpx2"),
+        ("anthropic", "httpx"),
+        ("groq", "httpx"),
+        ("together", "httpx"),
+        ("cerebras.cloud.sdk", "httpx"),
+    ],
+)
+def test_sdk_response_validation_error_is_a_provider_error(sdk_module: str, http_module: str) -> None:
+    """A 200 body the SDK cannot parse is a provider fault, though the SDK's message says "invalid"."""
+    sdk = pytest.importorskip(sdk_module)
+    http = pytest.importorskip(http_module)
+    response = http.Response(200, request=http.Request("POST", "https://example.test/v1/chat/completions"))
+    original = sdk.APIResponseValidationError(response=response, body={})
+
+    result = convert_exception(original, sdk_module)
+
+    assert type(result) is ProviderError
+    assert result.status_code == 200
+    assert result.original_exception is original
+
+
 def test_every_classified_class_accepts_the_metadata_keywords() -> None:
-    """Every class either table can select must accept the structured metadata keywords.
+    """Every class the tables or a provider can select must accept the structured metadata keywords.
 
     convert_exception constructs through a ``type[AnyLLMError]`` variable, so
     mypy checks the call against the base signature only. A subclass with an
     incompatible ``__init__`` (MissingApiKeyError, BatchNotCompleteError) would
     pass the type check and raise TypeError inside the exception handler,
-    masking the provider's original error. Both the message table and the status
-    table feed that construction site, so both are covered here.
+    masking the provider's original error. Both tables and a provider's pick
+    feed that construction site, and the set covers all of them.
     """
-    classified = {error_class for _pattern, error_class in _ERROR_PATTERNS}
-    classified.update(_STATUS_ERROR_CLASSES.values())
-    classified.update({InvalidRequestError, ProviderError})
-    for error_class in classified:
+    assert {error_class for _pattern, error_class in _ERROR_PATTERNS} <= _CLASSIFIABLE_ERRORS
+    assert set(_STATUS_ERROR_CLASSES.values()) <= _CLASSIFIABLE_ERRORS
+    for error_class in _CLASSIFIABLE_ERRORS:
         error = error_class(
             message="boom",
             original_exception=ValueError("boom"),
@@ -619,6 +766,15 @@ async def test_closing_the_wrapped_stream_closes_the_provider_stream() -> None:
 
 
 @pytest.mark.asyncio
+async def test_closing_before_the_first_read_closes_the_provider_stream() -> None:
+    """aclose() on a stream nothing has read still reaches the SDK stream."""
+    sdk_stream = _SdkStream()
+    wrapped = await _wrapped(sdk_stream)
+    await wrapped.aclose()
+    assert sdk_stream.close_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_provider_stream_closes_after_exhaustion() -> None:
     """Reading a stream to the end closes the SDK stream beneath it."""
     sdk_stream = _SdkStream()
@@ -671,3 +827,178 @@ async def test_a_failing_close_never_outranks_the_stream_outcome() -> None:
 async def test_iterator_without_a_close_method_is_left_alone() -> None:
     """A source with neither aclose() nor close() streams through untouched."""
     assert [item async for item in await _wrapped(_PlainIterable())] == [1, 2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("consume_first", [False, True])
+async def test_closed_wrapper_never_resumes_source(consume_first: bool) -> None:
+    source = _SdkStream()
+    wrapped = await _wrapped(source)
+    if consume_first:
+        await anext(wrapped)
+    await wrapped.aclose()
+    with pytest.raises(StopAsyncIteration):
+        await anext(wrapped)
+    assert source.close_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unified", [False, True])
+async def test_iterator_startup_failure_is_handled_and_closed(unified: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1" if unified else "0")
+    error = _StatusError(429, "rate limit exceeded")
+    source = MagicMock(spec=["__aiter__", "close"])
+    source.__aiter__.side_effect = error
+    source.close = AsyncMock()
+    wrapped = await _wrapped(source)
+    source.__aiter__.assert_not_called()
+
+    if unified:
+        with pytest.raises(RateLimitError) as caught:
+            await anext(wrapped)
+        assert caught.value.original_exception is error
+    else:
+        with (
+            pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+            pytest.raises(_StatusError) as original,
+        ):
+            await anext(wrapped)
+        assert original.value is error
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(wrapped)
+    source.__aiter__.assert_called_once()
+    source.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_before_read_does_not_initialize_iterator() -> None:
+    source = MagicMock(spec=["__aiter__", "close"])
+    source.__aiter__.side_effect = AssertionError("must not initialize a closed stream")
+    source.close = AsyncMock()
+    wrapped = await _wrapped(source)
+    await wrapped.aclose()
+    with pytest.raises(StopAsyncIteration):
+        await anext(wrapped)
+    source.__aiter__.assert_not_called()
+    source.close.assert_awaited_once()
+
+
+def test_convert_exception_ignores_a_boolean_status_code() -> None:
+    """bool subclasses int, so True must not be read as HTTP status 1."""
+    original = _StatusError(True, "Invalid request")
+    result = convert_exception(original, "gateway")
+    assert result.status_code is None
+
+
+def test_convert_exception_ignores_a_boolean_response_status() -> None:
+    original = Exception("Invalid request")
+    original.response = type("Response", (), {"status_code": True, "status": False})()  # type: ignore[attr-defined]
+    result = convert_exception(original, "gateway")
+    assert result.status_code is None
+
+
+def test_convert_exception_uses_the_class_a_provider_picks() -> None:
+    original = _StatusError(200, "Invalid response data at 'answers'.", headers={"retry-after": "3"})
+
+    result = convert_exception(original, "typesafe", classify=lambda _exc: RateLimitError)
+
+    assert type(result) is RateLimitError
+    assert result.status_code == 200
+    assert result.retry_after == "3"
+    assert result.original_exception is original
+
+
+def test_convert_exception_falls_back_when_the_provider_defers() -> None:
+    classify = MagicMock(return_value=None)
+    original = Exception("At least one question is required.")
+
+    result = convert_exception(original, "typesafe", classify=classify)
+
+    assert type(result) is ProviderError
+    classify.assert_called_once_with(original)
+
+
+class _ClassifyingProvider(_Provider):
+    """A provider that reports every failure as a caller mistake."""
+
+    _unified_exceptions = True
+
+    @staticmethod
+    def _classify_exception(exception: Exception) -> type[AnyLLMError] | None:
+        return InvalidRequestError
+
+    @handle_exceptions()
+    async def call(self, error: Exception) -> None:
+        raise error
+
+    @handle_exceptions(wrap_streaming=True)
+    async def fail_before_streaming(self, error: Exception) -> Any:
+        raise error
+
+
+@pytest.mark.asyncio
+async def test_handle_exceptions_asks_the_provider_to_classify() -> None:
+    provider = _ClassifyingProvider()
+    original = TimeoutError("request timed out")
+
+    async def failing_stream() -> AsyncIterator[int]:
+        raise original
+        yield  # pragma: no cover
+
+    with pytest.raises(InvalidRequestError) as call_error:
+        await provider.call(original)
+    with pytest.raises(InvalidRequestError) as startup_error:
+        await provider.fail_before_streaming(original)
+    with pytest.raises(InvalidRequestError) as stream_error:
+        await anext(await provider.stream(failing_stream()))
+
+    for caught in (call_error, startup_error, stream_error):
+        assert caught.value.original_exception is original
+
+
+def _raise_key_error(_exception: Exception) -> type[AnyLLMError] | None:
+    key = "detail"
+    raise KeyError(key)
+
+
+@pytest.mark.parametrize(
+    "classify",
+    [
+        _raise_key_error,
+        lambda _exc: MissingApiKeyError,
+        lambda _exc: MagicMock(),
+        lambda _exc: [],
+    ],
+    ids=["raises", "rejects-metadata-keywords", "mock", "unhashable"],
+)
+def test_convert_exception_ignores_an_unusable_provider_pick(classify: Any) -> None:
+    result = convert_exception(_StatusError(429, "slow down"), "test", classify=classify)
+
+    assert type(result) is RateLimitError
+
+
+def test_file_operation_keeps_the_provider_pick_for_a_404() -> None:
+    original = _StatusError(404, "No such file")
+
+    with pytest.raises(InvalidRequestError) as picked:
+        _handle_exception(
+            original, "test", file_operation=True, unified_exceptions=True, classify=lambda _exc: InvalidRequestError
+        )
+    with pytest.raises(ProviderFileNotFoundError):
+        _handle_exception(original, "test", file_operation=True, unified_exceptions=True, classify=lambda _exc: None)
+
+    assert type(picked.value) is InvalidRequestError
+
+
+def test_handle_exception_skips_the_provider_without_unified_exceptions() -> None:
+    classify = MagicMock(return_value=InvalidRequestError)
+    original = TimeoutError("request timed out")
+
+    with (
+        pytest.warns(DeprecationWarning, match="Provider-specific exceptions"),
+        pytest.raises(TimeoutError),
+    ):
+        _handle_exception(original, "test", unified_exceptions=False, classify=classify)
+
+    classify.assert_not_called()

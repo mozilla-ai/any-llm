@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import UnsupportedParameterError
+from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 PYTHON_VERSION_INCOMPATIBLE = sys.version_info >= (3, 14)
@@ -21,6 +23,7 @@ else:
         from voyageai.client_async import AsyncClient
 
         from .utils import (
+            _convert_voyage_rerank_response,
             _create_openai_embedding_response_from_voyage,
         )
     except ImportError as e:
@@ -31,6 +34,7 @@ if TYPE_CHECKING:
 
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
+    from any_llm.types.rerank import RerankResponse
 
 
 class VoyageProvider(AnyLLM):
@@ -52,7 +56,9 @@ class VoyageProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_BATCH = False
-    SUPPORTS_RERANK = False
+    SUPPORTS_RERANK = True
+    # The Voyage SDK's max_retries is tenacity's stop_after_attempt, which counts the first request.
+    MAX_RETRIES_SUPPORT = "mapped"
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
@@ -104,6 +110,45 @@ class VoyageProvider(AnyLLM):
         msg = "Voyage does not support listing models"
         raise NotImplementedError(msg)
 
+    @staticmethod
+    @override
+    def _convert_rerank_params(model: str, query: str, documents: list[str], **kwargs: Any) -> dict[str, Any]:
+        """Convert rerank parameters for the Voyage API.
+
+        Voyage names the result limit `top_k` rather than `top_n`.
+
+        Raises:
+            UnsupportedParameterError: If `max_tokens_per_doc` is provided.
+        """
+        if kwargs.get("max_tokens_per_doc") is not None:
+            msg = "max_tokens_per_doc"
+            raise UnsupportedParameterError(
+                msg,
+                VoyageProvider.PROVIDER_NAME,
+                "Voyage only exposes a boolean `truncation` flag, not a per-document token limit.",
+            )
+
+        params: dict[str, Any] = {
+            "query": query,
+            "documents": documents,
+        }
+        if kwargs.get("top_n") is not None:
+            params["top_k"] = kwargs["top_n"]
+        for key in ("truncation",):
+            if key in kwargs:
+                params[key] = kwargs[key]
+        return params
+
+    @staticmethod
+    @override
+    def _convert_rerank_response(response: Any) -> RerankResponse:
+        """Convert a Voyage rerank response to a normalized RerankResponse."""
+        return _convert_voyage_rerank_response(response)
+
+    @override
+    def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
+        client_kwargs["max_retries"] = max_retries + 1
+
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.client = AsyncClient(api_key=api_key, **kwargs)
@@ -115,6 +160,7 @@ class VoyageProvider(AnyLLM):
         inputs: str | list[str],
         **kwargs: Any,
     ) -> CreateEmbeddingResponse:
+        encoding_format = pop_encoding_format(kwargs, self.PROVIDER_NAME)
         embedding_kwargs = self._convert_embedding_params(inputs, **kwargs)
 
         result = await self.client.embed(
@@ -122,4 +168,19 @@ class VoyageProvider(AnyLLM):
             **embedding_kwargs,
         )
         response_data = {"model": model, "result": result}
-        return self._convert_embedding_response(response_data)
+        return apply_encoding_format(self._convert_embedding_response(response_data), encoding_format)
+
+    @override
+    async def _arerank(
+        self,
+        model: str,
+        query: str,
+        documents: list[str],
+        **kwargs: Any,
+    ) -> RerankResponse:
+        rerank_kwargs = self._convert_rerank_params(model, query, documents, **kwargs)
+        result = await self.client.rerank(
+            model=model,
+            **rerank_kwargs,
+        )
+        return self._convert_rerank_response(result)
