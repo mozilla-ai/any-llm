@@ -3232,6 +3232,10 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
         ("[]", {"result": []}),
         ([], {"result": []}),
         ([{"type": "text", "text": "ok"}], {"result": [{"type": "text", "text": "ok"}]}),
+        (
+            '[{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]',
+            {"result": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]},
+        ),
         ("1", {"result": 1}),
         ("not JSON", {"result": "not JSON"}),
     ],
@@ -3264,6 +3268,50 @@ def test_convert_messages_tool_response_accepts_json_or_parsed_content(
     function_response = tool_message.parts[0].function_response
     assert function_response is not None
     assert function_response.response == expected_response
+    assert function_response.parts is None
+
+
+def test_convert_messages_tool_result_images_become_function_response_parts() -> None:
+    png_b64 = base64.b64encode(TEST_IMAGE_BYTES).decode("utf-8")
+    jpeg_b64 = base64.b64encode(b"second-image").decode("utf-8")
+    messages: list[dict[str, Any]] = [
+        {"role": "assistant", "tool_calls": [_tool_call("c1", "take_screenshot")]},
+        {
+            "role": "tool",
+            "tool_call_id": "c1",
+            "content": [
+                {"type": "text", "text": "Screenshot captured."},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png_b64}"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{jpeg_b64}"}},
+            ],
+        },
+    ]
+
+    contents, _ = _convert_messages(messages)
+
+    assert contents[1].parts is not None
+    function_response = contents[1].parts[0].function_response
+    assert function_response is not None
+    assert function_response.response == {"result": [{"type": "text", "text": "Screenshot captured."}]}
+    assert function_response.parts is not None
+    blobs = [part.inline_data for part in function_response.parts]
+    assert [(blob.mime_type, blob.data) for blob in blobs if blob is not None] == [
+        ("image/png", TEST_IMAGE_BYTES),
+        ("image/jpeg", b"second-image"),
+    ]
+
+
+def test_convert_messages_tool_result_image_url_must_be_a_data_uri() -> None:
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "tool",
+            "tool_call_id": "c1",
+            "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}],
+        },
+    ]
+
+    with pytest.raises(UnsupportedParameterError, match="image URL in a tool message"):
+        _convert_messages(messages)
 
 
 def test_streaming_completion_with_tool_call_without_args() -> None:

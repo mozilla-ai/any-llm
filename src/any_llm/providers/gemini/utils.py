@@ -285,6 +285,16 @@ def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> typ
     return types.Part.from_uri(file_uri=url, mime_type=guessed_type or "image/jpeg")
 
 
+def _convert_tool_image_to_part(block: dict[str, Any], provider_name: str) -> types.FunctionResponsePart:
+    url = block.get("image_url", {}).get("url")
+    if not isinstance(url, str) or not url.startswith("data:"):
+        # The Gemini API ignores a file URI in a function response instead of rejecting it.
+        msg = "image URL in a tool message"
+        raise UnsupportedParameterError(msg, provider_name, "Send a tool result's image as a base64 data URI.")
+    mime_type, raw_data = _parse_data_uri(url, "image_url.url", provider_name)
+    return types.FunctionResponsePart.from_bytes(data=raw_data, mime_type=mime_type)
+
+
 def _convert_input_audio_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
     """OpenAI's input_audio part: base64 data plus a format name, which Gemini spells as audio/<format>."""
     audio = block.get("input_audio")
@@ -596,7 +606,15 @@ def _convert_messages(
             tool_call_id = message.get("tool_call_id") or ""
             name = message.get("name") or tool_names.get(tool_call_id, "unknown")
             content = message["content"]
-            if isinstance(content, (str, bytes, bytearray)):
+            images: list[types.FunctionResponsePart] = []
+            if isinstance(content, list):
+                # Gemini 3 sees an image in a function response only as one of its parts; inside the
+                # JSON response it is base64 text.
+                images = [
+                    _convert_tool_image_to_part(block, provider_name) for block in content if _is_image_url_block(block)
+                ]
+                content = [block for block in content if not _is_image_url_block(block)]
+            elif isinstance(content, (str, bytes, bytearray)):
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
             # Gemini 3 maps each result to its call by id; an id matching no call it was sent would not pair.
@@ -605,6 +623,7 @@ def _convert_messages(
                     id=tool_call_id if tool_call_id in sent_call_ids else None,
                     name=name,
                     response=_normalize_tool_response(content),
+                    parts=images or None,
                 )
             )
             position = call_order.get(tool_call_id, len(call_order))
@@ -626,6 +645,10 @@ def _convert_messages(
         return [types.Content(role="user", parts=[types.Part.from_text(text=system_instruction)])], None
 
     return formatted_messages, system_instruction
+
+
+def _is_image_url_block(block: Any) -> bool:
+    return isinstance(block, dict) and block.get("type") == "image_url"
 
 
 def _normalize_tool_response(response: Any) -> dict[str, Any]:
