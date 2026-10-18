@@ -68,10 +68,10 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
-        # deepseek-reasoner is discontinued 2026-07-24 in favor of deepseek-v4-flash, where
+        # deepseek-reasoner is discontinued 2026-07-24 in favor of the Flash model, where
         # thinking mode is now a request-level toggle (see DeepseekProvider._convert_completion_params)
-        # rather than a dedicated model name.
-        LLMProvider.DEEPSEEK: "deepseek-v4-flash",
+        # rather than a dedicated model name. deepseek-v4-flash is a legacy alias of deepseek-flash.
+        LLMProvider.DEEPSEEK: "deepseek-flash",
         # kimi-k2-thinking and kimi-thinking-preview are discontinued; kimi-k2.6 is the
         # current reasoning-capable model (thinking mode, native multimodal).
         LLMProvider.MOONSHOT: "kimi-k2.6",
@@ -98,10 +98,11 @@ def provider_model_map() -> dict[LLMProvider, str]:
     return {
         LLMProvider.MISTRAL: "mistral-small-latest",
         LLMProvider.ANTHROPIC: "claude-haiku-4-5",
-        # deepseek-chat is discontinued 2026-07-24 in favor of deepseek-v4-flash; thinking mode
+        # deepseek-chat is discontinued 2026-07-24 in favor of the Flash model; thinking mode
         # defaults to disabled for it unless reasoning_effort is set (see
         # DeepseekProvider._convert_completion_params), matching the old deepseek-chat behavior.
-        LLMProvider.DEEPSEEK: "deepseek-v4-flash",
+        # deepseek-v4-flash is a legacy alias of deepseek-flash.
+        LLMProvider.DEEPSEEK: "deepseek-flash",
         LLMProvider.OPENAI: "gpt-5-nano",
         # otari routes provider:model; anthropic is the only upstream the test account serves reliably.
         LLMProvider.OTARI: "anthropic:claude-haiku-4-5",
@@ -160,7 +161,6 @@ def provider_image_model_map(provider_model_map: dict[LLMProvider, str]) -> dict
         LLMProvider.FIREWORKS: "accounts/fireworks/models/kimi-k3",
         LLMProvider.BEDROCK: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         LLMProvider.NEOSANTARA: "gemini-3-flash-preview",  # Vision model compatible with OpenAI format
-        LLMProvider.DEEPSEEK: "deepseek-flash",  # deepseek-v4-pro rejects images
     }
 
 

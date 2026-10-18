@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from anthropic import AsyncAnthropic
 from anthropic.types import CacheCreation, CodeExecutionToolResultBlock, ServerToolUseBlock
 
 from any_llm.exceptions import InvalidRequestError
@@ -14,8 +16,10 @@ from any_llm.types.messages import (
     ContentBlockStartEvent,
     ContentBlockStopEvent,
     InputJSONDelta,
+    MessageDeltaEvent,
     MessageResponse,
     MessageStartEvent,
+    MessageStopEvent,
     MessageUsage,
     StopReason,
     TextBlock,
@@ -27,8 +31,10 @@ from any_llm.types.messages import (
 from any_llm.utils.structured_output import is_structured_output_type, normalize_output_config
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
-    from any_llm.types.messages import MessageContentBlock, MessagesParams
+    from any_llm.types.messages import MessageContentBlock, MessagesParams, MessageStreamEvent
 
 
 def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str, Any] | None:
@@ -1204,3 +1210,37 @@ def _code_execution_as_text(use: dict[str, Any] | None, result: dict[str, Any] |
             output = f"{content.get('stdout', '')}{content.get('stderr', '')}"
         parts.append(f"Output:\n{output}")
     return "\n".join(parts)
+
+
+_NATIVE_STREAM_EVENT_TYPES: dict[str, type[Any]] = {
+    "message_start": MessageStartEvent,
+    "message_delta": MessageDeltaEvent,
+    "message_stop": MessageStopEvent,
+    "content_block_start": ContentBlockStartEvent,
+    "content_block_delta": ContentBlockDeltaEvent,
+    "content_block_stop": ContentBlockStopEvent,
+}
+
+
+def anthropic_client_kwargs(client_args: dict[str, Any]) -> dict[str, Any]:
+    """Return the client arguments the Anthropic SDK constructor accepts.
+
+    A provider that builds an ``AsyncAnthropic`` beside an ``AsyncOpenAI`` receives one set of
+    client arguments, and OpenAI-only ones such as ``organization`` or ``project`` would make
+    the Anthropic constructor raise ``TypeError`` and break the whole provider.
+    """
+    accepted = inspect.signature(AsyncAnthropic.__init__).parameters
+    return {key: value for key, value in client_args.items() if key in accepted}
+
+
+async def stream_native_messages(client: AsyncAnthropic, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+    """Stream an Anthropic-compatible ``/v1/messages`` endpoint as any-llm's typed events.
+
+    The SDK yields typed events, so each is validated into any-llm's model by its ``type``;
+    event types any-llm does not model (``ping``, SDK helper events) are skipped.
+    """
+    async with client.messages.stream(**kwargs) as stream:
+        async for event in stream:
+            event_model = _NATIVE_STREAM_EVENT_TYPES.get(event.type)
+            if event_model is not None:
+                yield event_model.model_validate(event, from_attributes=True)

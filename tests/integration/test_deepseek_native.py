@@ -36,7 +36,8 @@ async def test_deepseek_messages_accepts_claude_code_request_shape(deepseek: Dee
     result = await deepseek.amessages(
         model="deepseek-flash",
         messages=[{"role": "user", "content": "Reply with the single word: pong"}],
-        max_tokens=256,
+        # budget_tokens is ignored by DeepSeek, so max_tokens alone bounds thinking plus the answer.
+        max_tokens=4096,
         thinking={"type": "enabled", "budget_tokens": 1024},
         betas=["interleaved-thinking-2025-05-14"],
         context_management={"edits": [{"type": "clear_thinking_20251015", "keep": "all"}]},
@@ -53,6 +54,7 @@ async def test_deepseek_responses_runs_web_search_on_v4_pro(deepseek: DeepseekPr
         "deepseek-v4-pro",
         input_data="Search the web for the current DeepSeek API pricing page and give me its title.",
         tools=[{"type": "web_search"}],
+        tool_choice="required",
     )
 
     assert any(item.type == "web_search_call" for item in result.output)

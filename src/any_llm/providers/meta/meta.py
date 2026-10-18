@@ -8,16 +8,12 @@ from typing_extensions import override
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.types.messages import (
-    ContentBlockDeltaEvent,
-    ContentBlockStartEvent,
-    ContentBlockStopEvent,
-    MessageDeltaEvent,
-    MessageResponse,
-    MessageStartEvent,
-    MessageStopEvent,
+from any_llm.types.messages import MessageResponse
+from any_llm.utils.messages_compat import (
+    anthropic_client_kwargs,
+    prepare_blocks_for_native_messages,
+    stream_native_messages,
 )
-from any_llm.utils.messages_compat import prepare_blocks_for_native_messages
 from any_llm.utils.structured_output import is_structured_output_type
 
 if TYPE_CHECKING:
@@ -27,17 +23,6 @@ if TYPE_CHECKING:
     from anthropic.types.parsed_message import ParsedMessage
 
     from any_llm.types.messages import MessagesParams, MessageStreamEvent
-
-# Meta's /v1/messages stream yields typed anthropic SDK events (unlike gateways that hand
-# back raw dicts), so events are validated straight into any-llm's typed models by `type`.
-_MESSAGE_STREAM_EVENT_TYPES: dict[str, type[Any]] = {
-    "message_start": MessageStartEvent,
-    "message_delta": MessageDeltaEvent,
-    "message_stop": MessageStopEvent,
-    "content_block_start": ContentBlockStartEvent,
-    "content_block_delta": ContentBlockDeltaEvent,
-    "content_block_stop": ContentBlockStopEvent,
-}
 
 # Meta's Messages docs state these return HTTP 400 (`stop_sequences`, `top_k`) or are simply
 # not part of its documented request shape (`container`, plus `prompt_cache_key`, which Meta
@@ -109,7 +94,7 @@ class MetaProvider(BaseOpenAIProvider):
         self._anthropic_client = AsyncAnthropic(
             auth_token=api_key,
             base_url=_derive_anthropic_base(resolved_base),
-            **kwargs,
+            **anthropic_client_kwargs(kwargs),
         )
 
     @override
@@ -163,13 +148,9 @@ class MetaProvider(BaseOpenAIProvider):
         message = await self._anthropic_client.messages.create(**api_kwargs)
         return self._convert_native_message_to_response(message)
 
-    async def _stream_messages_async(self, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
+    def _stream_messages_async(self, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
         """Stream Meta's native /v1/messages endpoint, yielding typed any-llm event models."""
-        async with self._anthropic_client.messages.stream(**kwargs) as stream:
-            async for event in stream:
-                event_model = _MESSAGE_STREAM_EVENT_TYPES.get(event.type)
-                if event_model is not None:
-                    yield event_model.model_validate(event, from_attributes=True)
+        return stream_native_messages(self._anthropic_client, **kwargs)
 
     @staticmethod
     def _convert_native_message_to_response(message: Any) -> MessageResponse:

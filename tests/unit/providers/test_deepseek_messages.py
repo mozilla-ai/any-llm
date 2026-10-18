@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 from typing import Any, Self
 from unittest.mock import AsyncMock, Mock, patch
@@ -109,6 +110,21 @@ def test_init_client_points_both_sdks_at_deepseek() -> None:
     )
 
 
+def test_init_client_keeps_openai_only_args_off_the_anthropic_client() -> None:
+    with (
+        patch("any_llm.providers.deepseek.deepseek.AsyncOpenAI") as mock_openai,
+        patch("any_llm.providers.deepseek.deepseek.AsyncAnthropic") as mock_anthropic,
+    ):
+        DeepseekProvider(api_key="test-key", organization="org-1", project="proj-1", max_retries=3)
+
+    mock_openai.assert_called_once_with(
+        base_url="https://api.deepseek.com", api_key="test-key", organization="org-1", project="proj-1", max_retries=3
+    )
+    mock_anthropic.assert_called_once_with(
+        api_key="test-key", base_url="https://api.deepseek.com/anthropic", max_retries=3
+    )
+
+
 def test_init_client_derives_anthropic_base_from_custom_base() -> None:
     provider = _build_provider(api_base="https://proxy.example/v1")
 
@@ -158,6 +174,17 @@ async def test_amessages_sends_betas_as_header_and_drops_context_management() ->
 
 
 @pytest.mark.asyncio
+async def test_amessages_logs_dropped_context_management(caplog: pytest.LogCaptureFixture) -> None:
+    provider = _build_provider()
+    provider._anthropic_client.messages.create = AsyncMock(return_value=_message())  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.DEBUG, logger="any_llm"):
+        await provider._amessages(_params(context_management={"edits": []}))
+
+    assert "context_management" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_amessages_refuses_container() -> None:
     provider = _build_provider()
     provider._anthropic_client.messages.create = AsyncMock()  # type: ignore[method-assign]
@@ -188,6 +215,42 @@ async def test_amessages_output_format_goes_through_bridge_without_anthropic_onl
     assert sent.output_format is _Answer
     assert sent.betas is None
     assert sent.context_management is None
+
+
+@pytest.mark.asyncio
+async def test_amessages_effort_only_output_format_stays_native() -> None:
+    provider = _build_provider()
+    provider._anthropic_client.messages.create = AsyncMock(return_value=_message())  # type: ignore[method-assign]
+    bridged = AsyncMock()
+
+    with patch.object(AnyLLM, "_amessages", bridged):
+        result = await provider._amessages(_params(output_format={"effort": "high"}))
+
+    assert isinstance(result, MessageResponse)
+    bridged.assert_not_awaited()
+    call_kwargs = provider._anthropic_client.messages.create.call_args.kwargs
+    assert call_kwargs["output_config"] == {"effort": "high"}
+    assert "output_format" not in call_kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "output_format",
+    [
+        {"format": {"type": "json_schema", "schema": {"type": "object"}}, "effort": "high"},
+        {"type": "json_schema", "schema": {"type": "object"}},
+    ],
+)
+async def test_amessages_schema_output_format_dict_goes_through_bridge(output_format: dict[str, Any]) -> None:
+    provider = _build_provider()
+    provider._anthropic_client.messages.create = AsyncMock()  # type: ignore[method-assign]
+    bridged = AsyncMock(return_value=_message("{}"))
+
+    with patch.object(AnyLLM, "_amessages", bridged):
+        await provider._amessages(_params(output_format=output_format))
+
+    provider._anthropic_client.messages.create.assert_not_awaited()
+    assert bridged.call_args.args[0].output_format == output_format
 
 
 @pytest.mark.asyncio
