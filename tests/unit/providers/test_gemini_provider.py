@@ -628,6 +628,68 @@ def test_convert_tool_spec_type_union_routes_through_json_schema() -> None:
     assert decl.parameters_json_schema == raw_params
 
 
+def test_convert_tool_spec_keyword_types_schema_refuses_routes_through_json_schema() -> None:
+    """A nested schema with a keyword ``types.Schema`` does not model must not fail the request.
+
+    Claude Code's tools carry ``exclusiveMinimum`` inside an array's ``items``, which the OpenAPI
+    path copies verbatim into ``types.Schema`` and pydantic refuses as an extra input.
+    """
+    raw_params = {
+        "type": "object",
+        "properties": {
+            "assets": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "viewport": {
+                            "type": "object",
+                            "properties": {"width": {"type": "number", "exclusiveMinimum": 0}},
+                        }
+                    },
+                },
+            }
+        },
+        "required": ["assets"],
+    }
+    openai_tools = [
+        {"type": "function", "function": {"name": "render", "description": "Render.", "parameters": raw_params}}
+    ]
+
+    tools = _convert_tool_spec(openai_tools, "gemini")
+
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters is None
+    assert decl.parameters_json_schema == raw_params
+
+
+def test_convert_tool_spec_additional_properties_routes_through_json_schema() -> None:
+    """``types.Schema`` serializes a nested ``additionalProperties`` as ``additional_properties``, a 400."""
+    raw_params = {
+        "type": "object",
+        "properties": {
+            "edits": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["edits"],
+    }
+    openai_tools = [
+        {"type": "function", "function": {"name": "edit", "description": "Edit.", "parameters": raw_params}}
+    ]
+
+    tools = _convert_tool_spec(openai_tools, "gemini")
+
+    decl = tools[0].function_declarations[0]  # type: ignore[index]
+    assert decl.parameters is None
+    assert decl.parameters_json_schema == raw_params
+
+
 def test_convert_tool_spec_without_type_unions_still_uses_openapi_path() -> None:
     """The reshaping path is unchanged for schemas types.Schema can represent."""
     openai_tools = [
