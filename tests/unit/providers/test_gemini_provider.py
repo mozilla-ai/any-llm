@@ -1176,21 +1176,27 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
 
 
 def test_gemini_function_call_id_round_trips_to_the_request() -> None:
-    """Gemini 3 maps each result to its call by id, so the id it issued must come back on both parts."""
+    """Gemini 3 maps each result to its call by id, so the ids it issued must come back, even out of order."""
     response = _make_gemini_response(
-        [types.Part(function_call=types.FunctionCall(id="fc_1", name="get_price", args={"ticker": "ACME"}))],
+        [
+            types.Part(function_call=types.FunctionCall(id="fc_1", name="get_price", args={"ticker": "ACME"})),
+            types.Part(function_call=types.FunctionCall(id="fc_2", name="get_price", args={"ticker": "GLOBEX"})),
+        ],
         types.FinishReason.STOP,
     )
     streamed = _create_openai_chunk_from_google_chunk(response).choices[0].delta.tool_calls
-    assert streamed is not None
-    assert streamed[0].id == "fc_1"
+    assert [tool_call.id for tool_call in streamed or []] == ["fc_1", "fc_2"]
 
     message = _convert_response_to_response_dict(response)["choices"][0]["message"]
-    contents, _ = _convert_messages([message, {"role": "tool", "tool_call_id": "fc_1", "content": "{}"}])
+    reversed_results = [
+        {"role": "tool", "tool_call_id": "fc_2", "content": '{"price": 842.1}'},
+        {"role": "tool", "tool_call_id": "fc_1", "content": '{"price": 137.25}'},
+    ]
+    contents, _ = _convert_messages([message, *reversed_results])
 
     wire = [part.model_dump(exclude_none=True) for content in contents for part in content.parts or []]
-    assert wire[0]["function_call"]["id"] == "fc_1"
-    assert wire[1]["function_response"]["id"] == "fc_1"
+    assert [part["function_call"]["id"] for part in wire if "function_call" in part] == ["fc_1", "fc_2"]
+    assert [part["function_response"]["id"] for part in wire if "function_response" in part] == ["fc_2", "fc_1"]
 
 
 def test_tool_call_without_a_gemini_id_gets_a_fresh_id_each_turn() -> None:
