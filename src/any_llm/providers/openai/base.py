@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
@@ -112,6 +112,8 @@ class BaseOpenAIProvider(AnyLLM):
     MAX_RETRIES_SUPPORT: Literal["unsupported", "native", "mapped"] = "native"
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
+    _NORMALIZES_RESPONSES: ClassVar[bool] = True
+    """Whether a Responses reply is converted to an OpenResponses ``ResponseResource``."""
 
     client: AsyncOpenAI
 
@@ -299,7 +301,7 @@ class BaseOpenAIProvider(AnyLLM):
         if is_structured_output_type(response_format):
             return response
         # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
-        if isinstance(response, Response):
+        if isinstance(response, Response) and self._NORMALIZES_RESPONSES:
             try:
                 return ResponseResource.model_validate(response.model_dump(warnings=False))
             except ValidationError as e:
