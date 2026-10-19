@@ -161,6 +161,20 @@ def test_zai_completion_passes_unmapped_finish_reason_through(finish_reason: str
     assert result.choices[0].finish_reason == finish_reason
 
 
+@pytest.mark.parametrize("finish_reason", ["some_unknown_reason", "network_error"])
+def test_zai_chunk_passes_unmapped_finish_reason_through(finish_reason: str) -> None:
+    """Streaming keeps an unmapped value as sent, like the non-streaming path."""
+    openai_chunk = OpenAIChatCompletionChunk.model_construct(
+        id="test-id",
+        choices=[{"index": 0, "delta": {"content": "partial"}, "finish_reason": finish_reason}],
+        created=1234567890,
+        model="glm-5",
+        object="chat.completion.chunk",
+    )
+    result = ZaiProvider._convert_completion_chunk_response(openai_chunk)
+    assert result.choices[0].finish_reason == finish_reason
+
+
 def test_zai_completion_empty_response_still_raises_provider_error() -> None:
     """A falsy choices list must not crash the pre-pass; the base layer's empty-response ProviderError surfaces."""
     openai_response = OpenAIChatCompletion.model_construct(

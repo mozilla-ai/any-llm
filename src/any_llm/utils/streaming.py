@@ -191,7 +191,7 @@ class ChatCompletionAccumulator:
             choices.append(
                 Choice(
                     index=index,
-                    finish_reason=state.finish_reason,  # type: ignore[arg-type]
+                    finish_reason=state.finish_reason,
                     message=self._build_message(state),
                     logprobs=(
                         ChoiceLogprobs(

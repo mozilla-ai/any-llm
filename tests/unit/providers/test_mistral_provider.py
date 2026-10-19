@@ -1575,3 +1575,56 @@ def test_timeout_absent_when_not_requested() -> None:
     )
 
     assert "timeout_ms" not in converted
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "expected"),
+    [("error", "error"), ("model_length", "length"), ("stop", "stop")],
+)
+def test_create_mistral_completion_maps_finish_reason(finish_reason: str, expected: str) -> None:
+    """model_length becomes length; any other Mistral finish_reason reaches the caller as sent."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    message = Mock()
+    message.content = "partial"
+    message.tool_calls = None
+
+    choice = Mock()
+    choice.message = message
+    choice.finish_reason = finish_reason
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1_700_000_000
+    response.choices = [choice]
+    response.usage = None
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-small-latest")
+
+    assert completion.choices[0].finish_reason == expected
+    assert completion.choices[0].message.content == "partial"
+
+
+def test_create_openai_chunk_keeps_nonstandard_finish_reason() -> None:
+    """Mistral's streaming ``error`` finish_reason reaches the caller as sent."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    choice = Mock()
+    choice.index = 0
+    choice.delta.content = "partial"
+    choice.delta.role = "assistant"
+    choice.delta.tool_calls = None
+    choice.finish_reason = "error"
+
+    event = Mock()
+    event.data.id = "chatcmpl-abc"
+    event.data.created = 1_700_000_000
+    event.data.model = "mistral-small-latest"
+    event.data.choices = [choice]
+    event.data.usage = None
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.choices[0].finish_reason == "error"

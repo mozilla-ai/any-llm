@@ -44,6 +44,11 @@ if TYPE_CHECKING:
     from mistralai.client.models.embeddingresponse import EmbeddingResponse
 
 
+# Mistral's non-streaming model_length means generation stopped at the model's context
+# window, which is a truncation like OpenAI's length.
+_MISTRAL_FINISH_REASON_MAP = {"model_length": "length"}
+
+
 def _convert_mistral_tool_calls_to_any_llm(
     tool_calls: list[MistralToolCall],
 ) -> list[ChatCompletionMessageToolCall] | None:
@@ -248,10 +253,7 @@ def _create_mistral_completion_from_response(
 
         choice = Choice(
             index=i,
-            finish_reason=cast(
-                "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call']",
-                choice_data.finish_reason,
-            ),
+            finish_reason=_MISTRAL_FINISH_REASON_MAP.get(choice_data.finish_reason, choice_data.finish_reason),
             message=message,
         )
         choices_out.append(choice)

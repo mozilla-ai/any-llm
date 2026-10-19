@@ -21,9 +21,8 @@ _FINISH_REASON_MAP: dict[str, Literal["length", "content_filter"]] = {
 def _normalize_finish_reason(response: Any) -> None:
     """Rewrite z.ai specific finish reasons on an SDK response object, in place.
 
-    The OpenAI SDK builds responses leniently through ``construct_type``, so the raw
-    string survives to our stricter ``model_validate``. Values outside the table are
-    left alone so unexpected stop reasons keep failing instead of being coerced.
+    Values outside the table are left alone, so an unexpected stop reason reaches the
+    caller as sent instead of being coerced into a wrong one.
     """
     choices = response.choices
     if not choices:
