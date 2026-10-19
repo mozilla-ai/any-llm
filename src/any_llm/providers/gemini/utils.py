@@ -590,13 +590,25 @@ def _normalize_tool_response(response: Any) -> dict[str, Any]:
     return {"result": response}
 
 
+def _tokens_by_modality(*count_lists: list[types.ModalityTokenCount] | None) -> dict[types.MediaModality, int]:
+    totals: dict[types.MediaModality, int] = {}
+    for counts in count_lists:
+        for count in counts or []:
+            if count.modality is not None and count.token_count:
+                totals[count.modality] = totals.get(count.modality, 0) + count.token_count
+    return totals
+
+
 def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
     """Extract Gemini usage using OpenAI-compatible inclusive token counts.
 
     Gemini's ``prompt_token_count`` already includes cached tokens
     (``cached_content_token_count`` is a subset). Gemini reports tool-use prompt
     tokens and thinking tokens separately, while OpenAI includes those categories
-    in ``prompt_tokens`` and ``completion_tokens`` respectively.
+    in ``prompt_tokens`` and ``completion_tokens`` respectively. Audio and image
+    output tokens stay inside ``completion_tokens`` and are broken out in its details;
+    audio input tokens are broken out of ``prompt_tokens`` the same way, since Gemini
+    prices audio input above text.
 
     Reference: https://ai.google.dev/api/generate-content#UsageMetadata
     """
@@ -608,10 +620,20 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
         "completion_tokens": (metadata.candidates_token_count or 0) + (metadata.thoughts_token_count or 0),
         "total_tokens": metadata.total_token_count or 0,
     }
-    if metadata.thoughts_token_count:
-        usage["completion_tokens_details"] = CompletionTokensDetails(reasoning_tokens=metadata.thoughts_token_count)
-    if metadata.cached_content_token_count:
-        usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=metadata.cached_content_token_count)
+    output_modalities = _tokens_by_modality(metadata.candidates_tokens_details)
+    audio_tokens = output_modalities.get(types.MediaModality.AUDIO)
+    image_tokens = output_modalities.get(types.MediaModality.IMAGE)
+    if metadata.thoughts_token_count or audio_tokens or image_tokens:
+        usage["completion_tokens_details"] = CompletionTokensDetails(
+            reasoning_tokens=metadata.thoughts_token_count, audio_tokens=audio_tokens, image_tokens=image_tokens
+        )
+    input_audio_tokens = _tokens_by_modality(
+        metadata.prompt_tokens_details, metadata.tool_use_prompt_tokens_details
+    ).get(types.MediaModality.AUDIO)
+    if metadata.cached_content_token_count or input_audio_tokens:
+        usage["prompt_tokens_details"] = PromptTokensDetails(
+            cached_tokens=metadata.cached_content_token_count, audio_tokens=input_audio_tokens
+        )
     return usage
 
 
@@ -1021,20 +1043,7 @@ def _create_openai_chunk_from_google_chunk(
         finish_reason=finish_reason,
     )
 
-    usage = None
-    if response.usage_metadata:
-        cached_tokens = response.usage_metadata.cached_content_token_count
-        thought_tokens = response.usage_metadata.thoughts_token_count
-        usage = CompletionUsage(
-            prompt_tokens=(response.usage_metadata.prompt_token_count or 0)
-            + (response.usage_metadata.tool_use_prompt_token_count or 0),
-            completion_tokens=(response.usage_metadata.candidates_token_count or 0) + (thought_tokens or 0),
-            total_tokens=response.usage_metadata.total_token_count or 0,
-            prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
-            completion_tokens_details=CompletionTokensDetails(reasoning_tokens=thought_tokens)
-            if thought_tokens
-            else None,
-        )
+    usage = CompletionUsage(**_extract_usage_dict(response)) if response.usage_metadata else None
 
     return ChatCompletionChunk(
         id=f"chatcmpl-{time()}",
