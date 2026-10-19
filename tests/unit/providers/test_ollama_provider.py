@@ -1,7 +1,8 @@
 import json
 import logging
+import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -1122,26 +1123,37 @@ def test_ollama_created_at_accepts_rfc3339_timestamps(created_at: str, stream: b
     assert result.created == 1704110400
 
 
-@pytest.mark.parametrize("stream", [False, True])
-def test_ollama_created_at_without_offset_is_read_as_utc(stream: bool, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TZ", "America/New_York")
+@pytest.fixture
+def non_utc_local_timezone() -> Iterator[None]:
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset is unavailable on this platform")
+    original = os.environ.get("TZ")
+    # A POSIX rule string needs no tz database on the host.
+    os.environ["TZ"] = "EST+05"
     time.tzset()
-    try:
-        response = OllamaChatResponse(
-            model="llama3.1",
-            created_at="2024-01-01T12:00:00.123456",
-            message=OllamaMessage(role="assistant", content="Hello"),
-            done=True,
-            done_reason="stop",
-        )
-        result = (
-            _create_openai_chunk_from_ollama_chunk(response)
-            if stream
-            else _create_chat_completion_from_ollama_response(response)
-        )
-    finally:
-        monkeypatch.undo()
-        time.tzset()
+    yield
+    if original is None:
+        del os.environ["TZ"]
+    else:
+        os.environ["TZ"] = original
+    time.tzset()
+
+
+@pytest.mark.usefixtures("non_utc_local_timezone")
+@pytest.mark.parametrize("stream", [False, True])
+def test_ollama_created_at_without_offset_is_read_as_utc(stream: bool) -> None:
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at="2024-01-01T12:00:00.123456",
+        message=OllamaMessage(role="assistant", content="Hello"),
+        done=True,
+        done_reason="stop",
+    )
+    result = (
+        _create_openai_chunk_from_ollama_chunk(response)
+        if stream
+        else _create_chat_completion_from_ollama_response(response)
+    )
     assert result.created == 1704110400
 
 
