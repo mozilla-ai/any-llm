@@ -213,6 +213,29 @@ async def test_breakpoint_inside_a_run_of_tool_results_stops_before_their_shared
 
 
 @pytest.mark.asyncio
+async def test_breakpoint_after_a_tool_result_image_caches_that_turn() -> None:
+    client = _client()
+    call = {"id": "call_1", "type": "function", "function": {"name": "take_screenshot", "arguments": "{}"}}
+    image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Screenshot?"},
+        {"role": "assistant", "content": None, "tool_calls": [call]},
+        {"role": "tool", "tool_call_id": "call_1", "content": [image], "cache_control": EPHEMERAL},
+        {"role": "user", "content": "What does it show?"},
+    ]
+
+    await _provider(client)._acompletion(CompletionParams(model_id="gemini-3.5-flash", messages=messages))
+
+    cache_contents = cast("list[types.Content]", _cache_config(client).contents)
+    assert [content.role for content in cache_contents] == ["user", "model", "user"]
+    assert cache_contents[2].parts is not None
+    function_response = cache_contents[2].parts[0].function_response
+    assert function_response is not None
+    assert function_response.parts is not None
+    assert _texts(_sent(client)["contents"]) == ["What does it show?"]
+
+
+@pytest.mark.asyncio
 async def test_nothing_to_cache_sends_the_request_untouched() -> None:
     client = _client()
 

@@ -259,9 +259,13 @@ async def _create_cache(
 
 
 def _prefix_length(
-    messages: list[dict[str, Any]], breakpoint_index: int, contents: list[types.Content], provider_name: str
+    messages: list[dict[str, Any]],
+    breakpoint_index: int,
+    contents: list[types.Content],
+    provider_name: str,
+    model: str,
 ) -> int:
-    prefix, _ = _convert_messages(messages[: breakpoint_index + 1], provider_name=provider_name)
+    prefix, _ = _convert_messages(messages[: breakpoint_index + 1], provider_name=provider_name, model=model)
     length = len(prefix)
     # Consecutive tool results share one user turn, so a breakpoint inside such a run ends partway
     # through a turn; the cache then stops before that turn.
@@ -292,12 +296,12 @@ async def prepare_context_cache(
     if found is None:
         return no_cache
     breakpoint_index, ttl = found
-    length = max(_prefix_length(messages, breakpoint_index, contents, provider_name), 0)
+    model: str = converted_kwargs["model"]
+    length = max(_prefix_length(messages, breakpoint_index, contents, provider_name, model), 0)
     prefix = contents[:length]
     if not prefix and not config.system_instruction and not config.tools:
         return no_cache
 
-    model: str = converted_kwargs["model"]
     key = _cache_key(provider_name, client_identity(client), model, config, prefix, ttl)
     now = time.monotonic()
     entry = registry.get(key, now)
