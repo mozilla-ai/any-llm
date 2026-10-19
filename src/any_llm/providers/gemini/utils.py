@@ -1237,15 +1237,17 @@ def _convert_google_batch_job_to_openai_batch(job: types.BatchJob) -> Batch:
 def _convert_openai_request_to_inlined_request(
     entry: dict[str, Any],
     provider_name: str = "gemini",
+    model: str | None = None,
 ) -> types.InlinedRequest:
     """Convert a single OpenAI-format JSONL entry to a Google ``InlinedRequest``.
 
     The *entry* dict follows the OpenAI batch format with ``custom_id`` and
     ``body`` (containing ``model``, ``messages``, and optional parameters).
+    A ``model`` given here overrides the body's model.
     """
     body = entry.get("body", {})
     messages = body.get("messages", [])
-    model = body.get("model", "")
+    model = model or body.get("model", "")
 
     contents, system_instruction = _convert_messages(messages, provider_name=provider_name, model=model)
 

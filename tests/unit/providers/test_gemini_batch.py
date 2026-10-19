@@ -996,6 +996,39 @@ async def test_acreate_batch_model_override_applies_to_requests() -> None:
         os.unlink(tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("body_model", "model_override", "expect_media_parts"),
+    [("gemini-2.5-flash", "gemini-3.5-flash", True), ("gemini-3.5-flash", "gemini-2.5-flash", False)],
+)
+def test_convert_openai_request_converts_tool_results_for_the_override_model(
+    body_model: str, model_override: str, expect_media_parts: bool
+) -> None:
+    pytest.importorskip("google.genai")
+    from any_llm.providers.gemini.utils import _convert_openai_request_to_inlined_request
+
+    tool_call = {"id": "c1", "type": "function", "function": {"name": "take_screenshot", "arguments": "{}"}}
+    image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
+    entry = {
+        "custom_id": "req-1",
+        "body": {
+            "model": body_model,
+            "messages": [
+                {"role": "assistant", "tool_calls": [tool_call]},
+                {"role": "tool", "tool_call_id": "c1", "content": [image]},
+            ],
+        },
+    }
+
+    result = _convert_openai_request_to_inlined_request(entry, model=model_override)
+
+    assert result.model == model_override
+    contents = cast("list[types.Content]", result.contents)
+    assert contents[1].parts is not None
+    function_response = contents[1].parts[0].function_response
+    assert function_response is not None
+    assert (function_response.parts is not None) is expect_media_parts
+
+
 @pytest.mark.asyncio
 async def test_acreate_batch_no_model_raises() -> None:
     """Test that a batch with no model in kwargs or JSONL raises ValueError."""

@@ -563,14 +563,9 @@ class GoogleProvider(AnyLLM):
             if not line.strip():
                 continue
             entry = json.loads(line)
-            req = _convert_openai_request_to_inlined_request(entry, provider_name=self.PROVIDER_NAME)
-            if model_override:
-                req = types.InlinedRequest(
-                    model=model_override,
-                    contents=req.contents,
-                    config=req.config,
-                    metadata=req.metadata,
-                )
+            req = _convert_openai_request_to_inlined_request(
+                entry, provider_name=self.PROVIDER_NAME, model=model_override
+            )
             inlined_requests.append(req)
             if not first_model and req.model:
                 first_model = req.model
