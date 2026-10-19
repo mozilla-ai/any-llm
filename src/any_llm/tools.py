@@ -9,17 +9,19 @@ import types as _types
 from collections.abc import Callable, Mapping, Sequence
 from contextvars import ContextVar
 from datetime import date, datetime, time
+from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
 from typing import Annotated as _Annotated
-from typing import Any, get_args, get_origin, get_type_hints
 from typing import Literal as _Literal
 from typing import NotRequired as _NotRequired
 from typing import Required as _Required
 
 from pydantic import AliasChoices, AliasPath
 from pydantic import BaseModel as PydanticBaseModel
-from pydantic.fields import FieldInfo
 from typing_extensions import ReadOnly as _ReadOnly
 from typing_extensions import is_typeddict as _is_typeddict
+
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
 
 # A self-referencing TypedDict would otherwise expand forever once its forward references are resolved.
 _EXPANDING_TYPED_DICTS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_TYPED_DICTS", default=frozenset())
