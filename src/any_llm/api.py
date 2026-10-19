@@ -15,7 +15,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.decide import DecideResponse, JSONContent, QuestionsInput
-from any_llm.types.image import ImageGenerationParams, ImagesResponse
+from any_llm.types.image import ImageEditParams, ImageGenerationParams, ImageInput, ImagesResponse
 from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedBetaMessage, ParsedMessage
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
@@ -998,6 +998,128 @@ async def aimage_generation(
             size=size,
             quality=quality,
             style=style,
+            response_format=response_format,
+            user=user,
+        ),
+        **kwargs,
+    )
+
+
+def image_edit(
+    model: str,
+    image: ImageInput,
+    prompt: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    n: int | None = None,
+    size: str | None = None,
+    quality: str | None = None,
+    response_format: Literal["url", "b64_json"] | None = None,
+    user: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ImagesResponse:
+    """Edit or extend one or more images from a text prompt.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-image-1', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-image-1').
+        image: The image to edit, or a list of images. Bare bytes go up as application/octet-stream,
+            which OpenAI rejects; pass a `(filename, content, content_type)` tuple, a named file
+            object, or a `pathlib.Path` instead.
+        prompt: A text description of the desired image(s).
+        provider: Provider name to use for the request (e.g., 'openai').
+        n: Number of images to generate.
+        size: Size of the generated images (e.g., '1024x1024').
+        quality: Quality of the generated images (e.g., 'low', 'medium', 'high').
+        response_format: Format of the generated images ('url' or 'b64_json').
+        user: Unique identifier for the end user.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The image edit response from the provider.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = AnyLLM.resolve_provider_key(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm._image_edit(
+        model_name,
+        image,
+        prompt,
+        n=n,
+        size=size,
+        quality=quality,
+        response_format=response_format,
+        user=user,
+        **kwargs,
+    )
+
+
+async def aimage_edit(
+    model: str,
+    image: ImageInput,
+    prompt: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    n: int | None = None,
+    size: str | None = None,
+    quality: str | None = None,
+    response_format: Literal["url", "b64_json"] | None = None,
+    user: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> ImagesResponse:
+    """Edit or extend one or more images from a text prompt asynchronously.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-image-1', provider='openai').
+            **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-image-1').
+        image: The image to edit, or a list of images. Bare bytes go up as application/octet-stream,
+            which OpenAI rejects; pass a `(filename, content, content_type)` tuple, a named file
+            object, or a `pathlib.Path` instead.
+        prompt: A text description of the desired image(s).
+        provider: Provider name to use for the request (e.g., 'openai').
+        n: Number of images to generate.
+        size: Size of the generated images (e.g., '1024x1024').
+        quality: Quality of the generated images (e.g., 'low', 'medium', 'high').
+        response_format: Format of the generated images ('url' or 'b64_json').
+        user: Unique identifier for the end user.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The image edit response from the provider.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = AnyLLM.resolve_provider_key(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm._aimage_edit(
+        ImageEditParams(
+            model_id=model_name,
+            image=image,
+            prompt=prompt,
+            n=n,
+            size=size,
+            quality=quality,
             response_format=response_format,
             user=user,
         ),

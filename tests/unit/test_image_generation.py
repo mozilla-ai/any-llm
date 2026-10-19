@@ -1,10 +1,13 @@
+import json
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 
 from any_llm import AnyLLM
 from any_llm.api import aimage_generation, image_generation
 from any_llm.constants import LLMProvider
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 
 
@@ -96,6 +99,28 @@ async def test_aimage_generation_passes_all_params() -> None:
         assert params.style == "natural"
         assert params.response_format == "b64_json"
         assert params.user == "user-123"
+
+
+@pytest.mark.asyncio
+async def test_image_generation_sends_options_beyond_its_typed_fields() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"created": 1, "data": [{"b64_json": "aW1hZ2U="}]})
+
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    try:
+        await provider.aimage_generation("gpt-image-1", "A cat", quality="low", output_format="jpeg")
+    finally:
+        await provider.client.close()
+
+    assert json.loads(requests[0].content) == {
+        "model": "gpt-image-1",
+        "prompt": "A cat",
+        "quality": "low",
+        "output_format": "jpeg",
+    }
 
 
 def test_sync_image_generation_dispatches() -> None:

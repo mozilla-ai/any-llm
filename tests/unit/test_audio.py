@@ -1,9 +1,11 @@
 import io
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -11,6 +13,7 @@ from any_llm import AnyLLM
 from any_llm.api import aspeech, atranscription, speech, transcription
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import InvalidRequestError
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.audio import (
     AudioSpeechParams,
     AudioTranscriptionParams,
@@ -305,6 +308,30 @@ async def test_anyllm_aspeech_constructs_params() -> None:
     assert params.voice == "alloy"
     assert params.speed == 1.5
     assert result == FAKE_AUDIO_BYTES
+
+
+@pytest.mark.asyncio
+async def test_speech_sends_options_beyond_its_typed_fields() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=FAKE_AUDIO_BYTES, headers={"content-type": "audio/mpeg"})
+
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    try:
+        result = await provider.aspeech("gpt-4o-mini-tts", "hello", "alloy", speed=1.5, stream_format="audio")
+    finally:
+        await provider.client.close()
+
+    assert result == FAKE_AUDIO_BYTES
+    assert json.loads(requests[0].content) == {
+        "model": "gpt-4o-mini-tts",
+        "input": "hello",
+        "voice": "alloy",
+        "speed": 1.5,
+        "stream_format": "audio",
+    }
 
 
 @pytest.mark.asyncio
