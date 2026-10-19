@@ -1176,7 +1176,7 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
 
 
 def test_gemini_function_call_id_round_trips_to_the_request() -> None:
-    """Gemini 3 maps each result to its call by id, so the ids it issued must come back, even out of order."""
+    """Gemini 3 maps each result to its call by id, so the ids it issued come back, with results in call order."""
     response = _make_gemini_response(
         [
             types.Part(function_call=types.FunctionCall(id="fc_1", name="get_price", args={"ticker": "ACME"})),
@@ -1194,23 +1194,123 @@ def test_gemini_function_call_id_round_trips_to_the_request() -> None:
     ]
     contents, _ = _convert_messages([message, *reversed_results])
 
-    wire = [part.model_dump(exclude_none=True) for content in contents for part in content.parts or []]
-    assert [part["function_call"]["id"] for part in wire if "function_call" in part] == ["fc_1", "fc_2"]
-    assert [part["function_response"]["id"] for part in wire if "function_response" in part] == ["fc_2", "fc_1"]
+    assert _wire_ids(contents) == (["fc_1", "fc_2"], ["fc_1", "fc_2"])
+    assert _wire_results(contents) == [{"price": 137.25}, {"price": 842.1}]
 
 
-def test_tool_call_without_a_gemini_id_gets_a_fresh_id_each_turn() -> None:
-    """Older models send no id; the same call in a later turn, or another process, must not reuse one."""
+def _id_less_tool_call_ids(response: types.GenerateContentResponse) -> list[str]:
+    message = _convert_response_to_response_dict(response)["choices"][0]["message"]
+    chunk = _create_openai_chunk_from_google_chunk(response)
+    return [tool_call["id"] for tool_call in message["tool_calls"]] + [
+        tool_call.id or "" for tool_call in chunk.choices[0].delta.tool_calls or []
+    ]
+
+
+def test_tool_call_without_a_gemini_id_gets_an_id_from_its_response() -> None:
+    """Older models send no id; one minted from the response repeats on reconversion and differs across responses."""
+    parts = [types.Part(function_call=types.FunctionCall(name="get_price", args={}))]
+    first = _make_gemini_response(parts, types.FinishReason.STOP)
+    first.response_id = "resp_a"
+    second = _make_gemini_response(parts, types.FinishReason.STOP)
+    second.response_id = "resp_b"
+
+    assert _id_less_tool_call_ids(first) == ["call_anyllm_resp_a_0", "call_anyllm_resp_a_0"]
+    assert _id_less_tool_call_ids(second) == ["call_anyllm_resp_b_0", "call_anyllm_resp_b_0"]
+
+
+def test_tool_call_without_a_gemini_id_or_response_id_gets_a_random_id() -> None:
     response = _make_gemini_response(
         [types.Part(function_call=types.FunctionCall(name="get_price", args={}))], types.FinishReason.STOP
     )
 
-    turns = [_convert_response_to_response_dict(response) for _ in range(2)]
-    chunks = [_create_openai_chunk_from_google_chunk(response) for _ in range(2)]
-    ids = [turn["choices"][0]["message"]["tool_calls"][0]["id"] for turn in turns]
-    ids += [tool_call.id for chunk in chunks for tool_call in chunk.choices[0].delta.tool_calls or []]
+    ids = _id_less_tool_call_ids(response) + _id_less_tool_call_ids(response)
 
     assert len(set(ids)) == 4, ids
+    assert all(tool_call_id.startswith("call_anyllm_") for tool_call_id in ids)
+
+
+def _wire_ids(contents: list[types.Content]) -> tuple[list[str | None], list[str | None]]:
+    """The ids sent on function calls and on function responses, in request order."""
+    parts = [part for content in contents for part in content.parts or []]
+    return (
+        [part.function_call.id for part in parts if part.function_call],
+        [part.function_response.id for part in parts if part.function_response],
+    )
+
+
+def _wire_results(contents: list[types.Content]) -> list[dict[str, Any] | None]:
+    parts = [part for content in contents for part in content.parts or []]
+    return [part.function_response.response for part in parts if part.function_response]
+
+
+def _assistant_calls(*ids: str | None) -> dict[str, Any]:
+    tool_calls = []
+    for n, tool_call_id in enumerate(ids):
+        tool_call: dict[str, Any] = {"type": "function", "function": {"name": f"tool_{n}", "arguments": "{}"}}
+        if tool_call_id is not None:
+            tool_call["id"] = tool_call_id
+        tool_calls.append(tool_call)
+    return {"role": "assistant", "content": None, "tool_calls": tool_calls}
+
+
+def test_minted_tool_call_ids_are_not_sent_and_results_follow_call_order() -> None:
+    """Gemini never issued a minted id, so it pairs these results by position: they must be in call order."""
+    messages = [
+        _assistant_calls("call_anyllm_resp_a_0", "call_anyllm_resp_a_1"),
+        {"role": "tool", "tool_call_id": "call_anyllm_resp_a_1", "content": '{"price": 842.1}'},
+        {"role": "tool", "tool_call_id": "call_anyllm_resp_a_0", "content": '{"price": 137.25}'},
+    ]
+
+    contents, _ = _convert_messages(messages)
+
+    assert _wire_ids(contents) == ([None, None], [None, None])
+    assert _wire_results(contents) == [{"price": 137.25}, {"price": 842.1}]
+    assert [part.function_response.name for part in contents[1].parts or [] if part.function_response] == [
+        "tool_0",
+        "tool_1",
+    ]
+
+
+def test_tool_call_ids_shared_across_turns_are_not_sent() -> None:
+    """Ids from older any-llm versions repeat across turns, so they would pair ambiguously."""
+    messages = [
+        _assistant_calls("call_123_0"),
+        {"role": "tool", "tool_call_id": "call_123_0", "content": "sunny"},
+        _assistant_calls("call_123_0", "toolu_1"),
+        {"role": "tool", "tool_call_id": "call_123_0", "content": "rainy"},
+        {"role": "tool", "tool_call_id": "toolu_1", "content": "windy"},
+    ]
+
+    contents, _ = _convert_messages(messages)
+
+    assert _wire_ids(contents) == ([None, None, "toolu_1"], [None, None, "toolu_1"])
+
+
+def test_empty_or_missing_tool_call_ids_are_not_sent() -> None:
+    messages = [
+        _assistant_calls("", None),
+        {"role": "tool", "tool_call_id": "", "content": "first"},
+        {"role": "tool", "content": "second"},
+    ]
+
+    contents, _ = _convert_messages(messages)
+
+    assert _wire_ids(contents) == ([None, None], [None, None])
+    assert _wire_results(contents) == [{"result": "first"}, {"result": "second"}]
+
+
+def test_tool_result_id_matching_no_call_of_the_latest_turn_is_not_sent() -> None:
+    """A result whose id matches no call Gemini was sent would not pair, so it falls back to position."""
+    messages = [
+        _assistant_calls("fc_1"),
+        {"role": "tool", "tool_call_id": "rewritten_by_proxy", "content": "late"},
+        {"role": "tool", "tool_call_id": "fc_1", "content": "on time"},
+    ]
+
+    contents, _ = _convert_messages(messages)
+
+    assert _wire_ids(contents) == (["fc_1"], ["fc_1", None])
+    assert _wire_results(contents) == [{"result": "on time"}, {"result": "late"}]
 
 
 @pytest.mark.parametrize(
@@ -2667,7 +2767,7 @@ def test_convert_messages_resolves_tool_result_name_from_tool_call_id() -> None:
 
     formatted_messages, _ = _convert_messages(messages)
 
-    assert _function_response_names(formatted_messages) == ["get_population", "get_temperature"]
+    assert _function_response_names(formatted_messages) == ["get_temperature", "get_population"]
 
 
 def test_convert_messages_tool_result_name_explicit_wins_else_unknown() -> None:
