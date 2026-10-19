@@ -23,7 +23,8 @@ from typing_extensions import is_typeddict as _is_typeddict
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
 
-# A self-referencing TypedDict would otherwise expand forever once its forward references are resolved.
+# Track only the active path so shared sibling types still expand independently.
+_EXPANDING_MODELS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_MODELS", default=frozenset())
 _EXPANDING_TYPED_DICTS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_TYPED_DICTS", default=frozenset())
 
 # Pydantic < 2.11 has no validate_by_alias and ignores the key, so aliases stay accepted there.
@@ -124,8 +125,28 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     - TypedDict -> object with properties/required per annotations; Required/NotRequired/ReadOnly
       qualifiers are unwrapped, and a self-reference becomes a bare object
     - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields;
-      Pydantic fields are named the way Pydantic validates them (see _pydantic_input_name)
+      Pydantic fields are named the way Pydantic validates them (see _pydantic_input_name);
+      recursive model references become bare objects, as with TypedDict
     """
+    model_type = python_type
+    if get_origin(model_type) is _Annotated:
+        model_type = get_args(model_type)[0]
+    if not inspect.isclass(model_type) or not (
+        dataclasses.is_dataclass(model_type) or issubclass(model_type, PydanticBaseModel)
+    ):
+        return _type_to_json_schema(python_type)
+    expanding = _EXPANDING_MODELS.get()
+    if model_type in expanding:
+        return {"type": "object"}
+    token = _EXPANDING_MODELS.set(expanding | {model_type})
+    try:
+        return _type_to_json_schema(python_type)
+    finally:
+        _EXPANDING_MODELS.reset(token)
+
+
+def _type_to_json_schema(python_type: Any) -> dict[str, Any]:
+    """Expand a type while recursive model calls retain the active-path guard."""
     origin = get_origin(python_type)
     args = get_args(python_type)
 
