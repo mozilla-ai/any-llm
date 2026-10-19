@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Self, cast, get_args
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import httpx
 import pytest
 from anthropic import transform_schema
 from anthropic.lib.streaming import MessageStopEvent as StreamMessageStopEvent
@@ -2137,6 +2138,36 @@ def test_convert_models_list_mixed_created_at() -> None:
 
     assert [m.id for m in result] == ["with", "without"]
     assert [m.created for m in result] == [int(created_at.timestamp()), 0]
+
+
+@pytest.mark.asyncio
+async def test_list_models_follows_every_page() -> None:
+    requests: list[httpx.Request] = []
+
+    def model_info(model_id: str) -> dict[str, str]:
+        return {"id": model_id, "type": "model", "display_name": model_id, "created_at": "2026-01-01T00:00:00Z"}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if "after_id" not in request.url.params:
+            page = {"data": [model_info("claude-a"), model_info("claude-b")], "has_more": True, "last_id": "claude-b"}
+        else:
+            page = {"data": [model_info("claude-c")], "has_more": False, "last_id": "claude-c"}
+        return httpx.Response(200, json=page)
+
+    provider = AnthropicProvider(
+        api_key="test-key",
+        api_base="https://models.test",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+    )
+    try:
+        models = await provider.alist_models(limit=2)
+    finally:
+        await provider.client.close()
+
+    assert [m.id for m in models] == ["claude-a", "claude-b", "claude-c"]
+    assert [r.url.params.get("after_id") for r in requests] == [None, "claude-b"]
+    assert [r.url.params.get("limit") for r in requests] == ["2", "2"]
 
 
 def _anthropic_message(**extra: Any) -> Message:

@@ -54,8 +54,8 @@ class AnthropicProvider(BaseAnthropicProvider):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        models_list = await self.client.models.list(**kwargs)
-        return self._convert_list_models_response(models_list.data)
+        models = [model async for model in self.client.models.list(**kwargs)]
+        return self._convert_list_models_response(models)
 
     @override
     async def _aupload_file(
