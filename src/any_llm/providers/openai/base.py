@@ -33,7 +33,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
-from any_llm.types.image import ImageGenerationParams, ImagesResponse
+from any_llm.types.image import ImageEditParams, ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
@@ -342,6 +342,17 @@ class BaseOpenAIProvider(AnyLLM):
 
         return await self.client.images.generate(  # type: ignore[no-any-return]
             model=params.model_id,
+            **api_kwargs,
+        )
+
+    @override
+    async def _aimage_edit(self, params: ImageEditParams, **kwargs: Any) -> ImagesResponse:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        return await self.client.images.edit(  # type: ignore[no-any-return]
+            model=params.model_id,
+            image=params.resolve_images(),
             **api_kwargs,
         )
 

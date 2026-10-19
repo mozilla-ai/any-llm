@@ -7,6 +7,7 @@ import json
 import logging
 import pathlib
 from collections.abc import AsyncIterator
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -966,7 +967,9 @@ async def test_transcription_missing_path_raises_before_any_request(tmp_path: pa
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("response_format", ["text", "srt", "vtt"])
-async def test_transcription_wraps_text_formats_in_a_transcription(response_format: str) -> None:
+async def test_transcription_wraps_text_formats_in_a_transcription(
+    response_format: Literal["text", "srt", "vtt"],
+) -> None:
     """The SDK hands back the raw body for text formats; callers always get a Transcription."""
     requests: list[httpx.Request] = []
 

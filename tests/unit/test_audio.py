@@ -1,9 +1,11 @@
 import io
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -11,6 +13,7 @@ from any_llm import AnyLLM
 from any_llm.api import aspeech, atranscription, speech, transcription
 from any_llm.constants import LLMProvider
 from any_llm.exceptions import InvalidRequestError
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.audio import (
     AudioSpeechParams,
     AudioTranscriptionParams,
@@ -29,13 +32,13 @@ FAKE_AUDIO_BYTES = b"fake-audio-content"
 
 @pytest.mark.asyncio
 async def test_atranscription_with_api_config() -> None:
-    mock_provider = Mock()
+    provider = OpenaiProvider(api_key="test_key")
     mock_response = _make_mock_transcription()
-    mock_provider._atranscription = AsyncMock(return_value=mock_response)
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create,
+        patch.object(provider, "_atranscription", AsyncMock(return_value=mock_response)) as mock_transcribe,
+    ):
         result = await atranscription(
             "openai:whisper-1",
             file=b"audio-data",
@@ -48,8 +51,8 @@ async def test_atranscription_with_api_config() -> None:
         assert call_args[1]["api_key"] == "test_key"
         assert call_args[1]["api_base"] == "https://test.example.com"
 
-        mock_provider._atranscription.assert_called_once()
-        params = mock_provider._atranscription.call_args[0][0]
+        mock_transcribe.assert_called_once()
+        params = mock_transcribe.call_args[0][0]
         assert isinstance(params, AudioTranscriptionParams)
         assert params.model_id == "whisper-1"
         assert params.file == b"audio-data"
@@ -58,13 +61,13 @@ async def test_atranscription_with_api_config() -> None:
 
 @pytest.mark.asyncio
 async def test_atranscription_with_explicit_provider() -> None:
-    mock_provider = Mock()
+    provider = OpenaiProvider(api_key="test_key")
     mock_response = _make_mock_transcription()
-    mock_provider._atranscription = AsyncMock(return_value=mock_response)
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create,
+        patch.object(provider, "_atranscription", AsyncMock(return_value=mock_response)) as mock_transcribe,
+    ):
         result = await atranscription(
             "whisper-1",
             file=b"audio-data",
@@ -75,7 +78,7 @@ async def test_atranscription_with_explicit_provider() -> None:
         call_args = mock_create.call_args
         assert call_args[0][0] == LLMProvider.OPENAI
 
-        params = mock_provider._atranscription.call_args[0][0]
+        params = mock_transcribe.call_args[0][0]
         assert params.model_id == "whisper-1"
         assert params.language == "en"
         assert result == mock_response
@@ -83,13 +86,13 @@ async def test_atranscription_with_explicit_provider() -> None:
 
 @pytest.mark.asyncio
 async def test_atranscription_passes_all_params() -> None:
-    mock_provider = Mock()
+    provider = OpenaiProvider(api_key="test_key")
     mock_response = _make_mock_transcription()
-    mock_provider._atranscription = AsyncMock(return_value=mock_response)
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_atranscription", AsyncMock(return_value=mock_response)) as mock_transcribe,
+    ):
         await atranscription(
             "openai:whisper-1",
             file=b"audio-data",
@@ -100,7 +103,7 @@ async def test_atranscription_passes_all_params() -> None:
             timestamp_granularities=["word", "segment"],
         )
 
-        params = mock_provider._atranscription.call_args[0][0]
+        params = mock_transcribe.call_args[0][0]
         assert params.language == "en"
         assert params.prompt == "Previous segment context"
         assert params.response_format == "verbose_json"
@@ -128,12 +131,12 @@ def test_sync_transcription_dispatches() -> None:
 
 @pytest.mark.asyncio
 async def test_aspeech_with_api_config() -> None:
-    mock_provider = Mock()
-    mock_provider._aspeech = AsyncMock(return_value=FAKE_AUDIO_BYTES)
+    provider = OpenaiProvider(api_key="test_key")
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create,
+        patch.object(provider, "_aspeech", AsyncMock(return_value=FAKE_AUDIO_BYTES)) as mock_speak,
+    ):
         result = await aspeech(
             "openai:tts-1",
             input="Hello, world!",
@@ -146,8 +149,8 @@ async def test_aspeech_with_api_config() -> None:
         assert call_args[0][0] == LLMProvider.OPENAI
         assert call_args[1]["api_key"] == "test_key"
 
-        mock_provider._aspeech.assert_called_once()
-        params = mock_provider._aspeech.call_args[0][0]
+        mock_speak.assert_called_once()
+        params = mock_speak.call_args[0][0]
         assert isinstance(params, AudioSpeechParams)
         assert params.model_id == "tts-1"
         assert params.input == "Hello, world!"
@@ -157,12 +160,12 @@ async def test_aspeech_with_api_config() -> None:
 
 @pytest.mark.asyncio
 async def test_aspeech_with_explicit_provider() -> None:
-    mock_provider = Mock()
-    mock_provider._aspeech = AsyncMock(return_value=FAKE_AUDIO_BYTES)
+    provider = OpenaiProvider(api_key="test_key")
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create,
+        patch.object(provider, "_aspeech", AsyncMock(return_value=FAKE_AUDIO_BYTES)) as mock_speak,
+    ):
         result = await aspeech(
             "tts-1",
             input="Hi",
@@ -175,7 +178,7 @@ async def test_aspeech_with_explicit_provider() -> None:
         call_args = mock_create.call_args
         assert call_args[0][0] == LLMProvider.OPENAI
 
-        params = mock_provider._aspeech.call_args[0][0]
+        params = mock_speak.call_args[0][0]
         assert params.model_id == "tts-1"
         assert params.input == "Hi"
         assert params.voice == "echo"
@@ -186,12 +189,12 @@ async def test_aspeech_with_explicit_provider() -> None:
 
 @pytest.mark.asyncio
 async def test_aspeech_passes_all_params() -> None:
-    mock_provider = Mock()
-    mock_provider._aspeech = AsyncMock(return_value=FAKE_AUDIO_BYTES)
+    provider = OpenaiProvider(api_key="test_key")
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_aspeech", AsyncMock(return_value=FAKE_AUDIO_BYTES)) as mock_speak,
+    ):
         await aspeech(
             "openai:tts-1",
             input="Generate this speech",
@@ -201,7 +204,7 @@ async def test_aspeech_passes_all_params() -> None:
             speed=0.75,
         )
 
-        params = mock_provider._aspeech.call_args[0][0]
+        params = mock_speak.call_args[0][0]
         assert params.input == "Generate this speech"
         assert params.voice == "shimmer"
         assert params.instructions == "Speak slowly and clearly"
@@ -308,21 +311,45 @@ async def test_anyllm_aspeech_constructs_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_speech_sends_options_beyond_its_typed_fields() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=FAKE_AUDIO_BYTES, headers={"content-type": "audio/mpeg"})
+
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    try:
+        result = await provider.aspeech("gpt-4o-mini-tts", "hello", "alloy", speed=1.5, stream_format="audio")
+    finally:
+        await provider.client.close()
+
+    assert result == FAKE_AUDIO_BYTES
+    assert json.loads(requests[0].content) == {
+        "model": "gpt-4o-mini-tts",
+        "input": "hello",
+        "voice": "alloy",
+        "speed": 1.5,
+        "stream_format": "audio",
+    }
+
+
+@pytest.mark.asyncio
 async def test_atranscription_unsupported_provider_raises() -> None:
-    params = AudioTranscriptionParams(model_id="some-model", file=b"data")
     base = Mock(spec=AnyLLM)
     base.SUPPORTS_AUDIO_TRANSCRIPTION = False
     with pytest.raises(NotImplementedError, match="doesn't support audio transcription"):
-        await AnyLLM._atranscription(base, params)
+        await AnyLLM.atranscription(base, "some-model", b"data")
+    base._atranscription.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_aspeech_unsupported_provider_raises() -> None:
-    params = AudioSpeechParams(model_id="some-model", input="hi", voice="alloy")
     base = Mock(spec=AnyLLM)
     base.SUPPORTS_AUDIO_SPEECH = False
     with pytest.raises(NotImplementedError, match="doesn't support audio speech"):
-        await AnyLLM._aspeech(base, params)
+        await AnyLLM.aspeech(base, "some-model", "hi", "alloy")
+    base._aspeech.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -641,15 +668,18 @@ def test_resolve_file_unknown_extension_without_recognizable_bytes_has_no_conten
 
 @pytest.mark.asyncio
 async def test_atranscription_passes_filename_and_mime_type() -> None:
-    mock_provider = Mock()
-    mock_provider._atranscription = AsyncMock(return_value=_make_mock_transcription())
+    provider = OpenaiProvider(api_key="test_key")
     stream = io.BytesIO(b"audio-data")
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(
+            provider, "_atranscription", AsyncMock(return_value=_make_mock_transcription())
+        ) as mock_transcribe,
+    ):
         await atranscription("openai:whisper-1", file=stream, filename="clip.m4a", mime_type="audio/mp4")
 
-    params = mock_provider._atranscription.call_args[0][0]
+    params = mock_transcribe.call_args[0][0]
     assert isinstance(params, AudioTranscriptionParams)
     assert params.file is stream
     assert params.filename == "clip.m4a"
