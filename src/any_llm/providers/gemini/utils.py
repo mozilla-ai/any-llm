@@ -75,8 +75,9 @@ def _has_additional_properties(schema: Any) -> bool:
     """Return True if *schema* sets ``additionalProperties`` anywhere, nested included.
 
     ``google.genai.types.Schema`` serializes the key as ``additional_properties``, which the
-    Gemini API rejects with a 400. Such schemas must be routed through
-    ``GenerateContentConfig.response_json_schema``, which the SDK forwards as raw JSON Schema.
+    Gemini API rejects with a 400. Such schemas must be routed as raw JSON Schema:
+    ``GenerateContentConfig.response_json_schema`` for a response, and
+    ``FunctionDeclaration.parameters_json_schema`` for a tool's parameters.
     """
     if isinstance(schema, dict):
         if "additionalProperties" in schema:
@@ -85,6 +86,15 @@ def _has_additional_properties(schema: Any) -> bool:
     if isinstance(schema, list):
         return any(_has_additional_properties(v) for v in schema)
     return False
+
+
+def _raw_function_declaration(function: dict[str, Any], params: dict[str, Any]) -> types.FunctionDeclaration:
+    """A declaration whose parameters the SDK forwards to the server as raw JSON Schema."""
+    return types.FunctionDeclaration(
+        name=function["name"],
+        description=function.get("description", ""),
+        parameters_json_schema=params,
+    )
 
 
 def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) -> list[types.Tool]:
@@ -109,13 +119,7 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
         params: dict[str, Any] = function.get("parameters") or {}
 
         if _has_json_schema_refs(params) or _has_type_unions(params):
-            function_declarations.append(
-                types.FunctionDeclaration(
-                    name=function["name"],
-                    description=function.get("description", ""),
-                    parameters_json_schema=params,
-                )
-            )
+            function_declarations.append(_raw_function_declaration(function, params))
             continue
 
         properties: dict[str, dict[str, Any]] = {}
@@ -138,11 +142,27 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
             "required": params.get("required", []),
         }
 
+        # An ``items`` schema is copied verbatim, so it can carry valid JSON Schema that
+        # ``types.Schema`` does not model (``exclusiveMinimum``, ``const``, ...) or misserializes
+        # (``additionalProperties``). Such a schema goes out raw, as one with a ``$ref`` does. Any
+        # other validation error is the schema's own and is refused here, before the request.
+        if any(_has_additional_properties(prop.get("items")) for prop in properties.values()):
+            function_declarations.append(_raw_function_declaration(function, params))
+            continue
+        try:
+            parameters = types.Schema(**parameters_dict)
+        except ValidationError as exc:
+            if any(error["type"] != "extra_forbidden" for error in exc.errors()):
+                msg = f"Tool {function['name']!r} has an invalid parameters schema: {exc.errors()[0]['msg']}"
+                raise InvalidRequestError(msg, provider_name=provider_name) from exc
+            function_declarations.append(_raw_function_declaration(function, params))
+            continue
+
         function_declarations.append(
             types.FunctionDeclaration(
                 name=function["name"],
                 description=function.get("description", ""),
-                parameters=types.Schema(**parameters_dict),
+                parameters=parameters,
             )
         )
     if function_declarations:
