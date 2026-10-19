@@ -570,8 +570,13 @@ def _normalize_tool_response(response: Any) -> dict[str, Any]:
     return {"result": response}
 
 
-def _modality_token_count(counts: list[types.ModalityTokenCount] | None, modality: types.MediaModality) -> int | None:
-    return next((count.token_count for count in counts or [] if count.modality == modality), None)
+def _tokens_by_modality(*count_lists: list[types.ModalityTokenCount] | None) -> dict[types.MediaModality, int]:
+    totals: dict[types.MediaModality, int] = {}
+    for counts in count_lists:
+        for count in counts or []:
+            if count.modality is not None and count.token_count:
+                totals[count.modality] = totals.get(count.modality, 0) + count.token_count
+    return totals
 
 
 def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
@@ -581,7 +586,9 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     (``cached_content_token_count`` is a subset). Gemini reports tool-use prompt
     tokens and thinking tokens separately, while OpenAI includes those categories
     in ``prompt_tokens`` and ``completion_tokens`` respectively. Audio and image
-    output tokens stay inside ``completion_tokens`` and are broken out in its details.
+    output tokens stay inside ``completion_tokens`` and are broken out in its details;
+    audio input tokens are broken out of ``prompt_tokens`` the same way, since Gemini
+    prices audio input above text.
 
     Reference: https://ai.google.dev/api/generate-content#UsageMetadata
     """
@@ -593,14 +600,20 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
         "completion_tokens": (metadata.candidates_token_count or 0) + (metadata.thoughts_token_count or 0),
         "total_tokens": metadata.total_token_count or 0,
     }
-    audio_tokens = _modality_token_count(metadata.candidates_tokens_details, types.MediaModality.AUDIO)
-    image_tokens = _modality_token_count(metadata.candidates_tokens_details, types.MediaModality.IMAGE)
+    output_modalities = _tokens_by_modality(metadata.candidates_tokens_details)
+    audio_tokens = output_modalities.get(types.MediaModality.AUDIO)
+    image_tokens = output_modalities.get(types.MediaModality.IMAGE)
     if metadata.thoughts_token_count or audio_tokens or image_tokens:
         usage["completion_tokens_details"] = CompletionTokensDetails(
             reasoning_tokens=metadata.thoughts_token_count, audio_tokens=audio_tokens, image_tokens=image_tokens
         )
-    if metadata.cached_content_token_count:
-        usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=metadata.cached_content_token_count)
+    input_audio_tokens = _tokens_by_modality(
+        metadata.prompt_tokens_details, metadata.tool_use_prompt_tokens_details
+    ).get(types.MediaModality.AUDIO)
+    if metadata.cached_content_token_count or input_audio_tokens:
+        usage["prompt_tokens_details"] = PromptTokensDetails(
+            cached_tokens=metadata.cached_content_token_count, audio_tokens=input_audio_tokens
+        )
     return usage
 
 

@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 import pytest
 from anthropic.types import CodeExecutionToolResultBlock, ServerToolUseBlock
+from openai.types.completion_usage import CompletionTokensDetails as OpenAICompletionTokensDetails
 from openai.types.completion_usage import CompletionUsage as OpenAICompletionUsage
 from openai.types.completion_usage import PromptTokensDetails as OpenAIPromptTokensDetails
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
+    CompletionTokensDetails,
     CompletionUsage,
     Function,
     PromptTokensDetails,
@@ -1903,6 +1905,33 @@ def test_completion_usage_accepts_nested_openai_parent_models() -> None:
     assert isinstance(from_field.prompt_tokens_details, PromptTokensDetails)
     assert from_field.prompt_tokens_details.cached_tokens == 4
     assert isinstance(completion.usage, CompletionUsage)
+
+
+def test_completion_usage_accepts_openai_completion_tokens_details() -> None:
+    """An OpenAI completion details instance validates into the subclass that carries image_tokens."""
+    usage = CompletionUsage.model_validate(
+        {
+            "prompt_tokens": 10,
+            "completion_tokens": 8,
+            "total_tokens": 18,
+            "completion_tokens_details": OpenAICompletionTokensDetails(reasoning_tokens=3, audio_tokens=5),
+        }
+    )
+    from_model = CompletionUsage.model_validate(
+        OpenAICompletionUsage(
+            prompt_tokens=10,
+            completion_tokens=8,
+            total_tokens=18,
+            completion_tokens_details=OpenAICompletionTokensDetails(reasoning_tokens=3),
+        )
+    )
+
+    assert isinstance(usage.completion_tokens_details, CompletionTokensDetails)
+    assert usage.completion_tokens_details.reasoning_tokens == 3
+    assert usage.completion_tokens_details.audio_tokens == 5
+    assert usage.completion_tokens_details.image_tokens is None
+    assert isinstance(from_model.completion_tokens_details, CompletionTokensDetails)
+    assert from_model.completion_tokens_details.reasoning_tokens == 3
 
 
 def test_completion_usage_keeps_provider_cache_meters_on_the_wire() -> None:

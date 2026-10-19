@@ -1078,13 +1078,11 @@ def test_convert_response_single_tool_call() -> None:
     mock_response.candidates[0].content.parts[0].thought = None
     mock_response.candidates[0].content.parts[0].text = None
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 10
-    mock_response.usage_metadata.candidates_token_count = 15
-    mock_response.usage_metadata.total_token_count = 25
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=10,
+        candidates_token_count=15,
+        total_token_count=25,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -1142,13 +1140,11 @@ def test_convert_response_multiple_parallel_tool_calls() -> None:
 
     mock_response.candidates[0].content.parts = [mock_part_1, mock_part_2, mock_part_3]
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 20
-    mock_response.usage_metadata.candidates_token_count = 30
-    mock_response.usage_metadata.total_token_count = 50
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=20,
+        candidates_token_count=30,
+        total_token_count=50,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -1882,13 +1878,11 @@ async def test_streaming_completion_includes_usage_data() -> None:
     mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 10
-    mock_response.usage_metadata.candidates_token_count = 5
-    mock_response.usage_metadata.total_token_count = 15
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=10,
+        candidates_token_count=5,
+        total_token_count=15,
+    )
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -2214,13 +2208,11 @@ def test_convert_response_preserves_thought_signature() -> None:
     mock_part.thought_signature = b"test-signature-bytes"
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 10
-    mock_response.usage_metadata.candidates_token_count = 15
-    mock_response.usage_metadata.total_token_count = 25
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=10,
+        candidates_token_count=15,
+        total_token_count=25,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -2249,13 +2241,11 @@ def test_convert_response_no_thought_signature() -> None:
     mock_part.thought_signature = None
 
     mock_response.candidates[0].content.parts = [mock_part]
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 10
-    mock_response.usage_metadata.candidates_token_count = 15
-    mock_response.usage_metadata.total_token_count = 25
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=10,
+        candidates_token_count=15,
+        total_token_count=25,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -3177,13 +3167,12 @@ def test_convert_response_extracts_cached_tokens() -> None:
     mock_part.text = "Hello!"
     mock_response.candidates[0].content.parts = [mock_part]
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 100
-    mock_response.usage_metadata.candidates_token_count = 50
-    mock_response.usage_metadata.total_token_count = 150
-    mock_response.usage_metadata.cached_content_token_count = 80
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        candidates_token_count=50,
+        total_token_count=150,
+        cached_content_token_count=80,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -3224,13 +3213,11 @@ def test_convert_response_without_cached_tokens() -> None:
     mock_part.text = "Hello!"
     mock_response.candidates[0].content.parts = [mock_part]
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 100
-    mock_response.usage_metadata.candidates_token_count = 50
-    mock_response.usage_metadata.total_token_count = 150
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        candidates_token_count=50,
+        total_token_count=150,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -3252,13 +3239,12 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
     mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 100
-    mock_response.usage_metadata.candidates_token_count = 50
-    mock_response.usage_metadata.total_token_count = 150
-    mock_response.usage_metadata.cached_content_token_count = 80
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        candidates_token_count=50,
+        total_token_count=150,
+        cached_content_token_count=80,
+    )
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -3305,13 +3291,11 @@ def test_streaming_chunk_without_cached_tokens() -> None:
     mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 100
-    mock_response.usage_metadata.candidates_token_count = 50
-    mock_response.usage_metadata.total_token_count = 150
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        candidates_token_count=50,
+        total_token_count=150,
+    )
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -3332,13 +3316,12 @@ def test_convert_response_includes_thought_tokens() -> None:
     mock_part.text = "36"
     mock_response.candidates[0].content.parts = [mock_part]
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 20
-    mock_response.usage_metadata.candidates_token_count = 198
-    mock_response.usage_metadata.thoughts_token_count = 405
-    mock_response.usage_metadata.total_token_count = 623
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=20,
+        candidates_token_count=198,
+        thoughts_token_count=405,
+        total_token_count=623,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -3362,13 +3345,12 @@ def test_streaming_chunk_includes_thought_tokens() -> None:
     mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 20
-    mock_response.usage_metadata.candidates_token_count = 198
-    mock_response.usage_metadata.thoughts_token_count = 405
-    mock_response.usage_metadata.total_token_count = 623
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=20,
+        candidates_token_count=198,
+        thoughts_token_count=405,
+        total_token_count=623,
+    )
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
@@ -3414,6 +3396,78 @@ def test_streaming_chunk_breaks_out_audio_output_tokens() -> None:
     assert chunk.usage.completion_tokens_details == CompletionTokensDetails(audio_tokens=85)
 
 
+def test_convert_response_combines_thought_and_summed_image_tokens() -> None:
+    response = _make_gemini_response([types.Part(text="Two apples.")], types.FinishReason.STOP)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=11,
+        candidates_token_count=2590,
+        thoughts_token_count=200,
+        candidates_tokens_details=[
+            types.ModalityTokenCount(modality=types.MediaModality.IMAGE, token_count=1290),
+            types.ModalityTokenCount(modality=types.MediaModality.TEXT, token_count=10),
+            types.ModalityTokenCount(modality=types.MediaModality.IMAGE, token_count=1290),
+            types.ModalityTokenCount(modality=types.MediaModality.AUDIO, token_count=None),
+        ],
+        total_token_count=2801,
+    )
+
+    usage = _convert_response_to_response_dict(response)["usage"]
+
+    assert usage["completion_tokens"] == 2790
+    assert usage["completion_tokens_details"] == CompletionTokensDetails(reasoning_tokens=200, image_tokens=2580)
+
+
+def test_streaming_chunk_breaks_out_image_output_tokens() -> None:
+    response = _make_gemini_response(None, types.FinishReason.STOP)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=11,
+        candidates_token_count=1290,
+        candidates_tokens_details=[types.ModalityTokenCount(modality=types.MediaModality.IMAGE, token_count=1290)],
+        total_token_count=1301,
+    )
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.completion_tokens_details == CompletionTokensDetails(image_tokens=1290)
+
+
+def test_convert_response_breaks_out_audio_input_tokens() -> None:
+    response = _make_gemini_response([types.Part(text="A dog barks.")], types.FinishReason.STOP)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=3020,
+        prompt_tokens_details=[
+            types.ModalityTokenCount(modality=types.MediaModality.AUDIO, token_count=3000),
+            types.ModalityTokenCount(modality=types.MediaModality.TEXT, token_count=20),
+        ],
+        tool_use_prompt_token_count=50,
+        tool_use_prompt_tokens_details=[types.ModalityTokenCount(modality=types.MediaModality.AUDIO, token_count=50)],
+        candidates_token_count=4,
+        total_token_count=3074,
+    )
+
+    usage = _convert_response_to_response_dict(response)["usage"]
+
+    assert usage["prompt_tokens"] == 3070
+    assert usage["prompt_tokens_details"] == PromptTokensDetails(audio_tokens=3050)
+    assert "completion_tokens_details" not in usage
+
+
+def test_convert_response_combines_cached_and_audio_input_tokens() -> None:
+    response = _make_gemini_response([types.Part(text="A dog barks.")], types.FinishReason.STOP)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=3020,
+        cached_content_token_count=3000,
+        prompt_tokens_details=[types.ModalityTokenCount(modality=types.MediaModality.AUDIO, token_count=3000)],
+        candidates_token_count=4,
+        total_token_count=3024,
+    )
+
+    usage = _convert_response_to_response_dict(response)["usage"]
+
+    assert usage["prompt_tokens_details"] == PromptTokensDetails(cached_tokens=3000, audio_tokens=3000)
+
+
 def test_convert_response_without_thought_tokens() -> None:
     """Test that completion_tokens_details stays absent when the model produced no thoughts."""
     mock_response = Mock()
@@ -3426,13 +3480,11 @@ def test_convert_response_without_thought_tokens() -> None:
     mock_part.text = "Hello!"
     mock_response.candidates[0].content.parts = [mock_part]
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 100
-    mock_response.usage_metadata.candidates_token_count = 50
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.total_token_count = 150
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        candidates_token_count=50,
+        total_token_count=150,
+    )
 
     response_dict = _convert_response_to_response_dict(mock_response)
 
@@ -3454,13 +3506,11 @@ def test_streaming_chunk_without_thought_tokens() -> None:
     mock_response.candidates[0].finish_reason = types.FinishReason.STOP
     mock_response.model_version = "gemini-2.5-flash"
 
-    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata()
-    mock_response.usage_metadata.prompt_token_count = 100
-    mock_response.usage_metadata.candidates_token_count = 50
-    mock_response.usage_metadata.thoughts_token_count = None
-    mock_response.usage_metadata.total_token_count = 150
-    mock_response.usage_metadata.cached_content_token_count = None
-    mock_response.usage_metadata.tool_use_prompt_token_count = None
+    mock_response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=100,
+        candidates_token_count=50,
+        total_token_count=150,
+    )
 
     chunk = _create_openai_chunk_from_google_chunk(mock_response)
 
