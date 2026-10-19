@@ -3363,11 +3363,17 @@ def test_convert_messages_tool_result_media_stays_in_the_response_for_older_mode
     [
         ("data:image/png;base64,not base64!", "contains invalid base64 data"),
         ("data:image/png,raw", "must be a base64-encoded data URI"),
-        (f"data:image/png;base64,{'A' * (28 * 1024 * 1024)}", "exceeds the 20 MB inline upload limit"),
     ],
 )
 def test_convert_messages_tool_result_rejects_an_unusable_data_uri(url: str, match: str) -> None:
     with pytest.raises(InvalidRequestError, match=match):
+        _tool_function_response([{"type": "image_url", "image_url": {"url": url}}])
+
+
+def test_convert_messages_tool_result_rejects_an_image_over_the_inline_limit() -> None:
+    url = f"data:image/png;base64,{'A' * (28 * 1024 * 1024)}"
+
+    with pytest.raises(InvalidRequestError, match="exceeds the 20 MB inline upload limit"):
         _tool_function_response([{"type": "image_url", "image_url": {"url": url}}])
 
 
