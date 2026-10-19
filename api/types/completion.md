@@ -122,7 +122,7 @@ The following types are also available from `any_llm.types.completion`:
 
 | Type | Origin | Description |
 |------|--------|-------------|
-| `CompletionUsage` | `openai.types.CompletionUsage` | Token usage counts. |
+| `CompletionUsage` | extends `openai.types.CompletionUsage` | Token usage counts. `prompt_tokens_details` adds `cache_write_tokens` and `cache_creation_token_details`; `completion_tokens_details` adds `image_tokens` (image output tokens, a subset of `completion_tokens`). |
 | `Function` | `openai.types.chat` | Function definition within a tool call. |
 | `Embedding` | `openai.types.Embedding` | Single embedding vector with index. |
 | `ChoiceDeltaToolCall` | `openai.types.chat` | Tool call delta in streaming chunks. |
