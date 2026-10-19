@@ -161,11 +161,7 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         expanding = _EXPANDING_TYPED_DICTS.get()
         if python_type in expanding:
             return {"type": "object"}
-        try:
-            annotations = get_type_hints(python_type, include_extras=True)
-        except NameError:
-            # Names imported only under TYPE_CHECKING can't be resolved; keep the raw annotations.
-            annotations = getattr(python_type, "__annotations__", {}) or {}
+        annotations = _resolve_typed_dict_annotations(python_type)
         required_keys = set(getattr(python_type, "__required_keys__", set()))
         td_properties: dict[str, Any] = {}
         td_required: list[str] = []
@@ -258,6 +254,26 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         return {"type": "string"}
 
     return {"type": "string"}
+
+
+def _resolve_typed_dict_annotations(typed_dict: Any) -> dict[str, Any]:
+    """Resolve a TypedDict's field annotations, keeping the raw annotation for any field that can't be resolved."""
+    try:
+        return get_type_hints(typed_dict, include_extras=True)
+    except NameError:
+        pass
+    # Names imported only under TYPE_CHECKING make get_type_hints fail for the whole class, so resolve
+    # each field on its own through a stand-in class that evaluates in the TypedDict's module.
+    annotations: dict[str, Any] = {}
+    for field_name, annotation in (getattr(typed_dict, "__annotations__", {}) or {}).items():
+        holder = type(
+            typed_dict.__name__, (), {"__annotations__": {field_name: annotation}, "__module__": typed_dict.__module__}
+        )
+        try:
+            annotations[field_name] = get_type_hints(holder, include_extras=True)[field_name]
+        except NameError:
+            annotations[field_name] = annotation
+    return annotations
 
 
 def _unwrap_typed_dict_field(annotation: Any) -> tuple[Any, bool | None]:

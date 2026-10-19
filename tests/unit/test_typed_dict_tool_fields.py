@@ -84,8 +84,10 @@ def test_self_referencing_typed_dict_stops_at_the_cycle() -> None:
     assert schema["required"] == ["name", "children"]
 
 
-class Payment(TypedDict):
+class Payment(TypedDict, total=False):
+    count: Required[int]
     amount: Decimal
+    note: NotRequired[str]
     currency: str
 
 
@@ -93,7 +95,12 @@ def pay(payment: Payment) -> None:
     """Make a payment."""
 
 
-def test_typed_dict_with_unresolvable_field_falls_back_to_raw_annotations() -> None:
+def test_typed_dict_unresolvable_field_keeps_the_other_fields_resolved() -> None:
     schema = callable_to_tool(pay)["function"]["parameters"]["properties"]["payment"]
-    assert schema["properties"] == {"amount": {"type": "string"}, "currency": {"type": "string"}}
-    assert schema["required"] == ["amount", "currency"]
+    assert schema["properties"] == {
+        "count": {"type": "integer"},
+        "amount": {"type": "string"},
+        "note": {"type": "string"},
+        "currency": {"type": "string"},
+    }
+    assert schema["required"] == ["count"]
