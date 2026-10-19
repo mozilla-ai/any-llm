@@ -15,6 +15,7 @@ class OpenaiProvider(OpenAIFileMethods, BaseOpenAIProvider):
     PROVIDER_DOCUMENTATION_URL = "https://platform.openai.com/docs/api-reference"
     PROMPT_CACHE_KEY_SUPPORT = "supported"
     SUPPORTS_RESPONSES = True
+    _MESSAGES_TOOLS_THINKING_VIA_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_IMAGE_GENERATION = True
