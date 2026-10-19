@@ -30,7 +30,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`dashscope`](https://bailian.console.aliyun.com/cn-beijing/?tab=api#/api) | 🤝 Community | DASHSCOPE_API_KEY | DASHSCOPE_API_BASE | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | [`databricks`](https://docs.databricks.com/) | 🤝 Community | DATABRICKS_TOKEN | DATABRICKS_HOST | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | [`deepinfra`](https://deepinfra.com/docs/openai_api) | 🤝 Community | DEEPINFRA_API_KEY | DEEPINFRA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| [`deepseek`](https://platform.deepseek.com/) | ✅ Verified | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| [`deepseek`](https://platform.deepseek.com/) | ✅ Verified | DEEPSEEK_API_KEY | DEEPSEEK_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`edenai`](https://www.edenai.co/docs) | 🤝 Community | EDENAI_API_KEY | EDENAI_API_BASE | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | [`fireworks`](https://fireworks.ai/api) | ✅ Verified | FIREWORKS_API_KEY | FIREWORKS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ |
 | [`gemini`](https://ai.google.dev/gemini-api/docs) | ✅ Verified | GEMINI_API_KEY/GOOGLE_API_KEY | GOOGLE_GEMINI_BASE_URL | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
