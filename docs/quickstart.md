@@ -156,7 +156,7 @@ for chunk in completion(
 messages.append(accumulator.completion.choices[0].message)
 ```
 
-`accumulate_chunks` and `aaccumulate_chunks` do the same for a whole stream in one call. Tool-call fragments are grouped by `index` and their `arguments` are joined; a repeated `extra_content` key keeps its latest value. Reading `completion` before every choice has a `finish_reason` raises `ValueError`, since a partial turn is not safe to replay. Audio output is not aggregated.
+`accumulate_chunks` and `aaccumulate_chunks` do the same for a whole stream in one call. Tool-call fragments are grouped by `index` and their `arguments` are joined; a repeated `extra_content` list is joined, and any other repeated key keeps its latest value. Reading `completion` before every choice has a `finish_reason` raises `ValueError`, since a partial turn is not safe to replay. Audio output is not aggregated.
 
 ## Multiple Choices
 

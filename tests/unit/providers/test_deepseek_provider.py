@@ -1003,9 +1003,12 @@ async def test_streamed_tool_call_turn_replays_reasoning_content() -> None:
         messages.append(message)
         messages.append({"role": "tool", "tool_call_id": "call_1", "content": "sunny"})
 
-        await provider.acompletion(
-            model="deepseek-v4-pro", messages=messages, tools=tools, stream=True, reasoning_effort="low"
+        second_turn = await aaccumulate_chunks(
+            await provider.acompletion(
+                model="deepseek-v4-pro", messages=messages, tools=tools, stream=True, reasoning_effort="low"
+            )
         )
+        assert second_turn.choices[0].message.content == "Sunny."
     finally:
         await provider.client.close()
 

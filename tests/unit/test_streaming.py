@@ -261,3 +261,80 @@ async def test_aaccumulate_chunks_consumes_an_async_stream() -> None:
     completion = await aaccumulate_chunks(stream())
 
     assert completion.choices[0].message.content == "ab"
+
+
+def test_whole_tool_calls_sharing_an_index_are_kept_apart() -> None:
+    chunks = [
+        make_chunk(tool_call_delta(0, id="call_a", name="get_weather", arguments='{"city": "Paris"}')),
+        make_chunk(tool_call_delta(0, id="call_b", name="get_time", arguments='{"tz": "CET"}')),
+        make_chunk({}, finish_reason="tool_calls"),
+    ]
+
+    message = accumulate_chunks(chunks).choices[0].message
+
+    assert message.tool_calls is not None
+    assert [(call.id, call.function.name, call.function.arguments) for call in message.tool_calls] == [  # type: ignore[union-attr]
+        ("call_a", "get_weather", '{"city": "Paris"}'),
+        ("call_b", "get_time", '{"tz": "CET"}'),
+    ]
+
+
+def test_tool_call_fragments_with_changing_ids_keep_the_first_id() -> None:
+    chunks = [
+        make_chunk(tool_call_delta(0, id="call_a", name="lookup", arguments='{"q"')),
+        make_chunk(tool_call_delta(0, id="call_generated", name="", arguments=": 1}")),
+        make_chunk({}, finish_reason="tool_calls"),
+    ]
+
+    message = accumulate_chunks(chunks).choices[0].message
+
+    assert message.tool_calls is not None
+    assert len(message.tool_calls) == 1
+    call = message.tool_calls[0]
+    assert (call.id, call.function.name, call.function.arguments) == ("call_a", "lookup", '{"q": 1}')  # type: ignore[union-attr]
+
+
+def test_extra_content_lists_are_joined() -> None:
+    chunks = [
+        make_chunk({"extra_content": {"google": {"code_execution": [{"type": "executable_code"}]}}}),
+        make_chunk(
+            {"extra_content": {"google": {"code_execution": [{"type": "code_execution_result"}]}}},
+            finish_reason="stop",
+        ),
+    ]
+
+    message = accumulate_chunks(chunks).choices[0].message
+
+    assert message.extra_content == {
+        "google": {"code_execution": [{"type": "executable_code"}, {"type": "code_execution_result"}]}
+    }
+
+
+def test_merging_extra_content_leaves_chunks_and_completion_independent() -> None:
+    first = make_chunk({"extra_content": {"anthropic": {"signature": "sig"}}})
+    second = make_chunk({"extra_content": {"anthropic": {"stop_details": {"x": 1}}}}, finish_reason="stop")
+    accumulator = ChatCompletionAccumulator()
+    accumulator.add(first)
+    accumulator.add(second)
+
+    message = accumulator.completion.choices[0].message
+    assert message.extra_content == {"anthropic": {"signature": "sig", "stop_details": {"x": 1}}}
+    assert first.choices[0].delta.extra_content == {"anthropic": {"signature": "sig"}}
+
+    message.extra_content["anthropic"]["signature"] = "changed"
+    accumulator.add(make_chunk({}))
+    assert accumulator.completion.choices[0].message.extra_content == {
+        "anthropic": {"signature": "sig", "stop_details": {"x": 1}}
+    }
+
+
+def test_completion_is_reused_until_a_chunk_is_added() -> None:
+    accumulator = ChatCompletionAccumulator()
+    accumulator.add(make_chunk({"content": "Hi"}, finish_reason="stop"))
+
+    completion = accumulator.completion
+    assert accumulator.completion is completion
+
+    accumulator.add(make_chunk(choices=False, usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}))
+    assert accumulator.completion is not completion
+    assert accumulator.completion.usage is not None

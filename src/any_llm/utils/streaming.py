@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -28,17 +29,20 @@ if TYPE_CHECKING:
 
 
 def _merge_extra_content(target: dict[str, Any], update: dict[str, Any]) -> None:
-    """Merge ``update`` into ``target``; nested dicts merge, any other value is replaced.
+    """Merge ``update`` into ``target``; nested dicts merge, lists are joined, any other value is replaced.
 
-    Providers send ``extra_content`` values whole (a signature, an encrypted block), so a later
-    chunk that repeats a key replaces it rather than extending it.
+    Providers send scalar ``extra_content`` values whole (a signature, an encrypted block), so a later
+    chunk that repeats such a key replaces it. A list holds only the chunk's own items (Gemini's
+    ``code_execution``), so lists are joined. Values are copied so the chunks are never modified.
     """
     for key, value in update.items():
         existing = target.get(key)
         if isinstance(existing, dict) and isinstance(value, dict):
             _merge_extra_content(existing, value)
+        elif isinstance(existing, list) and isinstance(value, list):
+            existing.extend(copy.deepcopy(value))
         else:
-            target[key] = value
+            target[key] = copy.deepcopy(value)
 
 
 @dataclass
@@ -48,8 +52,23 @@ class _ToolCallState:
     arguments: str = ""
     extra_content: dict[str, Any] = field(default_factory=dict)
 
+    def is_new_call(self, delta: ChoiceDeltaToolCall) -> bool:
+        """Whether ``delta`` announces another call at the same ``index``.
+
+        Several converters number calls within a chunk rather than across the stream, so two whole
+        calls sent in separate chunks share an index; they still differ by id and both carry a name.
+        """
+        return bool(
+            self.name
+            and self.id is not None
+            and delta.id
+            and delta.id != self.id
+            and delta.function is not None
+            and delta.function.name
+        )
+
     def add(self, delta: ChoiceDeltaToolCall) -> None:
-        if delta.id:
+        if delta.id and self.id is None:
             self.id = delta.id
         if delta.function is not None:
             # Some providers repeat the name on every chunk, others split it; keep a repeat out of the name.
@@ -66,7 +85,8 @@ class _ChoiceState:
     content: list[str] = field(default_factory=list)
     refusal: list[str] = field(default_factory=list)
     reasoning: list[str] = field(default_factory=list)
-    tool_calls: dict[int, _ToolCallState] = field(default_factory=dict)
+    tool_calls: list[_ToolCallState] = field(default_factory=list)
+    open_tool_calls: dict[int, _ToolCallState] = field(default_factory=dict)
     extra_content: dict[str, Any] = field(default_factory=dict)
     images: list[ImageContent] = field(default_factory=list)
     logprob_content: list[ChatCompletionTokenLogprob] = field(default_factory=list)
@@ -84,9 +104,11 @@ class ChatCompletionAccumulator:
     ``signature``), images, log probabilities and usage. Dumping ``completion.choices[0].message`` and
     appending it to ``messages`` replays the turn the same way as a non-streamed response.
 
-    Tool-call fragments are grouped by their ``index`` and their ``arguments`` are concatenated.
-    ``extra_content`` is merged key by key, and a later chunk replaces the value of a repeated key.
-    Audio output is not aggregated.
+    Tool-call fragments are grouped by their ``index`` and their ``arguments`` are concatenated; a
+    fragment that carries a new id and a name at an index already in use starts another call.
+    ``extra_content`` is merged key by key: lists are joined, and a later chunk replaces any other
+    value of a repeated key. Audio output is not aggregated. The completion is built once and reused
+    until another chunk is added.
 
     Example:
         >>> accumulator = ChatCompletionAccumulator()
@@ -105,9 +127,11 @@ class ChatCompletionAccumulator:
         self._service_tier: str | None = None
         self._usage: CompletionUsage | None = None
         self._choices: dict[int, _ChoiceState] = {}
+        self._completion: ChatCompletion | None = None
 
     def add(self, chunk: ChatCompletionChunk) -> None:
         """Fold one chunk into the running result."""
+        self._completion = None
         self._id = self._id or chunk.id
         self._model = self._model or chunk.model
         self._created = self._created or chunk.created
@@ -130,7 +154,12 @@ class ChatCompletionAccumulator:
             if delta.images:
                 state.images.extend(delta.images)
             for tool_call in delta.tool_calls or []:
-                state.tool_calls.setdefault(tool_call.index, _ToolCallState()).add(tool_call)
+                current = state.open_tool_calls.get(tool_call.index)
+                if current is None or current.is_new_call(tool_call):
+                    current = _ToolCallState()
+                    state.tool_calls.append(current)
+                    state.open_tool_calls[tool_call.index] = current
+                current.add(tool_call)
             if choice.logprobs is not None:
                 state.has_logprobs = True
                 state.logprob_content.extend(choice.logprobs.content or [])
@@ -147,6 +176,8 @@ class ChatCompletionAccumulator:
                 which means the stream stopped early.
 
         """
+        if self._completion is not None:
+            return self._completion
         if self._id is None or self._model is None or self._created is None:
             msg = "No chunks have been added; there is nothing to assemble."
             raise ValueError(msg)
@@ -173,7 +204,7 @@ class ChatCompletionAccumulator:
                 )
             )
 
-        return ChatCompletion(
+        self._completion = ChatCompletion(
             id=self._id,
             object="chat.completion",
             created=self._created,
@@ -183,6 +214,7 @@ class ChatCompletionAccumulator:
             system_fingerprint=self._system_fingerprint,
             service_tier=self._service_tier,
         )
+        return self._completion
 
     @staticmethod
     def _build_message(state: _ChoiceState) -> ChatCompletionMessage:
@@ -191,9 +223,9 @@ class ChatCompletionAccumulator:
                 id=call.id or "",
                 type="function",
                 function=Function(name=call.name, arguments=call.arguments),
-                extra_content=call.extra_content or None,
+                extra_content=copy.deepcopy(call.extra_content) or None,
             )
-            for _, call in sorted(state.tool_calls.items())
+            for call in state.tool_calls
         ]
         reasoning = "".join(state.reasoning)
         return ChatCompletionMessage(
@@ -202,7 +234,7 @@ class ChatCompletionAccumulator:
             refusal="".join(state.refusal) or None,
             reasoning=Reasoning(content=reasoning) if reasoning else None,
             tool_calls=tool_calls or None,
-            extra_content=state.extra_content or None,
+            extra_content=copy.deepcopy(state.extra_content) or None,
             images=state.images or None,
         )
 
