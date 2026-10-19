@@ -40,12 +40,21 @@ def sniff_image_format(content: bytes) -> tuple[str, str] | None:
     return None
 
 
-def _validate_image_file(value: Any) -> Any:
+def _is_file_content(value: Any) -> bool:
     # typing.IO is not usable with isinstance, so accept anything readable instead.
-    if isinstance(value, (bytes, str, PathLike)) or callable(getattr(value, "read", None)):
+    return isinstance(value, (bytes, PathLike)) or callable(getattr(value, "read", None))
+
+
+def _validate_image_file(value: Any) -> Any:
+    if isinstance(value, str) or _is_file_content(value):
         return value
-    if isinstance(value, tuple) and len(value) in _TUPLE_LENGTHS and (value[0] is None or isinstance(value[0], str)):
-        _validate_image_file(value[1])
+    # A str inside a tuple is uploaded by httpx as the literal file content, not read as a path.
+    if (
+        isinstance(value, tuple)
+        and len(value) in _TUPLE_LENGTHS
+        and (value[0] is None or isinstance(value[0], str))
+        and _is_file_content(value[1])
+    ):
         return value
     msg = "image must be bytes, a path, a readable binary file object, or a (filename, content, content_type) tuple"
     raise ValueError(msg)

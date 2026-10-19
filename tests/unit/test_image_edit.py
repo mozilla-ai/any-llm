@@ -179,7 +179,10 @@ def test_resolve_images_names_a_path_the_bytes_do_not_identify(tmp_path: Path) -
     assert params.resolve_images() == ("cat.png", b"not an image", None)
 
 
-@pytest.mark.parametrize("image", [123, [], ("cat.png", 123), [PNG, None], (b"cat", PNG)])
+@pytest.mark.parametrize(
+    "image",
+    [123, [], ("cat.png", 123), [PNG, None], (b"cat", PNG), ("cat.png", "images/cat.png"), ("a", ("b", PNG))],
+)
 def test_image_edit_params_rejects_values_that_are_not_images(image: object) -> None:
     with pytest.raises(ValidationError, match="image"):
         ImageEditParams(model_id="gpt-image-1", image=image, prompt="Add a hat")  # type: ignore[arg-type]
