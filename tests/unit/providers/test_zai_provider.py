@@ -1,7 +1,7 @@
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.zai.zai import ZaiProvider
@@ -141,14 +141,15 @@ def test_zai_completion_preserves_standard_finish_reasons(finish_reason: str) ->
     assert result.choices[0].finish_reason == finish_reason
 
 
-def test_zai_completion_still_rejects_unknown_finish_reason() -> None:
-    """Unmapped values keep failing loudly rather than being coerced into a wrong stop reason."""
+@pytest.mark.parametrize("finish_reason", ["some_unknown_reason", "network_error"])
+def test_zai_completion_passes_unmapped_finish_reason_through(finish_reason: str) -> None:
+    """Unmapped values reach the caller as sent rather than being coerced into a wrong stop reason."""
     openai_response = OpenAIChatCompletion.model_construct(
         id="test-id",
         choices=[
             {
                 "index": 0,
-                "finish_reason": "some_unknown_reason",
+                "finish_reason": finish_reason,
                 "message": {"role": "assistant", "content": "Hello"},
             }
         ],
@@ -156,27 +157,22 @@ def test_zai_completion_still_rejects_unknown_finish_reason() -> None:
         model="test-model",
         object="chat.completion",
     )
-    with pytest.raises(ValidationError):
-        ZaiProvider._convert_completion_response(openai_response)
+    result = ZaiProvider._convert_completion_response(openai_response)
+    assert result.choices[0].finish_reason == finish_reason
 
 
-def test_zai_completion_still_rejects_network_error() -> None:
-    """network_error is deliberately unmapped: a transport failure is not a completion reason."""
-    openai_response = OpenAIChatCompletion.model_construct(
+@pytest.mark.parametrize("finish_reason", ["some_unknown_reason", "network_error"])
+def test_zai_chunk_passes_unmapped_finish_reason_through(finish_reason: str) -> None:
+    """Streaming keeps an unmapped value as sent, like the non-streaming path."""
+    openai_chunk = OpenAIChatCompletionChunk.model_construct(
         id="test-id",
-        choices=[
-            {
-                "index": 0,
-                "finish_reason": "network_error",
-                "message": {"role": "assistant", "content": "Hello"},
-            }
-        ],
+        choices=[{"index": 0, "delta": {"content": "partial"}, "finish_reason": finish_reason}],
         created=1234567890,
-        model="test-model",
-        object="chat.completion",
+        model="glm-5",
+        object="chat.completion.chunk",
     )
-    with pytest.raises(ValidationError):
-        ZaiProvider._convert_completion_response(openai_response)
+    result = ZaiProvider._convert_completion_chunk_response(openai_chunk)
+    assert result.choices[0].finish_reason == finish_reason
 
 
 def test_zai_completion_empty_response_still_raises_provider_error() -> None:
