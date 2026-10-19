@@ -649,11 +649,13 @@ def _convert_messages(
 def _extract_function_response_media(
     content: list[Any], provider_name: str
 ) -> tuple[list[Any], list[types.FunctionResponsePart]]:
-    """Move data-URI media the API reads in a function response into parts, leaving a ``$ref`` in its place.
+    """Move data-URI media the API reads in a function response into parts, in order.
 
-    Inside the JSON response such media is only base64 text to the model. The ``$ref`` keeps each
-    item's position relative to the text around it. Anything else, including media given by URL
-    (which the API drops from a function response), stays in the response unchanged.
+    Inside the JSON response such media is only base64 text to the model. The parts carry no
+    ``display_name`` and the response no ``$ref`` to them: generateContent reads a blob's display name
+    only alongside server-side tools, so a ``$ref`` to one fails with 400 INVALID_ARGUMENT. Anything
+    else, including media given by URL (which the API drops from a function response), stays in the
+    response unchanged.
     """
     response: list[Any] = []
     media: list[types.FunctionResponsePart] = []
@@ -664,13 +666,9 @@ def _extract_function_response_media(
             continue
         field_name = "image_url.url" if block["type"] == "image_url" else "file.file_data"
         mime_type, raw_data = _parse_data_uri(data_uri, field_name, provider_name)
-        display_name = f"attachment-{len(media) + 1}"
         media.append(
-            types.FunctionResponsePart(
-                inline_data=types.FunctionResponseBlob(data=raw_data, mime_type=mime_type, display_name=display_name)
-            )
+            types.FunctionResponsePart(inline_data=types.FunctionResponseBlob(data=raw_data, mime_type=mime_type))
         )
-        response.append({"$ref": display_name})
     return response, media
 
 
