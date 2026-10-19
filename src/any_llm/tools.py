@@ -7,13 +7,20 @@ import enum
 import inspect
 import types as _types
 from collections.abc import Callable, Mapping, Sequence
+from contextvars import ContextVar
 from datetime import date, datetime, time
 from typing import Annotated as _Annotated
 from typing import Any, get_args, get_origin, get_type_hints
 from typing import Literal as _Literal
+from typing import NotRequired as _NotRequired
+from typing import Required as _Required
 
 from pydantic import BaseModel as PydanticBaseModel
+from typing_extensions import ReadOnly as _ReadOnly
 from typing_extensions import is_typeddict as _is_typeddict
+
+# A self-referencing TypedDict would otherwise expand forever once its forward references are resolved.
+_EXPANDING_TYPED_DICTS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_TYPED_DICTS", default=frozenset())
 
 
 def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
@@ -90,7 +97,8 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     - Union[X, Y] and X | Y -> anyOf=[schema(X), schema(Y)] (without top-level type)
     - Optional[T] (Union[T, None]) -> schema(T) (nullability not encoded)
     - Literal[...]/Enum -> enum with appropriate type inference when uniform
-    - TypedDict -> object with properties/required per annotations
+    - TypedDict -> object with properties/required per annotations; Required/NotRequired/ReadOnly
+      qualifiers are unwrapped, and a self-reference becomes a bare object
     - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields
     """
     origin = get_origin(python_type)
@@ -150,14 +158,26 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         return schema
 
     if _is_typeddict(python_type):
-        annotations: dict[str, Any] = getattr(python_type, "__annotations__", {}) or {}
+        expanding = _EXPANDING_TYPED_DICTS.get()
+        if python_type in expanding:
+            return {"type": "object"}
+        annotations = _resolve_typed_dict_annotations(python_type)
         required_keys = set(getattr(python_type, "__required_keys__", set()))
         td_properties: dict[str, Any] = {}
         td_required: list[str] = []
-        for field_name, field_type in annotations.items():
-            td_properties[field_name] = _python_type_to_json_schema(field_type)
-            if field_name in required_keys:
-                td_required.append(field_name)
+        token = _EXPANDING_TYPED_DICTS.set(expanding | {python_type})
+        try:
+            for field_name, annotation in annotations.items():
+                field_type, explicitly_required = _unwrap_typed_dict_field(annotation)
+                td_properties[field_name] = _python_type_to_json_schema(field_type)
+                # __required_keys__ is computed before postponed annotations are resolved, so an explicit
+                # Required/NotRequired qualifier takes precedence over it.
+                if explicitly_required is None:
+                    explicitly_required = field_name in required_keys
+                if explicitly_required:
+                    td_required.append(field_name)
+        finally:
+            _EXPANDING_TYPED_DICTS.reset(token)
         schema_td: dict[str, Any] = {
             "type": "object",
             "properties": td_properties,
@@ -236,6 +256,44 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         return {"type": "string"}
 
     return {"type": "string"}
+
+
+def _resolve_typed_dict_annotations(typed_dict: Any) -> dict[str, Any]:
+    """Resolve a TypedDict's field annotations, keeping the raw annotation for any field that can't be resolved."""
+    try:
+        return get_type_hints(typed_dict, include_extras=True)
+    except NameError:
+        pass
+    # Names imported only under TYPE_CHECKING make get_type_hints fail for the whole class, so resolve
+    # each field on its own through a stand-in class that evaluates in the TypedDict's module.
+    annotations: dict[str, Any] = {}
+    for field_name, annotation in (getattr(typed_dict, "__annotations__", {}) or {}).items():
+        holder = type(
+            typed_dict.__name__, (), {"__annotations__": {field_name: annotation}, "__module__": typed_dict.__module__}
+        )
+        try:
+            annotations[field_name] = get_type_hints(holder, include_extras=True)[field_name]
+        except NameError:
+            annotations[field_name] = annotation
+    return annotations
+
+
+def _unwrap_typed_dict_field(annotation: Any) -> tuple[Any, bool | None]:
+    """Strip Annotated/ReadOnly/Required/NotRequired from a TypedDict field.
+
+    Returns the underlying type and True/False when Required/NotRequired is present, None otherwise.
+    """
+    explicitly_required: bool | None = None
+    while True:
+        origin = get_origin(annotation)
+        if origin in (_Annotated, _ReadOnly, _Required, _NotRequired):
+            if origin is _Required:
+                explicitly_required = True
+            elif origin is _NotRequired:
+                explicitly_required = False
+            annotation = get_args(annotation)[0]
+        else:
+            return annotation, explicitly_required
 
 
 def _flatten_responses_tool(tool: Any) -> Any:
