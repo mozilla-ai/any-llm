@@ -31,3 +31,18 @@ def test_patch_json_schema_patches_union_without_type() -> None:
     }
     _patch_json_schema(schema)
     assert schema["function"]["parameters"]["properties"]["x"]["type"] == "string"
+
+
+def test_patch_json_schema_patches_any_of_union_without_type() -> None:
+    schema: dict[str, Any] = {
+        "type": "function",
+        "function": {
+            "name": "fn",
+            "parameters": {
+                "type": "object",
+                "properties": {"x": {"anyOf": [{"type": "string"}, {"type": "integer"}]}},
+            },
+        },
+    }
+    _patch_json_schema(schema)
+    assert schema["function"]["parameters"]["properties"]["x"]["type"] == "string"

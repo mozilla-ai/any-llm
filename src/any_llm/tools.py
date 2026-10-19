@@ -87,8 +87,7 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
       - dict without type args defaults additionalProperties to string
     - tuple[T1, T2, ...] -> array with prefixItems per element and min/maxItems
     - tuple[T, ...] -> array with items=schema(T)
-    - Union[X, Y] and X | Y -> oneOf=[schema(X), schema(Y)] (without top-level type);
-      redundant integer branches are removed when a number branch is present
+    - Union[X, Y] and X | Y -> anyOf=[schema(X), schema(Y)] (without top-level type)
     - Optional[T] (Union[T, None]) -> schema(T) (nullability not encoded)
     - Literal[...]/Enum -> enum with appropriate type inference when uniform
     - TypedDict -> object with properties/required per annotations
@@ -229,11 +228,9 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         non_none_args = [a for a in args if a is not type(None)]
         if len(non_none_args) > 1:
             schemas = [_python_type_to_json_schema(arg) for arg in non_none_args]
-            # JSON Schema numbers include integers. Keeping both alternatives
-            # under oneOf would reject every integer as matching twice.
-            if {"type": "number"} in schemas:
-                schemas = [schema for schema in schemas if schema != {"type": "integer"}]
-            return schemas[0] if len(schemas) == 1 else {"oneOf": schemas}
+            # Not oneOf: branches can overlap (int and float, str and datetime), and oneOf
+            # rejects a value that matches more than one branch.
+            return {"anyOf": schemas}
         if non_none_args:
             return _python_type_to_json_schema(non_none_args[0])
         return {"type": "string"}

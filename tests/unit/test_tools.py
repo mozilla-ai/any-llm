@@ -153,10 +153,10 @@ def test_callable_to_tool() -> None:
     assert props["dict_specified"]["type"] == "object"
     assert props["dict_specified"]["additionalProperties"]["type"] == "integer"
 
-    assert "oneOf" in props["union_specified"]
-    assert len(props["union_specified"]["oneOf"]) == 2
-    assert props["union_specified"]["oneOf"][0]["type"] == "string"
-    assert props["union_specified"]["oneOf"][1]["type"] == "integer"
+    assert "anyOf" in props["union_specified"]
+    assert len(props["union_specified"]["anyOf"]) == 2
+    assert props["union_specified"]["anyOf"][0]["type"] == "string"
+    assert props["union_specified"]["anyOf"][1]["type"] == "integer"
 
     assert props["maybe_text"]["type"] == "string"
     assert "maybe_text" not in params["required"]
@@ -231,9 +231,30 @@ def test_callable_to_tool() -> None:
 
     assert props["opt_int"]["type"] == "integer"
 
-    assert "oneOf" in props["union_three"]
-    assert len(props["union_three"]["oneOf"]) == 3
-    assert {s["type"] for s in props["union_three"]["oneOf"]} == {"string", "number", "boolean"}
+    assert "anyOf" in props["union_three"]
+    assert len(props["union_three"]["anyOf"]) == 3
+    assert {s["type"] for s in props["union_three"]["anyOf"]} == {"string", "number", "boolean"}
+
+
+def test_callable_to_tool_overlapping_unions_use_any_of() -> None:
+    """Overlapping union branches must not be combined with oneOf, which rejects values matching two branches."""
+
+    def overlapping(
+        number: int | float,  # noqa: PYI041
+        numbers: list[int | float],
+        named_numbers: dict[str, int | float],
+        when: str | datetime,
+    ) -> None:
+        """Accept overlapping unions."""
+
+    props = callable_to_tool(overlapping)["function"]["parameters"]["properties"]
+    numeric = {"anyOf": [{"type": "integer"}, {"type": "number"}]}
+
+    assert {k: v for k, v in props["number"].items() if k != "description"} == numeric
+    assert props["numbers"]["items"] == numeric
+    assert props["named_numbers"]["additionalProperties"] == numeric
+    assert props["when"]["anyOf"] == [{"type": "string"}, {"type": "string", "format": "date-time"}]
+    assert all("oneOf" not in prop for prop in props.values())
 
 
 def test_prepare_tools_with_built_in() -> None:
