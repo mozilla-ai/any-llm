@@ -300,7 +300,7 @@ class BaseOpenAIProvider(AnyLLM):
         # layer can parse it into a ParsedResponse (do not collapse it to a ResponseResource).
         if is_structured_output_type(response_format):
             return response
-        # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
+        # Normalizing providers convert a Response to a ResponseResource, falling back to the Response if that fails.
         if isinstance(response, Response) and self._NORMALIZES_RESPONSES:
             try:
                 return ResponseResource.model_validate(response.model_dump(warnings=False))

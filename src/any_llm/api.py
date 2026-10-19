@@ -310,7 +310,7 @@ def responses(
 
     This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
-    or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    or `openai.types.responses.Response` (for providers using OpenAI's native API, including `openai`).
     If a structured `response_format` type is given, a `ParsedResponse` (with `output_parsed`) is returned.
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
@@ -367,7 +367,7 @@ def responses(
 
     Returns:
         Either a `ResponseResource` object (OpenResponses-compliant providers),
-        a `Response` object (non-compliant providers), a `ParsedResponse` (with
+        a `Response` object (OpenAI's native API, including `openai`), a `ParsedResponse` (with
         `output_parsed`) when a structured `response_format` type is given, or an
         iterator of `ResponseStreamEvent` (streaming).
 
@@ -466,7 +466,7 @@ async def aresponses(
 
     This implements the OpenResponses specification and returns either
     `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
-    or `openai.types.responses.Response` (for providers using OpenAI's native API).
+    or `openai.types.responses.Response` (for providers using OpenAI's native API, including `openai`).
     If a structured `response_format` type is given, a `ParsedResponse` (with `output_parsed`) is returned.
     If `stream=True`, an iterator of `any_llm.types.responses.ResponseStreamEvent` items is returned.
 
@@ -523,7 +523,7 @@ async def aresponses(
 
     Returns:
         Either a `ResponseResource` object (OpenResponses-compliant providers),
-        a `Response` object (non-compliant providers), a `ParsedResponse` (with
+        a `Response` object (OpenAI's native API, including `openai`), a `ParsedResponse` (with
         `output_parsed`) when a structured `response_format` type is given, or an
         iterator of `ResponseStreamEvent` (streaming).
 
