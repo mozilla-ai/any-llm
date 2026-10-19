@@ -5,7 +5,7 @@ from openresponses_types import ResponseResource
 
 from any_llm import AnyLLM
 from any_llm.constants import LLMProvider
-from any_llm.types.audio import AudioInput, AudioSpeechParams, AudioTranscriptionParams, Transcription
+from any_llm.types.audio import AudioInput, Transcription
 from any_llm.types.batch import Batch, BatchResult
 from any_llm.types.completion import (
     ChatCompletion,
@@ -15,7 +15,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.decide import DecideResponse, JSONContent, QuestionsInput
-from any_llm.types.image import ImageEditParams, ImageGenerationParams, ImageInput, ImagesResponse
+from any_llm.types.image import ImageInput, ImagesResponse
 from any_llm.types.messages import MessageResponse, MessageStreamEvent, ParsedBetaMessage, ParsedMessage
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
@@ -990,17 +990,15 @@ async def aimage_generation(
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
-    return await llm._aimage_generation(
-        ImageGenerationParams(
-            model_id=model_name,
-            prompt=prompt,
-            n=n,
-            size=size,
-            quality=quality,
-            style=style,
-            response_format=response_format,
-            user=user,
-        ),
+    return await llm.aimage_generation(
+        model_name,
+        prompt,
+        n=n,
+        size=size,
+        quality=quality,
+        style=style,
+        response_format=response_format,
+        user=user,
         **kwargs,
     )
 
@@ -1026,9 +1024,9 @@ def image_edit(
     Args:
         model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-image-1', provider='openai').
             **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-image-1').
-        image: The image to edit, or a list of images. Bare bytes go up as application/octet-stream,
-            which OpenAI rejects; pass a `(filename, content, content_type)` tuple, a named file
-            object, or a `pathlib.Path` instead.
+        image: The image to edit, or a list of images. Each is bytes, a path, a readable binary
+            file object, or a `(filename, content, content_type)` tuple. PNG, JPEG and WEBP bytes
+            are uploaded under their content type.
         prompt: A text description of the desired image(s).
         provider: Provider name to use for the request (e.g., 'openai').
         n: Number of images to generate.
@@ -1086,9 +1084,9 @@ async def aimage_edit(
     Args:
         model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='gpt-image-1', provider='openai').
             **Alternative**: Combined format 'provider:model' (e.g., 'openai:gpt-image-1').
-        image: The image to edit, or a list of images. Bare bytes go up as application/octet-stream,
-            which OpenAI rejects; pass a `(filename, content, content_type)` tuple, a named file
-            object, or a `pathlib.Path` instead.
+        image: The image to edit, or a list of images. Each is bytes, a path, a readable binary
+            file object, or a `(filename, content, content_type)` tuple. PNG, JPEG and WEBP bytes
+            are uploaded under their content type.
         prompt: A text description of the desired image(s).
         provider: Provider name to use for the request (e.g., 'openai').
         n: Number of images to generate.
@@ -1112,17 +1110,15 @@ async def aimage_edit(
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
-    return await llm._aimage_edit(
-        ImageEditParams(
-            model_id=model_name,
-            image=image,
-            prompt=prompt,
-            n=n,
-            size=size,
-            quality=quality,
-            response_format=response_format,
-            user=user,
-        ),
+    return await llm.aimage_edit(
+        model_name,
+        image,
+        prompt,
+        n=n,
+        size=size,
+        quality=quality,
+        response_format=response_format,
+        user=user,
         **kwargs,
     )
 
@@ -1247,18 +1243,16 @@ async def atranscription(
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
-    return await llm._atranscription(
-        AudioTranscriptionParams(
-            model_id=model_name,
-            file=file,
-            filename=filename,
-            mime_type=mime_type,
-            language=language,
-            prompt=prompt,
-            response_format=response_format,  # type: ignore[arg-type]
-            temperature=temperature,
-            timestamp_granularities=timestamp_granularities,  # type: ignore[arg-type]
-        ),
+    return await llm.atranscription(
+        model_name,
+        file,
+        filename=filename,
+        mime_type=mime_type,
+        language=language,
+        prompt=prompt,
+        response_format=response_format,  # type: ignore[arg-type]
+        temperature=temperature,
+        timestamp_granularities=timestamp_granularities,  # type: ignore[arg-type]
         **kwargs,
     )
 
@@ -1358,15 +1352,13 @@ async def aspeech(
         model_name = model
 
     llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
-    return await llm._aspeech(
-        AudioSpeechParams(
-            model_id=model_name,
-            input=input,
-            voice=voice,
-            instructions=instructions,
-            response_format=response_format,  # type: ignore[arg-type]
-            speed=speed,
-        ),
+    return await llm.aspeech(
+        model_name,
+        input,
+        voice,
+        instructions=instructions,
+        response_format=response_format,  # type: ignore[arg-type]
+        speed=speed,
         **kwargs,
     )
 

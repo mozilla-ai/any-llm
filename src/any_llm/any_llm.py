@@ -1588,6 +1588,9 @@ class AnyLLM(FilesMixin, ABC):
             The image generation response from the provider.
 
         """
+        if not self.SUPPORTS_IMAGE_GENERATION:
+            msg = "Provider doesn't support image generation."
+            raise NotImplementedError(msg)
         params = ImageGenerationParams(
             model_id=model,
             prompt=prompt,
@@ -1601,9 +1604,6 @@ class AnyLLM(FilesMixin, ABC):
         return await self._aimage_generation(params, **kwargs)
 
     async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
-        if not self.SUPPORTS_IMAGE_GENERATION:
-            msg = "Provider doesn't support image generation."
-            raise NotImplementedError(msg)
         msg = "Subclasses must implement _aimage_generation method"
         raise NotImplementedError(msg)
 
@@ -1631,9 +1631,9 @@ class AnyLLM(FilesMixin, ABC):
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='gpt-image-1' for LLMProvider.OPENAI).
-            image: The image to edit, or a list of images. Bare bytes go up as application/octet-stream,
-                which OpenAI rejects; pass a ``(filename, content, content_type)`` tuple, a named file
-                object, or a ``pathlib.Path`` instead.
+            image: The image to edit, or a list of images. Each is bytes, a path, a readable binary
+                file object, or a ``(filename, content, content_type)`` tuple. PNG, JPEG and WEBP
+                bytes are uploaded under their content type.
             prompt: A text description of the desired image(s).
             n: Number of images to generate.
             size: Size of the generated images (e.g., '1024x1024').
@@ -1646,6 +1646,9 @@ class AnyLLM(FilesMixin, ABC):
             The image edit response from the provider.
 
         """
+        if not self.SUPPORTS_IMAGE_EDIT:
+            msg = "Provider doesn't support image edit."
+            raise NotImplementedError(msg)
         params = ImageEditParams(
             model_id=model,
             image=image,
@@ -1659,9 +1662,6 @@ class AnyLLM(FilesMixin, ABC):
         return await self._aimage_edit(params, **kwargs)
 
     async def _aimage_edit(self, params: ImageEditParams, **kwargs: Any) -> ImagesResponse:
-        if not self.SUPPORTS_IMAGE_EDIT:
-            msg = "Provider doesn't support image edit."
-            raise NotImplementedError(msg)
         msg = "Subclasses must implement _aimage_edit method"
         raise NotImplementedError(msg)
 
@@ -1674,27 +1674,56 @@ class AnyLLM(FilesMixin, ABC):
         return run_async_in_sync(self.atranscription(model, file, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def atranscription(self, model: str, file: AudioInput, **kwargs: Any) -> Transcription:
+    async def atranscription(
+        self,
+        model: str,
+        file: AudioInput,
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        language: str | None = None,
+        prompt: str | None = None,
+        response_format: Literal["json", "text", "srt", "verbose_json", "vtt"] | None = None,
+        temperature: float | None = None,
+        timestamp_granularities: list[Literal["word", "segment"]] | None = None,
+        **kwargs: Any,
+    ) -> Transcription:
         """Transcribe audio asynchronously.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='whisper-1' for LLMProvider.OPENAI).
             file: Audio to transcribe: bytes, a readable binary file object, or a path.
                 Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
-            **kwargs: Additional parameters (filename, mime_type, language, prompt, response_format,
-                temperature, timestamp_granularities). See [atranscription][any_llm.api.atranscription].
+            filename: Name to upload the audio under. See [atranscription][any_llm.api.atranscription].
+            mime_type: Content type to upload the audio under.
+            language: The language of the input audio in ISO-639-1 format.
+            prompt: Optional text to guide the model's style or continue a previous segment.
+            response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
+            temperature: Sampling temperature, between 0 and 1.
+            timestamp_granularities: Timestamp granularities ('word' and/or 'segment').
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
             The transcription response from the provider.
 
         """
-        params = AudioTranscriptionParams(model_id=model, file=file, **kwargs)
-        return await self._atranscription(params)
-
-    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
         if not self.SUPPORTS_AUDIO_TRANSCRIPTION:
             msg = "Provider doesn't support audio transcription."
             raise NotImplementedError(msg)
+        params = AudioTranscriptionParams(
+            model_id=model,
+            file=file,
+            filename=filename,
+            mime_type=mime_type,
+            language=language,
+            prompt=prompt,
+            response_format=response_format,
+            temperature=temperature,
+            timestamp_granularities=timestamp_granularities,
+        )
+        return await self._atranscription(params, **kwargs)
+
+    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
         msg = "Subclasses must implement _atranscription method"
         raise NotImplementedError(msg)
 
@@ -1739,6 +1768,9 @@ class AnyLLM(FilesMixin, ABC):
             The generated audio content as bytes.
 
         """
+        if not self.SUPPORTS_AUDIO_SPEECH:
+            msg = "Provider doesn't support audio speech."
+            raise NotImplementedError(msg)
         params = AudioSpeechParams(
             model_id=model,
             input=input,
@@ -1750,9 +1782,6 @@ class AnyLLM(FilesMixin, ABC):
         return await self._aspeech(params, **kwargs)
 
     async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
-        if not self.SUPPORTS_AUDIO_SPEECH:
-            msg = "Provider doesn't support audio speech."
-            raise NotImplementedError(msg)
         msg = "Subclasses must implement _aspeech method"
         raise NotImplementedError(msg)
 
