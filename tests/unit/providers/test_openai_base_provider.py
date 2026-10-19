@@ -336,6 +336,45 @@ async def test_aresponses_without_response_format_returns_response(mock_openai_c
 
 @pytest.mark.asyncio
 @patch("any_llm.providers.openai.base.AsyncOpenAI")
+async def test_openai_aresponses_returns_its_own_response_with_every_field(mock_openai_class: MagicMock) -> None:
+    """OpenAI's reply stays an openai Response: a ResponseResource would drop cache_write_tokens."""
+    reply = Response.model_validate(
+        {
+            **_make_openai_response("hi").model_dump(),
+            # the fields a real OpenAI reply carries, so the ResponseResource conversion would succeed
+            "status": "completed",
+            "truncation": "disabled",
+            "text": {"format": {"type": "text"}},
+            "temperature": 1.0,
+            "top_p": 1.0,
+            "presence_penalty": 0.0,
+            "frequency_penalty": 0.0,
+            "top_logprobs": 0,
+            "store": True,
+            "background": False,
+            "service_tier": "default",
+            "usage": {
+                "input_tokens": 10,
+                "input_tokens_details": {"cached_tokens": 2, "cache_write_tokens": 8},
+                "output_tokens": 1,
+                "output_tokens_details": {"reasoning_tokens": 0},
+                "total_tokens": 11,
+            },
+        }
+    )
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=reply)
+    mock_openai_class.return_value = mock_client
+
+    result = await OpenaiProvider(api_key="key").aresponses(model="gpt-5.6", input_data="hi")
+
+    assert isinstance(result, Response)
+    assert result.usage is not None
+    assert result.usage.input_tokens_details.cache_write_tokens == 8
+
+
+@pytest.mark.asyncio
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
 async def test_aresponses_context_management_preserves_compaction_item(mock_openai_class: MagicMock) -> None:
     mock_client = AsyncMock()
     mock_client.responses.create = AsyncMock(return_value=_make_openai_compaction_response())

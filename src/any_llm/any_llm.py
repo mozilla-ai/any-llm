@@ -1415,7 +1415,7 @@ class AnyLLM(FilesMixin, ABC):
 
         This implements the OpenResponses specification and returns either
         `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
-        or `openai.types.responses.Response` (for providers using OpenAI's native API).
+        or `openai.types.responses.Response` (for providers using OpenAI's native API, including `openai`).
         If `stream=True`, an iterator of streaming event dicts is returned.
 
         Args:
@@ -1465,7 +1465,7 @@ class AnyLLM(FilesMixin, ABC):
 
         Returns:
             Either a `ResponseResource` object (OpenResponses-compliant providers),
-            a `Response` object (non-compliant providers), a `ParsedResponse` (when a
+            a `Response` object (OpenAI's native API, including `openai`), a `ParsedResponse` (when a
             structured `response_format` type is given), or an iterator of
             `ResponseStreamEvent` (streaming).
 
