@@ -16,6 +16,7 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
+    CompletionTokensDetails,
     CompletionUsage,
     Function,
     PromptTokensDetails,
@@ -44,6 +45,8 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
         # Reference: https://console.groq.com/docs/prompt-caching
         prompt_details = response.usage.prompt_tokens_details
         cached_tokens = prompt_details.cached_tokens if prompt_details else None
+        completion_details = response.usage.completion_tokens_details
+        reasoning_tokens = completion_details.reasoning_tokens if completion_details else None
         timing_details = _extract_groq_timing_details(response.usage)
         usage = CompletionUsage.model_validate(
             {
@@ -51,6 +54,9 @@ def to_chat_completion(response: GroqChatCompletion) -> ChatCompletion:
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens,
                 "prompt_tokens_details": PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+                "completion_tokens_details": CompletionTokensDetails(reasoning_tokens=reasoning_tokens)
+                if reasoning_tokens
+                else None,
                 **timing_details,
             }
         )
@@ -157,6 +163,8 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
         # Reference: https://console.groq.com/docs/prompt-caching
         prompt_details = usage_data.prompt_tokens_details
         cached_tokens = prompt_details.cached_tokens if prompt_details else None
+        completion_details = usage_data.completion_tokens_details
+        reasoning_tokens = completion_details.reasoning_tokens if completion_details else None
         timing_details = _extract_groq_timing_details(usage_data)
         usage = CompletionUsage.model_validate(
             {
@@ -164,6 +172,9 @@ def _create_openai_chunk_from_groq_chunk(groq_chunk: GroqChatCompletionChunk) ->
                 "completion_tokens": usage_data.completion_tokens,
                 "total_tokens": usage_data.total_tokens,
                 "prompt_tokens_details": PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
+                "completion_tokens_details": CompletionTokensDetails(reasoning_tokens=reasoning_tokens)
+                if reasoning_tokens
+                else None,
                 **timing_details,
             }
         )
