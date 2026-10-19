@@ -2,9 +2,15 @@ import base64
 import binascii
 import json
 import mimetypes
+import re
+from bisect import bisect_right
+from collections import Counter
 from contextlib import suppress
+from dataclasses import dataclass
+from enum import Enum
 from time import time
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from google.genai import types
 from google.genai.pagers import Pager
@@ -32,6 +38,9 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
+# https://ai.google.dev/gemini-api/docs/function-calling#multimodal
+_FUNCTION_RESPONSE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "application/pdf", "text/plain"})
+_GEMINI_MAJOR_VERSION = re.compile(r"(?:^|/)gemini-(\d+)")
 _GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 
@@ -73,8 +82,9 @@ def _has_additional_properties(schema: Any) -> bool:
     """Return True if *schema* sets ``additionalProperties`` anywhere, nested included.
 
     ``google.genai.types.Schema`` serializes the key as ``additional_properties``, which the
-    Gemini API rejects with a 400. Such schemas must be routed through
-    ``GenerateContentConfig.response_json_schema``, which the SDK forwards as raw JSON Schema.
+    Gemini API rejects with a 400. Such schemas must be routed as raw JSON Schema:
+    ``GenerateContentConfig.response_json_schema`` for a response, and
+    ``FunctionDeclaration.parameters_json_schema`` for a tool's parameters.
     """
     if isinstance(schema, dict):
         if "additionalProperties" in schema:
@@ -83,6 +93,15 @@ def _has_additional_properties(schema: Any) -> bool:
     if isinstance(schema, list):
         return any(_has_additional_properties(v) for v in schema)
     return False
+
+
+def _raw_function_declaration(function: dict[str, Any], params: dict[str, Any]) -> types.FunctionDeclaration:
+    """A declaration whose parameters the SDK forwards to the server as raw JSON Schema."""
+    return types.FunctionDeclaration(
+        name=function["name"],
+        description=function.get("description", ""),
+        parameters_json_schema=params,
+    )
 
 
 def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) -> list[types.Tool]:
@@ -107,13 +126,7 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
         params: dict[str, Any] = function.get("parameters") or {}
 
         if _has_json_schema_refs(params) or _has_type_unions(params):
-            function_declarations.append(
-                types.FunctionDeclaration(
-                    name=function["name"],
-                    description=function.get("description", ""),
-                    parameters_json_schema=params,
-                )
-            )
+            function_declarations.append(_raw_function_declaration(function, params))
             continue
 
         properties: dict[str, dict[str, Any]] = {}
@@ -136,16 +149,47 @@ def _convert_tool_spec(tools: list[dict[str, Any] | Any], provider_name: str) ->
             "required": params.get("required", []),
         }
 
+        # An ``items`` schema is copied verbatim, so it can carry valid JSON Schema that
+        # ``types.Schema`` does not model (``exclusiveMinimum``, ``const``, ...) or misserializes
+        # (``additionalProperties``). Such a schema goes out raw, as one with a ``$ref`` does. Any
+        # other validation error is the schema's own and is refused here, before the request.
+        if any(_has_additional_properties(prop.get("items")) for prop in properties.values()):
+            function_declarations.append(_raw_function_declaration(function, params))
+            continue
+        try:
+            parameters = types.Schema(**parameters_dict)
+        except ValidationError as exc:
+            if any(error["type"] != "extra_forbidden" for error in exc.errors()):
+                msg = f"Tool {function['name']!r} has an invalid parameters schema: {exc.errors()[0]['msg']}"
+                raise InvalidRequestError(msg, provider_name=provider_name) from exc
+            function_declarations.append(_raw_function_declaration(function, params))
+            continue
+
         function_declarations.append(
             types.FunctionDeclaration(
                 name=function["name"],
                 description=function.get("description", ""),
-                parameters=types.Schema(**parameters_dict),
+                parameters=parameters,
             )
         )
     if function_declarations:
         converted_tools.append(types.Tool(function_declarations=function_declarations))
     return converted_tools
+
+
+def _enable_server_side_tool_invocations(
+    tools: list[types.Tool], tool_config: types.ToolConfig | None
+) -> types.ToolConfig | None:
+    """Return ``tool_config`` with server-side tool invocations on when built-in tools sit beside functions.
+
+    Gemini answers a request that combines built-in tools (such as ``google_search`` or ``code_execution``)
+    with function declarations with a 400 unless ``include_server_side_tool_invocations`` is set.
+    """
+    has_functions = any(tool.function_declarations for tool in tools)
+    has_built_in = any(tool.model_dump(exclude_none=True, exclude={"function_declarations"}) for tool in tools)
+    if not (has_functions and has_built_in):
+        return tool_config
+    return (tool_config or types.ToolConfig()).model_copy(update={"include_server_side_tool_invocations": True})
 
 
 def _convert_tool_choice(tool_choice: str | dict[str, Any], provider_name: str) -> types.ToolConfig:
@@ -319,6 +363,121 @@ def _extract_google_thought_signature(container: dict[str, Any], provider_name: 
     return signature
 
 
+_SYNTHETIC_CODE_EXECUTION_ID_PREFIX = "code_exec_"
+_SYNTHETIC_TOOL_CALL_ID_PREFIX = "call_anyllm_"
+
+
+def _tool_call_id(function_call: types.FunctionCall, response_id: str | None, index: int) -> str:
+    """The id Gemini issued for a function call, else one minted from the response so converting it again repeats it."""
+    if function_call.id:
+        return function_call.id
+    if response_id:
+        return f"{_SYNTHETIC_TOOL_CALL_ID_PREFIX}{response_id}_{index}"
+    return f"{_SYNTHETIC_TOOL_CALL_ID_PREFIX}{uuid4().hex}"
+
+
+@dataclass
+class CodeExecutionState:
+    """Pairs code execution results and outputs with their code across the parts of one response or stream."""
+
+    executable_code_count: int = 0
+    last_executable_code_id: str | None = None
+    # The code or result that the next inline output (a chart, a file) was produced by.
+    last_output_owner_id: str | None = None
+
+    def next_id(self) -> str:
+        return f"{_SYNTHETIC_CODE_EXECUTION_ID_PREFIX}{self.executable_code_count}"
+
+
+def _enum_value(value: Any, default: str) -> str:
+    if value is None:
+        return default
+    return str(value.value) if isinstance(value, Enum) else str(value)
+
+
+def _code_execution_item(part: types.Part, state: CodeExecutionState) -> dict[str, Any] | None:
+    """Map a code execution part, or inline data produced after code ran, to its extra_content item."""
+    if isinstance(executable_code := part.executable_code, types.ExecutableCode):
+        code_id = executable_code.id or state.next_id()
+        state.executable_code_count += 1
+        state.last_executable_code_id = code_id
+        state.last_output_owner_id = code_id
+        return {
+            "type": "executable_code",
+            "id": code_id,
+            "language": _enum_value(executable_code.language, "LANGUAGE_UNSPECIFIED"),
+            "code": executable_code.code or "",
+        }
+    if isinstance(result := part.code_execution_result, types.CodeExecutionResult):
+        result_id = result.id or state.last_executable_code_id or state.next_id()
+        if state.executable_code_count:
+            state.last_output_owner_id = result_id
+        return {
+            "type": "code_execution_result",
+            "id": result_id,
+            "outcome": _enum_value(result.outcome, "OUTCOME_UNSPECIFIED"),
+            "output": result.output or "",
+        }
+    blob = part.inline_data
+    if state.last_output_owner_id is not None and isinstance(blob, types.Blob) and isinstance(blob.data, bytes):
+        return {
+            "type": "code_execution_output",
+            "id": state.last_output_owner_id,
+            "mime_type": blob.mime_type or "",
+            "data": base64.b64encode(blob.data).decode("ascii"),
+        }
+    return None
+
+
+def _merge_code_execution(
+    extra_content: dict[str, Any] | None, code_execution: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Add code execution items under extra_content["google"], beside any thought_signature."""
+    if not code_execution:
+        return extra_content
+    merged = dict(extra_content or {})
+    merged["google"] = {**merged.get("google", {}), "code_execution": code_execution}
+    return merged
+
+
+def _code_execution_parts(message: dict[str, Any]) -> list[types.Part]:
+    """Rebuild the code execution parts an assistant message carries in extra_content, skipping malformed items."""
+    extra_content = message.get("extra_content")
+    if not isinstance(extra_content, dict) or not isinstance(google_extra := extra_content.get("google"), dict):
+        return []
+    items = google_extra.get("code_execution")
+    if not isinstance(items, list):
+        return []
+    parts: list[types.Part] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("id")
+        # A synthesized id was never issued by Gemini, so it is not sent back.
+        if not isinstance(item_id, str) or item_id.startswith(_SYNTHETIC_CODE_EXECUTION_ID_PREFIX):
+            item_id = None
+        try:
+            if item.get("type") == "executable_code":
+                parts.append(
+                    types.Part(
+                        executable_code=types.ExecutableCode(
+                            code=item.get("code"), language=item.get("language"), id=item_id
+                        )
+                    )
+                )
+            elif item.get("type") == "code_execution_result":
+                parts.append(
+                    types.Part(
+                        code_execution_result=types.CodeExecutionResult(
+                            outcome=item.get("outcome"), output=item.get("output"), id=item_id
+                        )
+                    )
+                )
+        except ValidationError:
+            logger.debug("Skipping malformed Gemini code execution item: %r", item)
+    return parts
+
+
 def _pending_function_response_parts(contents: list[types.Content]) -> list[types.Part] | None:
     """Return the parts of a trailing user turn made only of function responses, else None."""
     if not contents:
@@ -331,20 +490,49 @@ def _pending_function_response_parts(contents: list[types.Content]) -> list[type
     return last.parts
 
 
+def _system_text(content: Any) -> str:
+    """The text of a system message, whose content may be a string or a list of text parts."""
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return str(content or "")
+
+
+def _supports_multimodal_function_responses(model: str | None) -> bool:
+    """Whether the model reads media parts of a function response; Gemini 2.5 and older reject them with a 400."""
+    match = _GEMINI_MAJOR_VERSION.search(model or "")
+    return match is not None and int(match.group(1)) >= 3
+
+
 def _convert_messages(
-    messages: list[dict[str, Any]], provider_name: str = "gemini"
+    messages: list[dict[str, Any]], provider_name: str = "gemini", model: str | None = None
 ) -> tuple[list[types.Content], str | None]:
-    """Convert messages to Google GenAI format."""
+    """Convert messages to Google GenAI format.
+
+    ``model`` decides whether media in tool results is sent as function response parts.
+    """
+    multimodal_tool_results = _supports_multimodal_function_responses(model)
     formatted_messages = []
     system_instruction = None
     tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
+    # An id any-llm minted was never issued by Gemini, and one shared by several calls (as ids from
+    # older any-llm versions are) pairs ambiguously, so neither is sent back.
+    id_counts = Counter(
+        tool_call.get("id")
+        for message in messages
+        if message["role"] == "assistant"
+        for tool_call in message.get("tool_calls") or []
+    )
+    call_order: dict[str, int] = {}  # tool_call id -> position among the latest model turn's calls
+    sent_call_ids: set[str] = set()  # ids sent on the latest model turn's calls
+    pending_order: list[int] = []  # call positions of the results in the pending user turn
 
     for message in messages:
         if message["role"] in ("system", "developer"):
-            if system_instruction is None:
-                system_instruction = message["content"]
-            else:
-                system_instruction += f"\n{message['content']}"
+            # Gemini has a single system_instruction; OpenAI's developer role is the same instruction channel.
+            text = _system_text(message["content"])
+            system_instruction = text if system_instruction is None else f"{system_instruction}\n{text}"
         elif message["role"] == "user":
             if isinstance(message["content"], str):
                 parts = [types.Part.from_text(text=message["content"])]
@@ -363,11 +551,12 @@ def _convert_messages(
                         logger.debug("Skipping unsupported Gemini content block type: %s", content.get("type"))
             formatted_messages.append(types.Content(role="user", parts=parts))
         elif message["role"] == "assistant":
-            parts = []
+            parts = _code_execution_parts(message)
             # The model's own text belongs in its turn, ahead of any function calls it made.
             content = message.get("content")
             has_text = isinstance(content, str) and content
-            if has_text or not message.get("tool_calls"):
+            # Code execution parts already give the turn content, so it needs no empty text part.
+            if has_text or not (parts or message.get("tool_calls")):
                 parts.append(
                     types.Part(
                         text=content,
@@ -377,11 +566,18 @@ def _convert_messages(
                         ),
                     )
                 )
+            call_order = {}
+            sent_call_ids = set()
             if message.get("tool_calls"):
                 for i, tool_call in enumerate(message["tool_calls"]):
                     function_call = tool_call["function"]
+                    sent_id = None
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
+                        call_order.setdefault(tool_call_id, i)
+                        if id_counts[tool_call_id] == 1 and not tool_call_id.startswith(_SYNTHETIC_TOOL_CALL_ID_PREFIX):
+                            sent_id = tool_call_id
+                            sent_call_ids.add(tool_call_id)
                     arguments = function_call.get("arguments")
                     if isinstance(arguments, (str, bytes, bytearray)) and arguments:
                         try:
@@ -404,26 +600,43 @@ def _convert_messages(
 
                     parts.append(
                         types.Part(
-                            function_call=types.FunctionCall(name=function_call["name"], args=args),
+                            function_call=types.FunctionCall(id=sent_id, name=function_call["name"], args=args),
                             thought_signature=cast("bytes | None", thought_signature),
                         )
                     )
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
-            name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
+            tool_call_id = message.get("tool_call_id") or ""
+            name = message.get("name") or tool_names.get(tool_call_id, "unknown")
             content = message["content"]
             if isinstance(content, (str, bytes, bytearray)):
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
-            part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
+            media: list[types.FunctionResponsePart] = []
+            if multimodal_tool_results and isinstance(content, list):
+                content, media = _extract_function_response_media(content, provider_name)
+            # Gemini 3 maps each result to its call by id; an id matching no call it was sent would not pair.
+            part = types.Part(
+                function_response=types.FunctionResponse(
+                    id=tool_call_id if tool_call_id in sent_call_ids else None,
+                    name=name,
+                    response=_normalize_tool_response(content),
+                    parts=media or None,
+                )
+            )
+            position = call_order.get(tool_call_id, len(call_order))
             # The API documents only "user" and "model" as Content roles. "function" is tolerated by
             # older models and rejected with 400 INVALID_ARGUMENT by gemini-3.5-flash-lite, 3.7-flash
             # and 3.8-flash. Results of parallel calls share one user turn, as google-genai emits them.
             if (pending := _pending_function_response_parts(formatted_messages)) is not None:
-                pending.append(part)
+                # Models that issue no ids pair results with calls by position, so results go in call order.
+                index = bisect_right(pending_order, position)
+                pending.insert(index, part)
+                pending_order.insert(index, position)
             else:
                 formatted_messages.append(types.Content(role="user", parts=[part]))
+                pending_order = [position]
 
     if not formatted_messages and isinstance(system_instruction, str):
         # Gemini refuses a request with no contents ("contents are required"), and OpenAI-style
@@ -433,10 +646,64 @@ def _convert_messages(
     return formatted_messages, system_instruction
 
 
+def _extract_function_response_media(
+    content: list[Any], provider_name: str
+) -> tuple[list[Any], list[types.FunctionResponsePart]]:
+    """Move data-URI media the API reads in a function response into parts, leaving a ``$ref`` in its place.
+
+    Inside the JSON response such media is only base64 text to the model. The ``$ref`` keeps each
+    item's position relative to the text around it. Anything else, including media given by URL
+    (which the API drops from a function response), stays in the response unchanged.
+    """
+    response: list[Any] = []
+    media: list[types.FunctionResponsePart] = []
+    for block in content:
+        data_uri = _tool_block_data_uri(block)
+        if data_uri is None or _data_uri_mime_type(data_uri) not in _FUNCTION_RESPONSE_MIME_TYPES:
+            response.append(block)
+            continue
+        field_name = "image_url.url" if block["type"] == "image_url" else "file.file_data"
+        mime_type, raw_data = _parse_data_uri(data_uri, field_name, provider_name)
+        display_name = f"attachment-{len(media) + 1}"
+        media.append(
+            types.FunctionResponsePart(
+                inline_data=types.FunctionResponseBlob(data=raw_data, mime_type=mime_type, display_name=display_name)
+            )
+        )
+        response.append({"$ref": display_name})
+    return response, media
+
+
+def _tool_block_data_uri(block: Any) -> str | None:
+    if not isinstance(block, dict):
+        return None
+    if block.get("type") == "image_url":
+        source, key = block.get("image_url"), "url"
+    elif block.get("type") == "file":
+        source, key = block.get("file"), "file_data"
+    else:
+        return None
+    value = source.get(key) if isinstance(source, dict) else None
+    return value if isinstance(value, str) and value.startswith("data:") else None
+
+
+def _data_uri_mime_type(data_uri: str) -> str:
+    return data_uri[5:].split(",", 1)[0].split(";", 1)[0].lower()
+
+
 def _normalize_tool_response(response: Any) -> dict[str, Any]:
     if isinstance(response, dict):
         return response
     return {"result": response}
+
+
+def _tokens_by_modality(*count_lists: list[types.ModalityTokenCount] | None) -> dict[types.MediaModality, int]:
+    totals: dict[types.MediaModality, int] = {}
+    for counts in count_lists:
+        for count in counts or []:
+            if count.modality is not None and count.token_count:
+                totals[count.modality] = totals.get(count.modality, 0) + count.token_count
+    return totals
 
 
 def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, Any]:
@@ -445,7 +712,10 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     Gemini's ``prompt_token_count`` already includes cached tokens
     (``cached_content_token_count`` is a subset). Gemini reports tool-use prompt
     tokens and thinking tokens separately, while OpenAI includes those categories
-    in ``prompt_tokens`` and ``completion_tokens`` respectively.
+    in ``prompt_tokens`` and ``completion_tokens`` respectively. Audio and image
+    output tokens stay inside ``completion_tokens`` and are broken out in its details;
+    audio input tokens are broken out of ``prompt_tokens`` the same way, since Gemini
+    prices audio input above text.
 
     Reference: https://ai.google.dev/api/generate-content#UsageMetadata
     """
@@ -457,10 +727,20 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
         "completion_tokens": (metadata.candidates_token_count or 0) + (metadata.thoughts_token_count or 0),
         "total_tokens": metadata.total_token_count or 0,
     }
-    if metadata.thoughts_token_count:
-        usage["completion_tokens_details"] = CompletionTokensDetails(reasoning_tokens=metadata.thoughts_token_count)
-    if metadata.cached_content_token_count:
-        usage["prompt_tokens_details"] = PromptTokensDetails(cached_tokens=metadata.cached_content_token_count)
+    output_modalities = _tokens_by_modality(metadata.candidates_tokens_details)
+    audio_tokens = output_modalities.get(types.MediaModality.AUDIO)
+    image_tokens = output_modalities.get(types.MediaModality.IMAGE)
+    if metadata.thoughts_token_count or audio_tokens or image_tokens:
+        usage["completion_tokens_details"] = CompletionTokensDetails(
+            reasoning_tokens=metadata.thoughts_token_count, audio_tokens=audio_tokens, image_tokens=image_tokens
+        )
+    input_audio_tokens = _tokens_by_modality(
+        metadata.prompt_tokens_details, metadata.tool_use_prompt_tokens_details
+    ).get(types.MediaModality.AUDIO)
+    if metadata.cached_content_token_count or input_audio_tokens:
+        usage["prompt_tokens_details"] = PromptTokensDetails(
+            cached_tokens=metadata.cached_content_token_count, audio_tokens=input_audio_tokens
+        )
     return usage
 
 
@@ -634,6 +914,8 @@ def _convert_response_to_response_dict(
         # Gemini 3 signs the last non-function-call part of a text answer. It rides message.extra_content,
         # the same spelling Google's OpenAI-compatible endpoint uses.
         message_extra_content = None
+        code_execution: list[dict[str, Any]] = []
+        code_execution_state = CodeExecutionState()
         parts = candidate.content.parts if candidate.content else None
 
         for part in parts or []:
@@ -646,7 +928,7 @@ def _convert_response_to_response_dict(
                         args_dict[key] = value
 
                 tool_call_dict: dict[str, Any] = {
-                    "id": f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                    "id": _tool_call_id(function_call, response.response_id, len(tool_calls_list)),
                     "function": {
                         "name": function_call.name,
                         "arguments": json.dumps(args_dict),
@@ -664,12 +946,15 @@ def _convert_response_to_response_dict(
                     images.append(image)
                 if audio_blob := _inline_audio_blob(part):
                     audio_blobs.append(audio_blob)
+                if code_execution_item := _code_execution_item(part, code_execution_state):
+                    code_execution.append(code_execution_item)
                 # An empty text part is still an answer: Gemini 3 answers a conversation
                 # that ends on an assistant turn with "" and STOP.
                 if part.text is not None:
                     text_content = (text_content or "") + part.text
                 message_extra_content = _thought_signature_extra_content(part) or message_extra_content
 
+        message_extra_content = _merge_code_execution(message_extra_content, code_execution)
         audio = _inline_data_audio(audio_blobs, text_content or "", playable=True)
 
         # Truncated or filtered responses produce a choice even without content or tool
@@ -680,6 +965,7 @@ def _convert_response_to_response_dict(
             or text_content is not None
             or images
             or audio
+            or code_execution
             or mapped_finish_reason in ("length", "content_filter")
         ):
             choices.append(
@@ -757,6 +1043,7 @@ def _create_openai_embedding_response_from_google(
 def _create_openai_chunk_from_google_chunk(
     response: types.GenerateContentResponse,
     tool_call_counter: list[int] | None = None,
+    code_execution_state: CodeExecutionState | None = None,
 ) -> ChatCompletionChunk:
     """Convert a Google GenerateContentResponse to an OpenAI ChatCompletionChunk.
 
@@ -764,20 +1051,24 @@ def _create_openai_chunk_from_google_chunk(
         response: The Google GenerateContentResponse streaming chunk.
         tool_call_counter: Optional single-element list holding the number of tool
             calls already emitted earlier in the same stream. This should be created
-            once per stream and passed in by the caller so that ``index`` (and the
-            generated tool call ``id``) stay stable and unique across chunks, rather
-            than restarting at 0 for every chunk.
+            once per stream and passed in by the caller so that ``index`` stays stable
+            and unique across chunks, rather than restarting at 0 for every chunk.
+        code_execution_state: Optional per-stream state, like ``tool_call_counter``, so a
+            code execution result in a later chunk pairs with the code emitted before it.
     """
 
     candidate = response.candidates[0] if response.candidates else None
 
     if tool_call_counter is None:
         tool_call_counter = [0]
+    if code_execution_state is None:
+        code_execution_state = CodeExecutionState()
 
     content = ""
     reasoning_content = ""
     tool_calls_list: list[ChoiceDeltaToolCall] = []
     message_extra_content = None
+    code_execution: list[dict[str, Any]] = []
     images: list[dict[str, Any]] = []
     audio_blobs: list[types.Blob] = []
 
@@ -804,7 +1095,7 @@ def _create_openai_chunk_from_google_chunk(
             tool_calls_list.append(
                 ChoiceDeltaToolCall(
                     index=tool_call_index,
-                    id=f"call_{hash(function_call.name)}_{tool_call_index}",
+                    id=_tool_call_id(function_call, response.response_id, tool_call_index),
                     type="function",
                     function=ChoiceDeltaToolCallFunction(
                         name=function_call.name,
@@ -818,8 +1109,12 @@ def _create_openai_chunk_from_google_chunk(
                 images.append(image)
             if audio_blob := _inline_audio_blob(part):
                 audio_blobs.append(audio_blob)
+            if code_execution_item := _code_execution_item(part, code_execution_state):
+                code_execution.append(code_execution_item)
             content += part.text or ""  # the signed final part may carry empty text
             message_extra_content = _thought_signature_extra_content(part) or message_extra_content
+
+    message_extra_content = _merge_code_execution(message_extra_content, code_execution)
 
     audio = None
     if converted_audio := _inline_data_audio(audio_blobs, content, playable=False):
@@ -854,20 +1149,7 @@ def _create_openai_chunk_from_google_chunk(
         finish_reason=finish_reason,
     )
 
-    usage = None
-    if response.usage_metadata:
-        cached_tokens = response.usage_metadata.cached_content_token_count
-        thought_tokens = response.usage_metadata.thoughts_token_count
-        usage = CompletionUsage(
-            prompt_tokens=(response.usage_metadata.prompt_token_count or 0)
-            + (response.usage_metadata.tool_use_prompt_token_count or 0),
-            completion_tokens=(response.usage_metadata.candidates_token_count or 0) + (thought_tokens or 0),
-            total_tokens=response.usage_metadata.total_token_count or 0,
-            prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens else None,
-            completion_tokens_details=CompletionTokensDetails(reasoning_tokens=thought_tokens)
-            if thought_tokens
-            else None,
-        )
+    usage = CompletionUsage(**_extract_usage_dict(response)) if response.usage_metadata else None
 
     return ChatCompletionChunk(
         id=f"chatcmpl-{time()}",
@@ -955,17 +1237,19 @@ def _convert_google_batch_job_to_openai_batch(job: types.BatchJob) -> Batch:
 def _convert_openai_request_to_inlined_request(
     entry: dict[str, Any],
     provider_name: str = "gemini",
+    model: str | None = None,
 ) -> types.InlinedRequest:
     """Convert a single OpenAI-format JSONL entry to a Google ``InlinedRequest``.
 
     The *entry* dict follows the OpenAI batch format with ``custom_id`` and
     ``body`` (containing ``model``, ``messages``, and optional parameters).
+    A ``model`` given here overrides the body's model.
     """
     body = entry.get("body", {})
     messages = body.get("messages", [])
-    model = body.get("model", "")
+    model = model or body.get("model", "")
 
-    contents, system_instruction = _convert_messages(messages, provider_name=provider_name)
+    contents, system_instruction = _convert_messages(messages, provider_name=provider_name, model=model)
 
     config_kwargs: dict[str, Any] = {}
     if "max_tokens" in body:

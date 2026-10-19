@@ -56,8 +56,24 @@ class PromptTokensDetails(OpenAIPromptTokensDetails):
         return _dump_foreign_model(cls, value)
 
 
+class CompletionTokensDetails(OpenAICompletionTokensDetails):
+    """OpenAI completion token breakdown extended with image output tokens.
+
+    Like ``audio_tokens`` and ``reasoning_tokens``, ``image_tokens`` is a subset of ``completion_tokens``.
+    The name follows OpenAI's Images API usage (``output_tokens_details.image_tokens``).
+    """
+
+    image_tokens: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_openai_model(cls, value: Any) -> Any:
+        return _dump_foreign_model(cls, value)
+
+
 class CompletionUsage(OpenAICompletionUsage):
     prompt_tokens_details: PromptTokensDetails | None = None
+    completion_tokens_details: CompletionTokensDetails | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -220,7 +236,6 @@ class ChatCompletionChunk(OpenAIChatCompletionChunk):
 
 
 Function = OpenAIFunction
-CompletionTokensDetails = OpenAICompletionTokensDetails
 CreateEmbeddingResponse = OpenAICreateEmbeddingResponse
 Embedding = OpenAIEmbedding
 Usage = OpenAIUsage

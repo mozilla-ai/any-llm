@@ -2049,3 +2049,43 @@ async def test_amessages_without_timeout_translates_nonstreaming_guard() -> None
     message = str(exc_info.value)
     assert "timeout" in message
     assert "stream=True" in message
+
+
+_GEMINI_SIGNED_CONVERSATION: list[dict[str, Any]] = [
+    {"role": "user", "content": "Weather?"},
+    {
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "Checking.", "extra_content": {"google": {"thought_signature": "c2ln"}}},
+            {
+                "type": "tool_use",
+                "id": "call_a",
+                "name": "get_weather",
+                "input": {},
+                "extra_content": {"google": {"thought_signature": "c2ln"}},
+            },
+        ],
+    },
+    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_a", "content": "Sunny"}]},
+]
+
+
+@pytest.mark.asyncio
+async def test_amessages_strips_bridge_extra_content_from_blocks() -> None:
+    """Gemini signatures picked up through the bridge must not reach the native API, which rejects unknown fields."""
+    mock_client = Mock()
+    mock_client.messages.create = AsyncMock(return_value=_make_message(content=[TextBlock(type="text", text="Hi!")]))
+    provider = Mock(spec=BaseAnthropicProvider)
+    provider.client = mock_client
+    provider._convert_native_message_to_response = BaseAnthropicProvider._convert_native_message_to_response
+
+    params = MessagesParams(model="claude-sonnet-4-5", messages=_GEMINI_SIGNED_CONVERSATION, max_tokens=64)
+    await BaseAnthropicProvider._amessages(provider, params)
+
+    sent = mock_client.messages.create.call_args.kwargs["messages"]
+    assert sent[1]["content"] == [
+        {"type": "text", "text": "Checking."},
+        {"type": "tool_use", "id": "call_a", "name": "get_weather", "input": {}},
+    ]
+    assert sent[2] == _GEMINI_SIGNED_CONVERSATION[2]
+    assert "extra_content" in params.messages[1]["content"][0]

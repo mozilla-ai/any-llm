@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
@@ -33,7 +33,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
-from any_llm.types.image import ImageGenerationParams, ImagesResponse
+from any_llm.types.image import ImageEditParams, ImageGenerationParams, ImagesResponse
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
@@ -112,6 +112,8 @@ class BaseOpenAIProvider(AnyLLM):
     MAX_RETRIES_SUPPORT: Literal["unsupported", "native", "mapped"] = "native"
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
+    _NORMALIZES_RESPONSES: ClassVar[bool] = True
+    """Whether a Responses reply is converted to an OpenResponses ``ResponseResource``."""
 
     client: AsyncOpenAI
 
@@ -298,8 +300,8 @@ class BaseOpenAIProvider(AnyLLM):
         # layer can parse it into a ParsedResponse (do not collapse it to a ResponseResource).
         if is_structured_output_type(response_format):
             return response
-        # if it's a Response, try to convert it to a ResponseResource. If that fails, return the Response
-        if isinstance(response, Response):
+        # Normalizing providers convert a Response to a ResponseResource, falling back to the Response if that fails.
+        if isinstance(response, Response) and self._NORMALIZES_RESPONSES:
             try:
                 return ResponseResource.model_validate(response.model_dump(warnings=False))
             except ValidationError as e:
@@ -342,6 +344,17 @@ class BaseOpenAIProvider(AnyLLM):
 
         return await self.client.images.generate(  # type: ignore[no-any-return]
             model=params.model_id,
+            **api_kwargs,
+        )
+
+    @override
+    async def _aimage_edit(self, params: ImageEditParams, **kwargs: Any) -> ImagesResponse:
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+
+        return await self.client.images.edit(  # type: ignore[no-any-return]
+            model=params.model_id,
+            image=params.resolve_images(),
             **api_kwargs,
         )
 

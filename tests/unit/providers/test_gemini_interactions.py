@@ -20,6 +20,7 @@ from google.genai.interactions import (
     InteractionSseEventInteraction,
     InteractionSseEventInteractionStatus,
     InteractionStatusUpdate,
+    ModalityTokens,
     ModelOutputStep,
     Step,
     StepDelta,
@@ -173,6 +174,32 @@ def test_convert_interaction_maps_text_status_metadata_and_usage() -> None:
     assert response.usage.total_tokens == 9
     assert response.usage.input_tokens_details.cached_tokens == 1
     assert response.usage.output_tokens_details.reasoning_tokens == 3
+    assert response.usage.output_tokens_details.model_dump() == {"reasoning_tokens": 3}
+
+
+def test_convert_interaction_breaks_out_image_and_audio_output_tokens() -> None:
+    usage = Usage(
+        total_input_tokens=11,
+        total_output_tokens=1400,
+        total_thought_tokens=20,
+        output_tokens_by_modality=[
+            ModalityTokens(modality="text", tokens=10),
+            ModalityTokens(modality="image", tokens=1120),
+            ModalityTokens(modality="image", tokens=192),
+            ModalityTokens(modality="audio", tokens=78),
+            ModalityTokens(modality="video", tokens=None),
+        ],
+    )
+
+    response = convert_interaction_to_response(_interaction(usage=usage))
+
+    assert response.usage is not None
+    assert response.usage.output_tokens == 1420
+    assert response.usage.output_tokens_details.model_dump() == {
+        "reasoning_tokens": 20,
+        "image_tokens": 1312,
+        "audio_tokens": 78,
+    }
 
 
 def test_convert_interaction_preserves_explicit_zero_total_usage() -> None:

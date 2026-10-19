@@ -1,10 +1,14 @@
+import json
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 
 from any_llm import AnyLLM
 from any_llm.api import aimage_generation, image_generation
 from any_llm.constants import LLMProvider
+from any_llm.exceptions import InvalidRequestError
+from any_llm.providers.openai.openai import OpenaiProvider
 from any_llm.types.image import ImageGenerationParams, ImagesResponse
 
 
@@ -14,13 +18,13 @@ def _make_mock_images_response() -> ImagesResponse:
 
 @pytest.mark.asyncio
 async def test_aimage_generation_with_api_config() -> None:
-    mock_provider = Mock()
+    provider = OpenaiProvider(api_key="test_key")
     mock_response = _make_mock_images_response()
-    mock_provider._aimage_generation = AsyncMock(return_value=mock_response)
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create,
+        patch.object(provider, "_aimage_generation", AsyncMock(return_value=mock_response)) as mock_generate,
+    ):
         result = await aimage_generation(
             "openai:dall-e-3",
             prompt="A cat",
@@ -33,8 +37,8 @@ async def test_aimage_generation_with_api_config() -> None:
         assert call_args[1]["api_key"] == "test_key"
         assert call_args[1]["api_base"] == "https://test.example.com"
 
-        mock_provider._aimage_generation.assert_called_once()
-        params = mock_provider._aimage_generation.call_args[0][0]
+        mock_generate.assert_called_once()
+        params = mock_generate.call_args[0][0]
         assert isinstance(params, ImageGenerationParams)
         assert params.model_id == "dall-e-3"
         assert params.prompt == "A cat"
@@ -43,13 +47,13 @@ async def test_aimage_generation_with_api_config() -> None:
 
 @pytest.mark.asyncio
 async def test_aimage_generation_with_explicit_provider() -> None:
-    mock_provider = Mock()
+    provider = OpenaiProvider(api_key="test_key")
     mock_response = _make_mock_images_response()
-    mock_provider._aimage_generation = AsyncMock(return_value=mock_response)
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create,
+        patch.object(provider, "_aimage_generation", AsyncMock(return_value=mock_response)) as mock_generate,
+    ):
         result = await aimage_generation(
             "dall-e-3",
             prompt="A dog",
@@ -61,7 +65,7 @@ async def test_aimage_generation_with_explicit_provider() -> None:
         call_args = mock_create.call_args
         assert call_args[0][0] == LLMProvider.OPENAI
 
-        params = mock_provider._aimage_generation.call_args[0][0]
+        params = mock_generate.call_args[0][0]
         assert params.model_id == "dall-e-3"
         assert params.prompt == "A dog"
         assert params.size == "1024x1024"
@@ -71,13 +75,13 @@ async def test_aimage_generation_with_explicit_provider() -> None:
 
 @pytest.mark.asyncio
 async def test_aimage_generation_passes_all_params() -> None:
-    mock_provider = Mock()
+    provider = OpenaiProvider(api_key="test_key")
     mock_response = _make_mock_images_response()
-    mock_provider._aimage_generation = AsyncMock(return_value=mock_response)
 
-    with patch("any_llm.any_llm.AnyLLM.create") as mock_create:
-        mock_create.return_value = mock_provider
-
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider),
+        patch.object(provider, "_aimage_generation", AsyncMock(return_value=mock_response)) as mock_generate,
+    ):
         await aimage_generation(
             "openai:dall-e-3",
             prompt="A bird",
@@ -89,13 +93,35 @@ async def test_aimage_generation_passes_all_params() -> None:
             user="user-123",
         )
 
-        params = mock_provider._aimage_generation.call_args[0][0]
+        params = mock_generate.call_args[0][0]
         assert params.n == 2
         assert params.size == "1792x1024"
         assert params.quality == "standard"
         assert params.style == "natural"
         assert params.response_format == "b64_json"
         assert params.user == "user-123"
+
+
+@pytest.mark.asyncio
+async def test_image_generation_sends_options_beyond_its_typed_fields() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"created": 1, "data": [{"b64_json": "aW1hZ2U="}]})
+
+    provider = OpenaiProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    try:
+        await provider.aimage_generation("gpt-image-1", "A cat", quality="low", output_format="jpeg")
+    finally:
+        await provider.client.close()
+
+    assert json.loads(requests[0].content) == {
+        "model": "gpt-image-1",
+        "prompt": "A cat",
+        "quality": "low",
+        "output_format": "jpeg",
+    }
 
 
 def test_sync_image_generation_dispatches() -> None:
@@ -118,11 +144,46 @@ def test_sync_image_generation_dispatches() -> None:
 
 @pytest.mark.asyncio
 async def test_aimage_generation_unsupported_provider_raises_not_implemented() -> None:
-    params = ImageGenerationParams(model_id="some-model", prompt="A cat")
     base = Mock(spec=AnyLLM)
     base.SUPPORTS_IMAGE_GENERATION = False
     with pytest.raises(NotImplementedError, match="doesn't support image generation"):
-        await AnyLLM._aimage_generation(base, params)
+        await AnyLLM.aimage_generation(base, "some-model", "A cat")
+    base._aimage_generation.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_aimage_generation_base_raises_when_a_supporting_provider_has_no_implementation() -> None:
+    base = Mock(spec=AnyLLM)
+    with pytest.raises(NotImplementedError, match="Subclasses must implement _aimage_generation"):
+        await AnyLLM._aimage_generation(base, ImageGenerationParams(model_id="some-model", prompt="A cat"))
+
+
+@pytest.mark.asyncio
+async def test_image_generation_on_an_openai_compatible_provider_without_it_sends_nothing() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"created": 1, "data": []})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(NotImplementedError, match="doesn't support image generation"):
+            await aimage_generation("gmi:some-model", "A cat", api_key="key", client_args={"http_client": http_client})
+    finally:
+        await http_client.aclose()
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_image_generation_reports_a_misspelled_option_as_an_invalid_request() -> None:
+    provider = OpenaiProvider(api_key="key", unified_exceptions=True)
+    try:
+        with pytest.raises(InvalidRequestError, match="qualty"):
+            await provider.aimage_generation("dall-e-3", "A cat", qualty="hd")
+    finally:
+        await provider.client.close()
 
 
 def test_image_generation_params_to_api_kwargs_excludes_none() -> None:

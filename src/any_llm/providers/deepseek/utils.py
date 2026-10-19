@@ -1,5 +1,8 @@
 import json
+from collections.abc import AsyncIterator
 from typing import Any
+
+from typing_extensions import override
 
 from any_llm.types.completion import (
     ChatCompletion,
@@ -8,6 +11,7 @@ from any_llm.types.completion import (
     CompletionUsage,
     PromptTokensDetails,
 )
+from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
@@ -40,10 +44,13 @@ Please respond with a JSON object that matches the following schema:
 {json.dumps(schema, indent=2)}
 
 Return the JSON object only, no other text, do not wrap it in ```json or ```.
-
-{original_content}
 """
-        modified_messages[-1]["content"] = json_instruction
+        if isinstance(original_content, list):
+            # Content parts (an image among them) keep their shape; the instruction leads as text.
+            content: str | list[Any] = [{"type": "text", "text": json_instruction}, *original_content]
+        else:
+            content = f"{json_instruction}\n{original_content}\n"
+        modified_messages[-1] = {**modified_messages[-1], "content": content}
     else:
         msg = "Last message is not a user message"
         raise ValueError(msg)
@@ -128,3 +135,37 @@ def _inject_reasoning_extra_content(completion: ChatCompletion) -> ChatCompletio
         if reasoning is not None:
             choice.message.extra_content = {"deepseek": {"reasoning_content": reasoning.content}}
     return completion
+
+
+class ReasoningReplayStream(AsyncIterator[ChatCompletionChunk]):
+    """Stash a streamed turn's reasoning into ``extra_content`` on the chunk that finishes the choice.
+
+    DeepSeek sends ``reasoning_content`` in fragments, but it must be replayed whole (see
+    ``_reinject_reasoning_content``). The fragments pass through unchanged; the complete text is
+    added once to the choice's finishing delta, so ``ChatCompletionAccumulator`` yields the same
+    ``message.extra_content`` as a non-streamed response.
+    """
+
+    def __init__(self, stream: AsyncIterator[ChatCompletionChunk]) -> None:
+        self._stream = stream
+        self._reasoning: dict[int, list[str]] = {}
+
+    @override
+    def __aiter__(self) -> "ReasoningReplayStream":
+        return self
+
+    @override
+    async def __anext__(self) -> ChatCompletionChunk:
+        chunk = await anext(self._stream)
+        for choice in chunk.choices:
+            if choice.delta.reasoning is not None and choice.delta.reasoning.content:
+                self._reasoning.setdefault(choice.index, []).append(choice.delta.reasoning.content)
+            if choice.finish_reason is not None and (fragments := self._reasoning.pop(choice.index, None)):
+                choice.delta.extra_content = {
+                    **(choice.delta.extra_content or {}),
+                    "deepseek": {"reasoning_content": "".join(fragments)},
+                }
+        return chunk
+
+    async def aclose(self) -> None:
+        await aclose_quietly(self._stream)

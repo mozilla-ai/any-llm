@@ -173,6 +173,43 @@ def test_to_chat_completion_extracts_cached_tokens() -> None:
     }
 
 
+def test_to_chat_completion_extracts_reasoning_tokens() -> None:
+    """Test that reasoning tokens from Groq usage are extracted into completion_tokens_details."""
+    from groq.types.chat import ChatCompletion as GroqChatCompletion
+
+    from any_llm.providers.groq.utils import to_chat_completion
+
+    response = GroqChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": "openai/gpt-oss-20b",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "4"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 80,
+                "completion_tokens": 120,
+                "total_tokens": 200,
+                "completion_tokens_details": {"reasoning_tokens": 110},
+            },
+        }
+    )
+
+    result = to_chat_completion(response)
+
+    assert result.usage is not None
+    assert result.usage.completion_tokens == 120
+    assert result.usage.total_tokens == 200
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 110
+
+
 def test_to_chat_completion_without_cached_tokens() -> None:
     """Test that prompt_tokens_details is None when no cached tokens are present."""
     from groq.types.chat import ChatCompletion as GroqChatCompletion
@@ -207,6 +244,7 @@ def test_to_chat_completion_without_cached_tokens() -> None:
     assert result.usage.completion_tokens == 50
     assert result.usage.total_tokens == 150
     assert result.usage.prompt_tokens_details is None
+    assert result.usage.completion_tokens_details is None
     assert result.usage.model_extra == {}
 
 
@@ -289,6 +327,44 @@ def test_streaming_chunk_extracts_cached_tokens() -> None:
         "completion_time": 0.03,
         "total_time": 0.04,
     }
+
+
+def test_streaming_chunk_extracts_reasoning_tokens() -> None:
+    """Test that streaming chunks extract reasoning tokens from x_groq usage."""
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.utils import _create_openai_chunk_from_groq_chunk
+
+    chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "openai/gpt-oss-20b",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": "stop",
+                }
+            ],
+            "x_groq": {
+                "usage": {
+                    "prompt_tokens": 80,
+                    "completion_tokens": 120,
+                    "total_tokens": 200,
+                    "completion_tokens_details": {"reasoning_tokens": 110},
+                }
+            },
+        }
+    )
+
+    result = _create_openai_chunk_from_groq_chunk(chunk)
+
+    assert result.usage is not None
+    assert result.usage.completion_tokens == 120
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 110
 
 
 def test_streaming_chunk_without_timing_details() -> None:

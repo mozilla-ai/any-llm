@@ -1,5 +1,6 @@
 import dataclasses
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -10,8 +11,9 @@ from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.deepseek.deepseek import DeepseekProvider
-from any_llm.providers.deepseek.utils import _preprocess_messages, _reinject_reasoning_content
-from any_llm.types.completion import CompletionParams, ReasoningEffort
+from any_llm.providers.deepseek.utils import ReasoningReplayStream, _preprocess_messages, _reinject_reasoning_content
+from any_llm.types.completion import ChatCompletionChunk, ChatCompletionMessage, CompletionParams, ReasoningEffort
+from any_llm.utils.streaming import aaccumulate_chunks
 
 
 class PersonResponseFormat(BaseModel):
@@ -98,6 +100,29 @@ async def test_preprocess_messages_with_dataclass() -> None:
     assert "Generate a person" in processed_params.messages[0]["content"]
     assert "name" in processed_params.messages[0]["content"]
     assert "age" in processed_params.messages[0]["content"]
+
+
+def test_preprocess_messages_keeps_content_parts_with_structured_output() -> None:
+    image_part = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+    original = {"role": "user", "content": [{"type": "text", "text": "Who is this?"}, image_part]}
+    params = CompletionParams(model_id="deepseek-flash", messages=[original], response_format=PersonResponseFormat)
+
+    processed_params = _preprocess_messages(params)
+
+    content = processed_params.messages[0]["content"]
+    assert content[0]["type"] == "text"
+    assert "JSON object" in content[0]["text"]
+    assert content[1:] == [{"type": "text", "text": "Who is this?"}, image_part]
+    assert original["content"] == [{"type": "text", "text": "Who is this?"}, image_part]
+
+
+def test_preprocess_messages_does_not_mutate_caller_message_with_structured_output() -> None:
+    original = {"role": "user", "content": "Generate a person"}
+    params = CompletionParams(model_id="deepseek-flash", messages=[original], response_format=PersonResponseFormat)
+
+    _preprocess_messages(params)
+
+    assert original["content"] == "Generate a person"
 
 
 def test_convert_completion_response_extracts_cached_tokens() -> None:
@@ -811,3 +836,187 @@ def test_reinject_reasoning_content_handles_missing_extra_content() -> None:
     result = _reinject_reasoning_content(messages, replay_reasoning=True)
 
     assert "reasoning_content" not in result[0]
+
+
+def make_stream_chunk(
+    delta: dict[str, Any], *, index: int = 0, finish_reason: str | None = None
+) -> ChatCompletionChunk:
+    return DeepseekProvider._convert_completion_chunk_response(
+        OpenAIChatCompletionChunk.model_validate(
+            {
+                "id": "chatcmpl-stream",
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "deepseek-v4-pro",
+                "choices": [{"index": index, "delta": delta, "finish_reason": finish_reason}],
+            }
+        )
+    )
+
+
+class FakeStream:
+    def __init__(self, chunks: list[ChatCompletionChunk]) -> None:
+        self._chunks = iter(chunks)
+        self.closed = False
+
+    def __aiter__(self) -> "FakeStream":
+        return self
+
+    async def __anext__(self) -> ChatCompletionChunk:
+        try:
+            return next(self._chunks)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+async def collect(stream: AsyncIterator[ChatCompletionChunk]) -> list[ChatCompletionChunk]:
+    return [chunk async for chunk in stream]
+
+
+@pytest.mark.asyncio
+async def test_reasoning_replay_stream_stashes_full_reasoning_on_the_finishing_chunk() -> None:
+    chunks = [
+        make_stream_chunk({"role": "assistant", "reasoning_content": "I should "}),
+        make_stream_chunk({"reasoning_content": "call lookup."}),
+        make_stream_chunk({"tool_calls": [{"index": 0, "id": "call_1", "function": {"name": "lookup"}}]}),
+        make_stream_chunk({"content": ""}, finish_reason="tool_calls"),
+    ]
+
+    result = await collect(ReasoningReplayStream(FakeStream(chunks)))
+
+    assert [chunk.choices[0].delta.extra_content for chunk in result] == [
+        None,
+        None,
+        None,
+        {"deepseek": {"reasoning_content": "I should call lookup."}},
+    ]
+    assert [chunk.choices[0].delta.reasoning for chunk in result[:2]] == [
+        chunk.choices[0].delta.reasoning for chunk in chunks[:2]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reasoning_replay_stream_leaves_a_turn_without_reasoning_alone() -> None:
+    chunks = [
+        make_stream_chunk({"content": "Hi"}),
+        make_stream_chunk({"content": "!"}, finish_reason="stop"),
+    ]
+
+    result = await collect(ReasoningReplayStream(FakeStream(chunks)))
+
+    assert all(chunk.choices[0].delta.extra_content is None for chunk in result)
+
+
+@pytest.mark.asyncio
+async def test_reasoning_replay_stream_keeps_choices_apart_and_existing_extra_content() -> None:
+    finishing = make_stream_chunk({"content": ""}, index=1, finish_reason="stop")
+    finishing.choices[0].delta.extra_content = {"other": {"kept": True}}
+    chunks = [
+        make_stream_chunk({"reasoning_content": "zero"}, index=0),
+        make_stream_chunk({"reasoning_content": "one"}, index=1),
+        finishing,
+        make_stream_chunk({"content": ""}, index=0, finish_reason="stop"),
+    ]
+
+    result = await collect(ReasoningReplayStream(FakeStream(chunks)))
+
+    assert result[2].choices[0].delta.extra_content == {
+        "other": {"kept": True},
+        "deepseek": {"reasoning_content": "one"},
+    }
+    assert result[3].choices[0].delta.extra_content == {"deepseek": {"reasoning_content": "zero"}}
+
+
+@pytest.mark.asyncio
+async def test_reasoning_replay_stream_closes_the_underlying_stream() -> None:
+    source = FakeStream([])
+    stream = ReasoningReplayStream(source)
+
+    await stream.aclose()
+
+    assert source.closed
+
+
+def sse_response(events: list[dict[str, Any]]) -> httpx.Response:
+    body = "".join(f"data: {json.dumps(event)}\n\n" for event in events) + "data: [DONE]\n\n"
+    return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
+
+
+def stream_event(delta: dict[str, Any], finish_reason: str | None = None) -> dict[str, Any]:
+    return {
+        "id": "chatcmpl-stream",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "deepseek-v4-pro",
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_streamed_tool_call_turn_replays_reasoning_content() -> None:
+    requests: list[dict[str, Any]] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(json.loads(request.content))
+        if len(requests) > 1:
+            return sse_response([stream_event({"role": "assistant", "content": "Sunny."}, "stop")])
+        return sse_response(
+            [
+                stream_event({"role": "assistant", "reasoning_content": "I need "}),
+                stream_event({"reasoning_content": "the weather."}),
+                stream_event(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "weather", "arguments": '{"city":'},
+                            }
+                        ]
+                    }
+                ),
+                stream_event({"tool_calls": [{"index": 0, "function": {"arguments": ' "Paris"}'}}]}),
+                stream_event({"content": ""}, "tool_calls"),
+            ]
+        )
+
+    provider = DeepseekProvider(
+        api_key="test-key",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle_request)),
+        max_retries=0,
+    )
+    tools = [{"type": "function", "function": {"name": "weather", "parameters": {"type": "object"}}}]
+    messages: list[dict[str, Any] | ChatCompletionMessage] = [{"role": "user", "content": "Weather in Paris?"}]
+    try:
+        stream = await provider.acompletion(
+            model="deepseek-v4-pro", messages=messages, tools=tools, stream=True, reasoning_effort="low"
+        )
+        completion = await aaccumulate_chunks(stream)
+
+        message = completion.choices[0].message
+        assert message.extra_content == {"deepseek": {"reasoning_content": "I need the weather."}}
+        messages.append(message)
+        messages.append({"role": "tool", "tool_call_id": "call_1", "content": "sunny"})
+
+        second_turn = await aaccumulate_chunks(
+            await provider.acompletion(
+                model="deepseek-v4-pro", messages=messages, tools=tools, stream=True, reasoning_effort="low"
+            )
+        )
+        assert second_turn.choices[0].message.content == "Sunny."
+    finally:
+        await provider.client.close()
+
+    for body in requests:
+        assert body["thinking"] == {"type": "enabled"}
+        assert body["reasoning_effort"] == "low"
+    replayed = requests[1]["messages"][1]
+    assert replayed["reasoning_content"] == "I need the weather."
+    assert replayed["tool_calls"][0]["function"] == {"name": "weather", "arguments": '{"city": "Paris"}'}
+    assert "extra_content" not in replayed
+    assert "extra_content" not in replayed["tool_calls"][0]

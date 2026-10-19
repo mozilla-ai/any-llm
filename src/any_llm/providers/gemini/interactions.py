@@ -66,6 +66,17 @@ def _map_status(status: object) -> ResponseStatus:
     return _STATUS_MAP.get(str(status), "in_progress")
 
 
+def _output_tokens_details(usage: Usage, reasoning_tokens: int) -> OutputTokensDetails:
+    details: dict[str, int] = {"reasoning_tokens": reasoning_tokens}
+    for count in usage.output_tokens_by_modality or []:
+        if count.modality in ("audio", "image") and count.tokens:
+            key = f"{count.modality}_tokens"
+            details[key] = details.get(key, 0) + count.tokens
+    # OpenAI's Responses usage types only reasoning_tokens; the model allows extras, and image_tokens
+    # matches the name OpenAI's Images API uses for output_tokens_details.
+    return OutputTokensDetails.model_validate(details)
+
+
 def _convert_usage(usage: Usage | None) -> ResponseUsage | None:
     if usage is None:
         return None
@@ -82,7 +93,7 @@ def _convert_usage(usage: Usage | None) -> ResponseUsage | None:
             {"cached_tokens": usage.total_cached_tokens or 0, "cache_write_tokens": 0}
         ),
         output_tokens=output_tokens,
-        output_tokens_details=OutputTokensDetails(reasoning_tokens=reasoning_tokens),
+        output_tokens_details=_output_tokens_details(usage, reasoning_tokens),
         total_tokens=usage.total_tokens if usage.total_tokens is not None else input_tokens + output_tokens,
     )
 

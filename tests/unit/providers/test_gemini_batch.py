@@ -1,12 +1,15 @@
 import json
 import tempfile
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
 from any_llm.exceptions import BatchNotCompleteError
+
+if TYPE_CHECKING:
+    from google.genai import types
 
 
 def _make_mock_batch_job(
@@ -270,6 +273,33 @@ def test_convert_openai_request_to_inlined_request_basic() -> None:
     assert result.metadata == {"custom_id": "req-1"}
     assert result.config is not None
     assert result.config.max_output_tokens == 100
+
+
+def test_convert_openai_request_sends_tool_result_images_as_parts_for_the_model() -> None:
+    pytest.importorskip("google.genai")
+    from any_llm.providers.gemini.utils import _convert_openai_request_to_inlined_request
+
+    tool_call = {"id": "c1", "type": "function", "function": {"name": "take_screenshot", "arguments": "{}"}}
+    image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
+    entry = {
+        "custom_id": "req-1",
+        "body": {
+            "model": "gemini-3.5-flash",
+            "messages": [
+                {"role": "assistant", "tool_calls": [tool_call]},
+                {"role": "tool", "tool_call_id": "c1", "content": [image]},
+            ],
+        },
+    }
+
+    result = _convert_openai_request_to_inlined_request(entry)
+
+    contents = cast("list[types.Content]", result.contents)
+    assert contents[1].parts is not None
+    function_response = contents[1].parts[0].function_response
+    assert function_response is not None
+    assert function_response.response == {"result": [{"$ref": "attachment-1"}]}
+    assert function_response.parts is not None
 
 
 def test_convert_openai_request_with_system_message() -> None:
@@ -964,6 +994,39 @@ async def test_acreate_batch_model_override_applies_to_requests() -> None:
         import os
 
         os.unlink(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("body_model", "model_override", "expect_media_parts"),
+    [("gemini-2.5-flash", "gemini-3.5-flash", True), ("gemini-3.5-flash", "gemini-2.5-flash", False)],
+)
+def test_convert_openai_request_converts_tool_results_for_the_override_model(
+    body_model: str, model_override: str, expect_media_parts: bool
+) -> None:
+    pytest.importorskip("google.genai")
+    from any_llm.providers.gemini.utils import _convert_openai_request_to_inlined_request
+
+    tool_call = {"id": "c1", "type": "function", "function": {"name": "take_screenshot", "arguments": "{}"}}
+    image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}
+    entry = {
+        "custom_id": "req-1",
+        "body": {
+            "model": body_model,
+            "messages": [
+                {"role": "assistant", "tool_calls": [tool_call]},
+                {"role": "tool", "tool_call_id": "c1", "content": [image]},
+            ],
+        },
+    }
+
+    result = _convert_openai_request_to_inlined_request(entry, model=model_override)
+
+    assert result.model == model_override
+    contents = cast("list[types.Content]", result.contents)
+    assert contents[1].parts is not None
+    function_response = contents[1].parts[0].function_response
+    assert function_response is not None
+    assert (function_response.parts is not None) is expect_media_parts
 
 
 @pytest.mark.asyncio

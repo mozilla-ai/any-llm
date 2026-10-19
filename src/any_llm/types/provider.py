@@ -26,6 +26,7 @@ class ProviderMetadata(BaseModel):
     messages_native: bool = False
     batch_completion: bool
     image_generation: bool = False
+    image_edit: bool = False
     audio_transcription: bool = False
     audio_speech: bool = False
     rerank: bool = False

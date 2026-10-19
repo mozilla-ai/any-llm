@@ -30,7 +30,7 @@ from any_llm.types.completion import (
     ReasoningEffort,
 )
 from any_llm.types.decide import Question, QuestionsInput
-from any_llm.types.image import ImageGenerationParams, ImagesResponse
+from any_llm.types.image import ImageEditParams, ImageGenerationParams, ImageInput, ImagesResponse
 from any_llm.types.messages import (
     MessageDelta,
     MessageDeltaEvent,
@@ -128,6 +128,9 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_IMAGE_GENERATION: bool = False
     """Image Generation API (e.g., OpenAI DALL-E)"""
 
+    SUPPORTS_IMAGE_EDIT: bool = False
+    """Image Edit API (e.g., OpenAI gpt-image)"""
+
     SUPPORTS_AUDIO_TRANSCRIPTION: bool = False
     """Audio Transcription API (e.g., OpenAI Whisper)"""
 
@@ -163,6 +166,9 @@ class AnyLLM(FilesMixin, ABC):
 
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
+
+    _READS_CACHE_CONTROL_SIDE_CHANNEL: ClassVar[bool] = False
+    """Whether the Messages bridge should pass ``cache_control`` breakpoints in ``extra_content``."""
 
     TIMEOUT_SUPPORT: Literal["unsupported", "native", "mapped"] = "unsupported"
     """How the provider honors a per-request ``timeout`` (in seconds).
@@ -619,6 +625,7 @@ class AnyLLM(FilesMixin, ABC):
             list_models=cls.SUPPORTS_LIST_MODELS,
             batch_completion=cls.SUPPORTS_BATCH,
             image_generation=cls.SUPPORTS_IMAGE_GENERATION,
+            image_edit=cls.SUPPORTS_IMAGE_EDIT,
             audio_transcription=cls.SUPPORTS_AUDIO_TRANSCRIPTION,
             audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
             rerank=cls.SUPPORTS_RERANK,
@@ -1110,13 +1117,21 @@ class AnyLLM(FilesMixin, ABC):
             Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
-            ValueError: If `output_format` is combined with `stream=True` for a provider that
-                does not support streaming structured output.
+            ValueError: If an `output_format` that names a format is combined with `stream=True`
+                for a provider that does not support streaming structured output.
             NotImplementedError: If `container`, `context_management`, or `betas` is used
                 with a provider that has no native Anthropic Messages API.
 
         """
-        if output_format is not None and stream and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING:
+        # An output_config that names no format (effort alone) asks for no structured output,
+        # so there is nothing a stream could fail to honour.
+        names_format = not isinstance(output_format, dict) or "format" in normalize_output_config(output_format)
+        if (
+            output_format is not None
+            and stream
+            and names_format
+            and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING
+        ):
             msg = "stream is not supported for output_format"
             raise ValueError(msg)
 
@@ -1186,7 +1201,9 @@ class AnyLLM(FilesMixin, ABC):
             split_cached_input_tokens,
         )
 
-        completion_kwargs = messages_params_to_completion_params(params)
+        completion_kwargs = messages_params_to_completion_params(
+            params, cache_breakpoints=self._READS_CACHE_CONTROL_SIDE_CHANNEL
+        )
         completion_params = CompletionParams(**completion_kwargs)
         try:
             result = await self._acompletion(completion_params, **kwargs)
@@ -1398,7 +1415,7 @@ class AnyLLM(FilesMixin, ABC):
 
         This implements the OpenResponses specification and returns either
         `openresponses_types.ResponseResource` (for OpenResponses-compliant providers)
-        or `openai.types.responses.Response` (for providers using OpenAI's native API).
+        or `openai.types.responses.Response` (for providers using OpenAI's native API, including `openai`).
         If `stream=True`, an iterator of streaming event dicts is returned.
 
         Args:
@@ -1448,7 +1465,7 @@ class AnyLLM(FilesMixin, ABC):
 
         Returns:
             Either a `ResponseResource` object (OpenResponses-compliant providers),
-            a `Response` object (non-compliant providers), a `ParsedResponse` (when a
+            a `Response` object (OpenAI's native API, including `openai`), a `ParsedResponse` (when a
             structured `response_format` type is given), or an iterator of
             `ResponseStreamEvent` (streaming).
 
@@ -1549,26 +1566,111 @@ class AnyLLM(FilesMixin, ABC):
         return run_async_in_sync(self.aimage_generation(model, prompt, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def aimage_generation(self, model: str, prompt: str, **kwargs: Any) -> ImagesResponse:
+    async def aimage_generation(
+        self,
+        model: str,
+        prompt: str,
+        *,
+        n: int | None = None,
+        size: str | None = None,
+        quality: str | None = None,
+        style: str | None = None,
+        response_format: Literal["url", "b64_json"] | None = None,
+        user: str | None = None,
+        **kwargs: Any,
+    ) -> ImagesResponse:
         """Create an image asynchronously.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='dall-e-3' for LLMProvider.OPENAI).
             prompt: A text description of the desired image(s).
-            **kwargs: Additional parameters (n, size, quality, style, response_format, user).
+            n: Number of images to generate.
+            size: Size of the generated images (e.g., '1024x1024').
+            quality: Quality of the generated images (e.g., 'standard', 'hd', 'low', 'high').
+            style: Style of the generated images ('vivid' or 'natural').
+            response_format: Format of the generated images ('url' or 'b64_json').
+            user: Unique identifier for the end user.
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
             The image generation response from the provider.
 
         """
-        params = ImageGenerationParams(model_id=model, prompt=prompt, **kwargs)
-        return await self._aimage_generation(params)
-
-    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
         if not self.SUPPORTS_IMAGE_GENERATION:
             msg = "Provider doesn't support image generation."
             raise NotImplementedError(msg)
+        params = ImageGenerationParams(
+            model_id=model,
+            prompt=prompt,
+            n=n,
+            size=size,
+            quality=quality,
+            style=style,
+            response_format=response_format,
+            user=user,
+        )
+        return await self._aimage_generation(params, **kwargs)
+
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
         msg = "Subclasses must implement _aimage_generation method"
+        raise NotImplementedError(msg)
+
+    def _image_edit(self, model: str, image: ImageInput, prompt: str, **kwargs: Any) -> ImagesResponse:
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(
+            self.aimage_edit(model, image, prompt, **kwargs), allow_running_loop=allow_running_loop
+        )
+
+    @handle_exceptions()
+    async def aimage_edit(
+        self,
+        model: str,
+        image: ImageInput,
+        prompt: str,
+        *,
+        n: int | None = None,
+        size: str | None = None,
+        quality: str | None = None,
+        response_format: Literal["url", "b64_json"] | None = None,
+        user: str | None = None,
+        **kwargs: Any,
+    ) -> ImagesResponse:
+        """Edit or extend one or more images asynchronously.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., model='gpt-image-1' for LLMProvider.OPENAI).
+            image: The image to edit, or a list of images. Each is bytes, a path, a readable binary
+                file object, or a ``(filename, content, content_type)`` tuple. PNG, JPEG and WEBP
+                bytes are uploaded under their content type.
+            prompt: A text description of the desired image(s).
+            n: Number of images to generate.
+            size: Size of the generated images (e.g., '1024x1024').
+            quality: Quality of the generated images (e.g., 'low', 'medium', 'high').
+            response_format: Format of the generated images ('url' or 'b64_json').
+            user: Unique identifier for the end user.
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
+
+        Returns:
+            The image edit response from the provider.
+
+        """
+        if not self.SUPPORTS_IMAGE_EDIT:
+            msg = "Provider doesn't support image edit."
+            raise NotImplementedError(msg)
+        params = ImageEditParams(
+            model_id=model,
+            image=image,
+            prompt=prompt,
+            n=n,
+            size=size,
+            quality=quality,
+            response_format=response_format,
+            user=user,
+        )
+        return await self._aimage_edit(params, **kwargs)
+
+    async def _aimage_edit(self, params: ImageEditParams, **kwargs: Any) -> ImagesResponse:
+        msg = "Subclasses must implement _aimage_edit method"
         raise NotImplementedError(msg)
 
     def _transcription(self, model: str, file: AudioInput, **kwargs: Any) -> Transcription:
@@ -1580,27 +1682,56 @@ class AnyLLM(FilesMixin, ABC):
         return run_async_in_sync(self.atranscription(model, file, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def atranscription(self, model: str, file: AudioInput, **kwargs: Any) -> Transcription:
+    async def atranscription(
+        self,
+        model: str,
+        file: AudioInput,
+        *,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        language: str | None = None,
+        prompt: str | None = None,
+        response_format: Literal["json", "text", "srt", "verbose_json", "vtt"] | None = None,
+        temperature: float | None = None,
+        timestamp_granularities: list[Literal["word", "segment"]] | None = None,
+        **kwargs: Any,
+    ) -> Transcription:
         """Transcribe audio asynchronously.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='whisper-1' for LLMProvider.OPENAI).
             file: Audio to transcribe: bytes, a readable binary file object, or a path.
                 Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
-            **kwargs: Additional parameters (filename, mime_type, language, prompt, response_format,
-                temperature, timestamp_granularities). See [atranscription][any_llm.api.atranscription].
+            filename: Name to upload the audio under. See [atranscription][any_llm.api.atranscription].
+            mime_type: Content type to upload the audio under.
+            language: The language of the input audio in ISO-639-1 format.
+            prompt: Optional text to guide the model's style or continue a previous segment.
+            response_format: Output format: 'json', 'text', 'srt', 'verbose_json', or 'vtt'.
+            temperature: Sampling temperature, between 0 and 1.
+            timestamp_granularities: Timestamp granularities ('word' and/or 'segment').
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
             The transcription response from the provider.
 
         """
-        params = AudioTranscriptionParams(model_id=model, file=file, **kwargs)
-        return await self._atranscription(params)
-
-    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
         if not self.SUPPORTS_AUDIO_TRANSCRIPTION:
             msg = "Provider doesn't support audio transcription."
             raise NotImplementedError(msg)
+        params = AudioTranscriptionParams(
+            model_id=model,
+            file=file,
+            filename=filename,
+            mime_type=mime_type,
+            language=language,
+            prompt=prompt,
+            response_format=response_format,
+            temperature=temperature,
+            timestamp_granularities=timestamp_granularities,
+        )
+        return await self._atranscription(params, **kwargs)
+
+    async def _atranscription(self, params: AudioTranscriptionParams, **kwargs: Any) -> Transcription:
         msg = "Subclasses must implement _atranscription method"
         raise NotImplementedError(msg)
 
@@ -1619,26 +1750,46 @@ class AnyLLM(FilesMixin, ABC):
         return run_async_in_sync(self.aspeech(model, input, voice, **kwargs), allow_running_loop=allow_running_loop)
 
     @handle_exceptions()
-    async def aspeech(self, model: str, input: str, voice: str, **kwargs: Any) -> bytes:  # noqa: A002
+    async def aspeech(
+        self,
+        model: str,
+        input: str,  # noqa: A002
+        voice: str,
+        *,
+        instructions: str | None = None,
+        response_format: Literal["mp3", "opus", "aac", "flac", "wav", "pcm"] | None = None,
+        speed: float | None = None,
+        **kwargs: Any,
+    ) -> bytes:
         """Generate speech from text asynchronously.
 
         Args:
             model: Model identifier for the chosen provider (e.g., model='tts-1' for LLMProvider.OPENAI).
             input: The text to generate audio for. Maximum 4096 characters.
             voice: The voice to use for generation (e.g., 'alloy', 'echo', 'shimmer').
-            **kwargs: Additional parameters (instructions, response_format, speed).
+            instructions: Additional voice instructions (not supported by all models).
+            response_format: Output audio format: 'mp3', 'opus', 'aac', 'flac', 'wav', or 'pcm'.
+            speed: Speed of the generated audio (0.25 to 4.0). Default 1.0.
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
             The generated audio content as bytes.
 
         """
-        params = AudioSpeechParams(model_id=model, input=input, voice=voice, **kwargs)
-        return await self._aspeech(params)
-
-    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
         if not self.SUPPORTS_AUDIO_SPEECH:
             msg = "Provider doesn't support audio speech."
             raise NotImplementedError(msg)
+        params = AudioSpeechParams(
+            model_id=model,
+            input=input,
+            voice=voice,
+            instructions=instructions,
+            response_format=response_format,
+            speed=speed,
+        )
+        return await self._aspeech(params, **kwargs)
+
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
         msg = "Subclasses must implement _aspeech method"
         raise NotImplementedError(msg)
 
