@@ -304,7 +304,9 @@ class GoogleProvider(AnyLLM):
 
         kwargs.update(_convert_response_format(params.response_format))
 
-        formatted_messages, system_instruction = _convert_messages(params.messages, provider_name=provider_name)
+        formatted_messages, system_instruction = _convert_messages(
+            params.messages, provider_name=provider_name, model=params.model_id
+        )
         if system_instruction:
             kwargs["system_instruction"] = system_instruction
 

@@ -2,6 +2,7 @@ import base64
 import binascii
 import json
 import mimetypes
+import re
 from bisect import bisect_right
 from collections import Counter
 from contextlib import suppress
@@ -37,6 +38,9 @@ from any_llm.types.completion import (
 from any_llm.types.model import Model
 
 _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
+# https://ai.google.dev/gemini-api/docs/function-calling#multimodal
+_FUNCTION_RESPONSE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "application/pdf", "text/plain"})
+_GEMINI_MAJOR_VERSION = re.compile(r"(?:^|/)gemini-(\d+)")
 _GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 
@@ -285,16 +289,6 @@ def _convert_image_url_to_part(block: dict[str, Any], provider_name: str) -> typ
     return types.Part.from_uri(file_uri=url, mime_type=guessed_type or "image/jpeg")
 
 
-def _convert_tool_image_to_part(block: dict[str, Any], provider_name: str) -> types.FunctionResponsePart:
-    url = block.get("image_url", {}).get("url")
-    if not isinstance(url, str) or not url.startswith("data:"):
-        # The Gemini API ignores a file URI in a function response instead of rejecting it.
-        msg = "image URL in a tool message"
-        raise UnsupportedParameterError(msg, provider_name, "Send a tool result's image as a base64 data URI.")
-    mime_type, raw_data = _parse_data_uri(url, "image_url.url", provider_name)
-    return types.FunctionResponsePart.from_bytes(data=raw_data, mime_type=mime_type)
-
-
 def _convert_input_audio_to_part(block: dict[str, Any], provider_name: str) -> types.Part:
     """OpenAI's input_audio part: base64 data plus a format name, which Gemini spells as audio/<format>."""
     audio = block.get("input_audio")
@@ -505,10 +499,20 @@ def _system_text(content: Any) -> str:
     return str(content or "")
 
 
+def _supports_multimodal_function_responses(model: str | None) -> bool:
+    """Whether the model reads media parts of a function response; Gemini 2.5 and older reject them with a 400."""
+    match = _GEMINI_MAJOR_VERSION.search(model or "")
+    return match is not None and int(match.group(1)) >= 3
+
+
 def _convert_messages(
-    messages: list[dict[str, Any]], provider_name: str = "gemini"
+    messages: list[dict[str, Any]], provider_name: str = "gemini", model: str | None = None
 ) -> tuple[list[types.Content], str | None]:
-    """Convert messages to Google GenAI format."""
+    """Convert messages to Google GenAI format.
+
+    ``model`` decides whether media in tool results is sent as function response parts.
+    """
+    multimodal_tool_results = _supports_multimodal_function_responses(model)
     formatted_messages = []
     system_instruction = None
     tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
@@ -606,24 +610,19 @@ def _convert_messages(
             tool_call_id = message.get("tool_call_id") or ""
             name = message.get("name") or tool_names.get(tool_call_id, "unknown")
             content = message["content"]
-            images: list[types.FunctionResponsePart] = []
-            if isinstance(content, list):
-                # Gemini 3 sees an image in a function response only as one of its parts; inside the
-                # JSON response it is base64 text.
-                images = [
-                    _convert_tool_image_to_part(block, provider_name) for block in content if _is_image_url_block(block)
-                ]
-                content = [block for block in content if not _is_image_url_block(block)]
-            elif isinstance(content, (str, bytes, bytearray)):
+            if isinstance(content, (str, bytes, bytearray)):
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
+            media: list[types.FunctionResponsePart] = []
+            if multimodal_tool_results and isinstance(content, list):
+                content, media = _extract_function_response_media(content, provider_name)
             # Gemini 3 maps each result to its call by id; an id matching no call it was sent would not pair.
             part = types.Part(
                 function_response=types.FunctionResponse(
                     id=tool_call_id if tool_call_id in sent_call_ids else None,
                     name=name,
                     response=_normalize_tool_response(content),
-                    parts=images or None,
+                    parts=media or None,
                 )
             )
             position = call_order.get(tool_call_id, len(call_order))
@@ -647,8 +646,49 @@ def _convert_messages(
     return formatted_messages, system_instruction
 
 
-def _is_image_url_block(block: Any) -> bool:
-    return isinstance(block, dict) and block.get("type") == "image_url"
+def _extract_function_response_media(
+    content: list[Any], provider_name: str
+) -> tuple[list[Any], list[types.FunctionResponsePart]]:
+    """Move data-URI media the API reads in a function response into parts, leaving a ``$ref`` in its place.
+
+    Inside the JSON response such media is only base64 text to the model. The ``$ref`` keeps each
+    item's position relative to the text around it. Anything else, including media given by URL
+    (which the API drops from a function response), stays in the response unchanged.
+    """
+    response: list[Any] = []
+    media: list[types.FunctionResponsePart] = []
+    for block in content:
+        data_uri = _tool_block_data_uri(block)
+        if data_uri is None or _data_uri_mime_type(data_uri) not in _FUNCTION_RESPONSE_MIME_TYPES:
+            response.append(block)
+            continue
+        field_name = "image_url.url" if block["type"] == "image_url" else "file.file_data"
+        mime_type, raw_data = _parse_data_uri(data_uri, field_name, provider_name)
+        display_name = f"attachment-{len(media) + 1}"
+        media.append(
+            types.FunctionResponsePart(
+                inline_data=types.FunctionResponseBlob(data=raw_data, mime_type=mime_type, display_name=display_name)
+            )
+        )
+        response.append({"$ref": display_name})
+    return response, media
+
+
+def _tool_block_data_uri(block: Any) -> str | None:
+    if not isinstance(block, dict):
+        return None
+    if block.get("type") == "image_url":
+        source, key = block.get("image_url"), "url"
+    elif block.get("type") == "file":
+        source, key = block.get("file"), "file_data"
+    else:
+        return None
+    value = source.get(key) if isinstance(source, dict) else None
+    return value if isinstance(value, str) and value.startswith("data:") else None
+
+
+def _data_uri_mime_type(data_uri: str) -> str:
+    return data_uri[5:].split(",", 1)[0].split(";", 1)[0].lower()
 
 
 def _normalize_tool_response(response: Any) -> dict[str, Any]:
@@ -1207,7 +1247,7 @@ def _convert_openai_request_to_inlined_request(
     messages = body.get("messages", [])
     model = body.get("model", "")
 
-    contents, system_instruction = _convert_messages(messages, provider_name=provider_name)
+    contents, system_instruction = _convert_messages(messages, provider_name=provider_name, model=model)
 
     config_kwargs: dict[str, Any] = {}
     if "max_tokens" in body:

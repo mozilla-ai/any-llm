@@ -28,6 +28,7 @@ from any_llm.providers.gemini.utils import (
     _has_type_unions,
     _map_finish_reason,
     _pending_function_response_parts,
+    _supports_multimodal_function_responses,
 )
 from any_llm.providers.vertexai import VertexaiProvider
 from any_llm.types.completion import (
@@ -3232,10 +3233,6 @@ def test_convert_messages_parallel_tool_calls_only_first_gets_skip_sentinel() ->
         ("[]", {"result": []}),
         ([], {"result": []}),
         ([{"type": "text", "text": "ok"}], {"result": [{"type": "text", "text": "ok"}]}),
-        (
-            '[{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]',
-            {"result": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}}]},
-        ),
         ("1", {"result": 1}),
         ("not JSON", {"result": "not JSON"}),
     ],
@@ -3271,47 +3268,141 @@ def test_convert_messages_tool_response_accepts_json_or_parsed_content(
     assert function_response.parts is None
 
 
-def test_convert_messages_tool_result_images_become_function_response_parts() -> None:
-    png_b64 = base64.b64encode(TEST_IMAGE_BYTES).decode("utf-8")
-    jpeg_b64 = base64.b64encode(b"second-image").decode("utf-8")
+MULTIMODAL_TOOL_MODEL = "gemini-3.5-flash"
+
+
+def _image_block(mime_type: str, data: bytes) -> dict[str, Any]:
+    return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64.b64encode(data).decode()}"}}
+
+
+def _tool_function_response(content: Any, model: str | None = MULTIMODAL_TOOL_MODEL) -> types.FunctionResponse:
     messages: list[dict[str, Any]] = [
         {"role": "assistant", "tool_calls": [_tool_call("c1", "take_screenshot")]},
-        {
-            "role": "tool",
-            "tool_call_id": "c1",
-            "content": [
-                {"type": "text", "text": "Screenshot captured."},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png_b64}"}},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{jpeg_b64}"}},
-            ],
-        },
+        {"role": "tool", "tool_call_id": "c1", "content": content},
     ]
-
-    contents, _ = _convert_messages(messages)
-
+    contents, _ = _convert_messages(messages, model=model)
     assert contents[1].parts is not None
     function_response = contents[1].parts[0].function_response
     assert function_response is not None
-    assert function_response.response == {"result": [{"type": "text", "text": "Screenshot captured."}]}
+    return function_response
+
+
+def _media(function_response: types.FunctionResponse) -> list[tuple[str | None, str | None, bytes | None]]:
     assert function_response.parts is not None
     blobs = [part.inline_data for part in function_response.parts]
-    assert [(blob.mime_type, blob.data) for blob in blobs if blob is not None] == [
-        ("image/png", TEST_IMAGE_BYTES),
-        ("image/jpeg", b"second-image"),
+    return [(blob.display_name, blob.mime_type, blob.data) for blob in blobs if blob is not None]
+
+
+def test_convert_messages_tool_result_media_becomes_function_response_parts_in_place() -> None:
+    pdf = {"type": "file", "file": {"file_data": f"data:application/pdf;base64,{base64.b64encode(b'%PDF').decode()}"}}
+    content = [
+        {"type": "text", "text": "Login page:"},
+        _image_block("image/png", TEST_IMAGE_BYTES),
+        {"type": "text", "text": "Home page:"},
+        _image_block("image/jpeg", b"second-image"),
+        pdf,
+    ]
+
+    function_response = _tool_function_response(content)
+
+    assert function_response.response == {
+        "result": [
+            {"type": "text", "text": "Login page:"},
+            {"$ref": "attachment-1"},
+            {"type": "text", "text": "Home page:"},
+            {"$ref": "attachment-2"},
+            {"$ref": "attachment-3"},
+        ]
+    }
+    assert _media(function_response) == [
+        ("attachment-1", "image/png", TEST_IMAGE_BYTES),
+        ("attachment-2", "image/jpeg", b"second-image"),
+        ("attachment-3", "application/pdf", b"%PDF"),
     ]
 
 
-def test_convert_messages_tool_result_image_url_must_be_a_data_uri() -> None:
+def test_convert_messages_tool_result_media_in_json_string_content_is_extracted() -> None:
+    function_response = _tool_function_response(json.dumps([_image_block("image/png", TEST_IMAGE_BYTES)]))
+
+    assert function_response.response == {"result": [{"$ref": "attachment-1"}]}
+    assert _media(function_response) == [("attachment-1", "image/png", TEST_IMAGE_BYTES)]
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+        {"type": "image_url", "image_url": "data:image/png;base64,iVBORw=="},
+        {"type": "image_url", "image_url": None},
+        {"type": "image_url", "image_url": {}},
+        {"type": "image_url", "image_url": {"url": "data:image/gif;base64,R0lGOD=="}},
+        {"type": "file", "file": {"file_id": "files/abc"}},
+        {"type": "input_audio", "input_audio": {"data": "AAAA", "format": "wav"}},
+        "plain string",
+    ],
+)
+def test_convert_messages_tool_result_keeps_media_the_api_cannot_read_in_the_response(block: Any) -> None:
+    function_response = _tool_function_response([block])
+
+    assert function_response.response == {"result": [block]}
+    assert function_response.parts is None
+
+
+@pytest.mark.parametrize("model", ["gemini-2.5-flash", "gemini-flash-latest", None])
+def test_convert_messages_tool_result_media_stays_in_the_response_for_older_models(model: str | None) -> None:
+    content = [{"type": "text", "text": "Screenshot:"}, _image_block("image/png", TEST_IMAGE_BYTES)]
+
+    function_response = _tool_function_response(content, model=model)
+
+    assert function_response.response == {"result": content}
+    assert function_response.parts is None
+
+
+@pytest.mark.parametrize(
+    ("url", "match"),
+    [
+        ("data:image/png;base64,not base64!", "contains invalid base64 data"),
+        ("data:image/png,raw", "must be a base64-encoded data URI"),
+        (f"data:image/png;base64,{'A' * (28 * 1024 * 1024)}", "exceeds the 20 MB inline upload limit"),
+    ],
+)
+def test_convert_messages_tool_result_rejects_an_unusable_data_uri(url: str, match: str) -> None:
+    with pytest.raises(InvalidRequestError, match=match):
+        _tool_function_response([{"type": "image_url", "image_url": {"url": url}}])
+
+
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        ("gemini-3-flash-preview", True),
+        ("gemini-3.5-flash", True),
+        ("models/gemini-3.5-flash", True),
+        ("publishers/google/models/gemini-3.1-pro-preview", True),
+        ("gemini-10.0-pro", True),
+        ("gemini-2.5-flash", False),
+        ("gemini-1.5-pro", False),
+        ("gemini-flash-latest", False),
+        ("gemma-3-27b-it", False),
+        ("tunedModels/my-gemini-3-model", False),
+        (None, False),
+    ],
+)
+def test_supports_multimodal_function_responses(model: str | None, expected: bool) -> None:
+    assert _supports_multimodal_function_responses(model) is expected
+
+
+def test_convert_completion_params_sends_tool_result_images_as_parts_for_the_model() -> None:
     messages: list[dict[str, Any]] = [
-        {
-            "role": "tool",
-            "tool_call_id": "c1",
-            "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}],
-        },
+        {"role": "assistant", "tool_calls": [_tool_call("c1", "take_screenshot")]},
+        {"role": "tool", "tool_call_id": "c1", "content": [_image_block("image/png", TEST_IMAGE_BYTES)]},
     ]
 
-    with pytest.raises(UnsupportedParameterError, match="image URL in a tool message"):
-        _convert_messages(messages)
+    result = GoogleProvider._convert_completion_params(
+        CompletionParams(model_id=MULTIMODAL_TOOL_MODEL, messages=messages), provider_name="gemini"
+    )
+
+    function_response = result["contents"][1].parts[0].function_response
+    assert _media(function_response) == [("attachment-1", "image/png", TEST_IMAGE_BYTES)]
 
 
 def test_streaming_completion_with_tool_call_without_args() -> None:
