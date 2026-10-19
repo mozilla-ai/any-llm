@@ -31,6 +31,7 @@ class AzureopenaiProvider(OpenAIFileMethods, BaseOpenAIProvider):
     PROVIDER_NAME = "azureopenai"
     PROVIDER_DOCUMENTATION_URL = "https://learn.microsoft.com/azure/foundry/openai/api-version-lifecycle"
     SUPPORTS_RESPONSES = True
+    _MESSAGES_TOOLS_THINKING_VIA_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_IMAGE_GENERATION = True

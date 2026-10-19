@@ -13,18 +13,69 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from openai import AsyncStream
-from openai.types.responses import ResponseCompactionItem, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import (
+    ResponseCompactionItem,
+    ResponseCompletedEvent,
+    ResponseCreatedEvent,
+    ResponseError,
+    ResponseErrorEvent,
+    ResponseFailedEvent,
+    ResponseFunctionToolCall,
+    ResponseOutputItemAddedEvent,
+    ResponseOutputItemDoneEvent,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    ResponseReasoningItem,
+    ResponseReasoningSummaryPartAddedEvent,
+    ResponseReasoningSummaryTextDeltaEvent,
+    ResponseRefusalDeltaEvent,
+)
+from openai.types.responses.response_reasoning_item import Content, Summary
+from openai.types.responses.response_reasoning_summary_part_added_event import Part
+from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails, ResponseUsage
 from openresponses_types import CompactionBody, ResponseResource
 from pydantic import BaseModel
 from typing_extensions import override
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
 from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
+from any_llm.providers.openai.messages_responses import (
+    ResponsesStreamingState,
+    convert_responses_stream,
+    messages_params_to_responses_params,
+    response_stream_event_to_message_events,
+    response_to_message_response,
+)
 from any_llm.providers.openai.openai import OpenaiProvider
+from any_llm.providers.openrouter.openrouter import OpenrouterProvider
 from any_llm.providers.sambanova.sambanova import SambanovaProvider
 from any_llm.types.audio import Transcription
-from any_llm.types.completion import CompletionParams
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessage,
+    Choice,
+    ChoiceDelta,
+    ChunkChoice,
+    CompletionParams,
+    CompletionUsage,
+)
+from any_llm.types.messages import (
+    ContentBlockDeltaEvent,
+    ContentBlockStartEvent,
+    InputJSONDelta,
+    MessageDeltaEvent,
+    MessageResponse,
+    MessagesParams,
+    MessageStartEvent,
+    MessageStopEvent,
+    TextBlock,
+    TextDelta,
+    ThinkingBlock,
+    ThinkingDelta,
+    ToolUseBlock,
+)
 from any_llm.types.model import Model
 from any_llm.types.responses import ParsedResponse, Response
 from any_llm.utils.structured_output import parse_responses_output
@@ -921,10 +972,6 @@ def _make_responses_result_with_tool_call(*, with_summary: bool = True) -> Respo
     non-empty summary only when the request set ``reasoning.summary="auto"``; without
     that the reasoning item arrives with ``summary=[]`` and no ThinkingBlock.
     """
-    from openai.types.responses import ResponseFunctionToolCall, ResponseReasoningItem
-    from openai.types.responses.response_reasoning_item import Summary
-    from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails, ResponseUsage
-
     summary = [Summary(type="summary_text", text="need weather")] if with_summary else []
     reasoning = ResponseReasoningItem(
         id="rs-1",
@@ -959,9 +1006,6 @@ def _make_responses_result_with_tool_call(*, with_summary: bool = True) -> Respo
 
 def test_messages_params_to_responses_params_sets_summary_auto() -> None:
     """Thinking enabled → Responses reasoning must request summary=auto (#1432 QA)."""
-    from any_llm.providers.openai.messages_responses import messages_params_to_responses_params
-    from any_llm.types.messages import MessagesParams
-
     params = MessagesParams(
         model="gpt-5.6",
         max_tokens=128,
@@ -977,9 +1021,6 @@ def test_messages_params_to_responses_params_sets_summary_auto() -> None:
 
 def test_response_to_message_response_thinking_requires_summary_text() -> None:
     """Empty summary (live without summary=auto) → no ThinkingBlock; filled summary → ThinkingBlock."""
-    from any_llm.providers.openai.messages_responses import response_to_message_response
-    from any_llm.types.messages import ThinkingBlock, ToolUseBlock
-
     empty = response_to_message_response(_make_responses_result_with_tool_call(with_summary=False))
     assert not any(isinstance(b, ThinkingBlock) for b in empty.content)
     assert any(isinstance(b, ToolUseBlock) for b in empty.content)
@@ -998,28 +1039,8 @@ async def test_amessages_tools_and_thinking_routes_to_responses(
     stream: bool,
 ) -> None:
     """tools + thinking must use Responses on every BaseOpenAI SUPPORTS_RESPONSES provider (#1432)."""
-    from any_llm.types.messages import (
-        ContentBlockDeltaEvent,
-        ContentBlockStartEvent,
-        MessageResponse,
-        MessageStartEvent,
-        MessageStopEvent,
-        ThinkingBlock,
-        ThinkingDelta,
-        ToolUseBlock,
-    )
 
     async def live_like_stream() -> AsyncIterator[Any]:
-        from openai.types.responses import (
-            ResponseCompletedEvent,
-            ResponseCreatedEvent,
-            ResponseFunctionToolCall,
-            ResponseOutputItemAddedEvent,
-            ResponseOutputItemDoneEvent,
-            ResponseReasoningItem,
-            ResponseReasoningSummaryTextDeltaEvent,
-        )
-
         created = Response(
             id="resp-stream",
             created_at=0,
@@ -1128,12 +1149,8 @@ async def test_amessages_without_tools_and_thinking_keeps_completions(
     stream: bool,
 ) -> None:
     """tools without thinking, thinking without tools, or neither → Completions bridge."""
-    from any_llm.types.completion import ChatCompletion, ChatCompletionMessage, Choice, CompletionUsage
-    from any_llm.types.messages import MessageResponse, MessageStartEvent
 
     async def empty_chunk_stream() -> AsyncIterator[Any]:
-        from any_llm.types.completion import ChatCompletionChunk, ChoiceDelta, ChunkChoice
-
         yield ChatCompletionChunk(
             id="chatcmpl-1",
             created=0,
@@ -1194,10 +1211,6 @@ async def test_amessages_without_tools_and_thinking_keeps_completions(
 
 def test_messages_params_to_responses_params_output_format() -> None:
     """A usable schema maps to the Responses text.format shape; a named format without one raises."""
-    from any_llm.exceptions import InvalidRequestError
-    from any_llm.providers.openai.messages_responses import messages_params_to_responses_params
-    from any_llm.types.messages import MessagesParams
-
     schema = {"title": "Weather", "type": "object", "properties": {"city": {"type": "string"}}}
     base: dict[str, Any] = {
         "model": "gpt-5.6",
@@ -1219,8 +1232,6 @@ def test_messages_params_to_responses_params_output_format() -> None:
 @pytest.mark.asyncio
 async def test_amessages_tools_and_thinking_rejects_stop_sequences() -> None:
     """Responses has no stop parameter, so stop_sequences must fail loudly rather than be dropped."""
-    from any_llm.exceptions import UnsupportedParameterError
-
     with patch.object(OpenaiProvider, "_init_client"):
         provider = OpenaiProvider(api_key="test-key")
         mock_aresponses = AsyncMock()
@@ -1239,20 +1250,6 @@ async def test_amessages_tools_and_thinking_rejects_stop_sequences() -> None:
 
 def test_responses_stream_refusal_maps_to_text_and_stop_reason() -> None:
     """Streamed refusal text reaches the client and the message ends with stop_reason=refusal."""
-    from openai.types.responses import (
-        ResponseCompletedEvent,
-        ResponseCreatedEvent,
-        ResponseOutputItemAddedEvent,
-        ResponseOutputMessage,
-        ResponseRefusalDeltaEvent,
-    )
-
-    from any_llm.providers.openai.messages_responses import (
-        ResponsesStreamingState,
-        response_stream_event_to_message_events,
-    )
-    from any_llm.types.messages import ContentBlockDeltaEvent, MessageDeltaEvent, TextDelta
-
     created = Response(
         id="resp-refusal",
         created_at=0,
@@ -1296,19 +1293,6 @@ def test_responses_stream_refusal_maps_to_text_and_stop_reason() -> None:
 @pytest.mark.parametrize("failure", ["response.failed", "error"])
 def test_responses_stream_failure_raises(failure: str) -> None:
     """A failed Responses stream must surface as an error, not end the Messages stream quietly."""
-    from openai.types.responses import (
-        ResponseCreatedEvent,
-        ResponseError,
-        ResponseErrorEvent,
-        ResponseFailedEvent,
-    )
-
-    from any_llm.exceptions import ProviderError
-    from any_llm.providers.openai.messages_responses import (
-        ResponsesStreamingState,
-        response_stream_event_to_message_events,
-    )
-
     created = Response(
         id="resp-failed",
         created_at=0,
@@ -1333,6 +1317,416 @@ def test_responses_stream_failure_raises(failure: str) -> None:
     )
     with pytest.raises(ProviderError, match="server_error: boom"):
         response_stream_event_to_message_events(event, state)
+
+
+@pytest.mark.asyncio
+async def test_amessages_tools_and_thinking_keeps_completions_without_opt_in() -> None:
+    """Other Responses-capable OpenAI-compatible providers keep the Completions bridge for tools + thinking."""
+    completion = ChatCompletion(
+        id="chatcmpl-1",
+        created=0,
+        model="some-model",
+        object="chat.completion",
+        choices=[Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content="ok"))],
+    )
+    assert OpenrouterProvider.SUPPORTS_RESPONSES
+    with patch.object(OpenrouterProvider, "_init_client"):
+        provider = OpenrouterProvider(api_key="test-key")
+        mock_aresponses = AsyncMock()
+        mock_acompletion = AsyncMock(return_value=completion)
+        with (
+            patch.object(OpenrouterProvider, "_aresponses", mock_aresponses),
+            patch.object(OpenrouterProvider, "_acompletion", mock_acompletion),
+        ):
+            await provider.amessages(
+                model="some-model",
+                max_tokens=128,
+                thinking={"type": "enabled", "budget_tokens": 2048},
+                tools=[_WEATHER_TOOL],
+                messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+            )
+    mock_acompletion.assert_awaited_once()
+    mock_aresponses.assert_not_called()
+
+
+def test_messages_params_to_responses_params_documents() -> None:
+    """A tool result's URL document goes as file_url; a base64 document stays inline as file_data."""
+    params = MessagesParams(
+        model="gpt-5.6",
+        max_tokens=128,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call_docs",
+                        "content": [
+                            {"type": "document", "source": {"type": "url", "url": "https://example.com/a.pdf"}},
+                            {
+                                "type": "document",
+                                "source": {"type": "base64", "media_type": "application/pdf", "data": "JVBERi0="},
+                            },
+                        ],
+                    }
+                ],
+            }
+        ],
+        tools=[_WEATHER_TOOL],
+        thinking={"type": "enabled", "budget_tokens": 2048},
+    )
+    converted = messages_params_to_responses_params(params)
+    assert isinstance(converted.input, list)
+    parts = converted.input[1]["content"]
+    assert parts == [
+        {"type": "input_file", "file_url": "https://example.com/a.pdf"},
+        {"type": "input_file", "file_data": "data:application/pdf;base64,JVBERi0="},
+    ]
+
+
+def test_response_to_message_response_separates_summary_parts() -> None:
+    response = _make_responses_result_with_tool_call()
+    reasoning = ResponseReasoningItem(
+        id="rs-1",
+        type="reasoning",
+        summary=[Summary(type="summary_text", text="Plan A."), Summary(type="summary_text", text="Then B.")],
+    )
+    converted = response_to_message_response(response.model_copy(update={"output": [reasoning]}))
+    assert converted.content == [ThinkingBlock(type="thinking", thinking="Plan A.\n\nThen B.")]
+
+
+def test_response_to_message_response_prefers_reasoning_text_over_summary() -> None:
+    response = _make_responses_result_with_tool_call()
+    reasoning = ResponseReasoningItem(
+        id="rs-1",
+        type="reasoning",
+        summary=[Summary(type="summary_text", text="short")],
+        content=[Content(type="reasoning_text", text="full reasoning")],
+    )
+    converted = response_to_message_response(response.model_copy(update={"output": [reasoning]}))
+    assert converted.content == [ThinkingBlock(type="thinking", thinking="full reasoning")]
+
+
+def test_response_to_message_response_splits_cached_tokens() -> None:
+    """Cached and cache-write tokens are subsets of OpenAI's input_tokens but disjoint in Messages usage."""
+    response = _make_responses_result_with_tool_call()
+    usage = ResponseUsage(
+        input_tokens=100,
+        output_tokens=5,
+        total_tokens=105,
+        input_tokens_details=InputTokensDetails(cached_tokens=60, cache_write_tokens=30),
+        output_tokens_details=OutputTokensDetails(reasoning_tokens=2),
+    )
+    converted = response_to_message_response(response.model_copy(update={"usage": usage}))
+    assert converted.usage.input_tokens == 10
+    assert converted.usage.cache_read_input_tokens == 60
+    assert converted.usage.cache_creation_input_tokens == 30
+    assert converted.usage.output_tokens == 5
+
+
+def _created_response(response_id: str) -> Response:
+    return Response(
+        id=response_id,
+        created_at=0,
+        model="gpt-5.6",
+        object="response",
+        output=[],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+
+def test_responses_stream_separates_summary_parts_and_splits_cached_tokens() -> None:
+    created = _created_response("resp-parts")
+    reasoning = ResponseReasoningItem(id="rs-1", type="reasoning", summary=[])
+    usage = ResponseUsage(
+        input_tokens=100,
+        output_tokens=5,
+        total_tokens=105,
+        input_tokens_details=InputTokensDetails(cached_tokens=80, cache_write_tokens=0),
+        output_tokens_details=OutputTokensDetails(reasoning_tokens=2),
+    )
+    stream: list[Any] = [
+        ResponseCreatedEvent(type="response.created", sequence_number=0, response=created),
+        ResponseOutputItemAddedEvent(
+            type="response.output_item.added", sequence_number=1, output_index=0, item=reasoning
+        ),
+    ]
+    for summary_index, text in enumerate(["Plan A.", "Then B."]):
+        stream.append(
+            ResponseReasoningSummaryPartAddedEvent(
+                type="response.reasoning_summary_part.added",
+                sequence_number=2,
+                item_id="rs-1",
+                output_index=0,
+                summary_index=summary_index,
+                part=Part(type="summary_text", text=""),
+            )
+        )
+        stream.append(
+            ResponseReasoningSummaryTextDeltaEvent(
+                type="response.reasoning_summary_text.delta",
+                sequence_number=3,
+                item_id="rs-1",
+                output_index=0,
+                summary_index=summary_index,
+                delta=text,
+            )
+        )
+    stream.append(
+        ResponseCompletedEvent(
+            type="response.completed",
+            sequence_number=4,
+            response=created.model_copy(update={"status": "completed", "usage": usage}),
+        )
+    )
+
+    state = ResponsesStreamingState()
+    events = [e for event in stream for e in response_stream_event_to_message_events(event, state)]
+
+    thinking = "".join(
+        e.delta.thinking for e in events if isinstance(e, ContentBlockDeltaEvent) and isinstance(e.delta, ThinkingDelta)
+    )
+    assert thinking == "Plan A.\n\nThen B."
+    message_delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    assert message_delta.usage.input_tokens == 20
+    assert message_delta.usage.cache_read_input_tokens == 80
+    assert message_delta.usage.cache_creation_input_tokens == 0
+
+
+async def _collect_into(stream: AsyncIterator[Any], events: list[Any]) -> None:
+    async for event in stream:
+        events.append(event)
+
+
+@pytest.mark.asyncio
+async def test_convert_responses_stream_reports_usage_before_failure() -> None:
+    """A failed stream still reports the tokens it spent, with no stop_reason and no message_stop."""
+    created = _created_response("resp-failed")
+    usage = ResponseUsage(
+        input_tokens=40,
+        output_tokens=7,
+        total_tokens=47,
+        input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+        output_tokens_details=OutputTokensDetails(reasoning_tokens=7),
+    )
+    failed = created.model_copy(
+        update={"status": "failed", "usage": usage, "error": ResponseError(code="server_error", message="boom")}
+    )
+
+    async def failing_stream() -> AsyncIterator[Any]:
+        yield ResponseCreatedEvent(type="response.created", sequence_number=0, response=created)
+        yield ResponseFailedEvent(type="response.failed", sequence_number=1, response=failed)
+
+    events: list[Any] = []
+    with pytest.raises(ProviderError, match="server_error: boom"):
+        await _collect_into(convert_responses_stream(failing_stream()), events)
+
+    assert isinstance(events[-1], MessageDeltaEvent)
+    assert events[-1].delta.stop_reason is None
+    assert events[-1].usage.input_tokens == 40
+    assert events[-1].usage.output_tokens == 7
+    assert not any(isinstance(e, MessageStopEvent) for e in events)
+
+
+@pytest.mark.asyncio
+async def test_convert_responses_stream_reraises_without_usage_before_start() -> None:
+    async def failing_stream() -> AsyncIterator[Any]:
+        msg = "connection reset"
+        raise RuntimeError(msg)
+        yield  # pragma: no cover
+
+    events: list[Any] = []
+    with pytest.raises(RuntimeError, match="connection reset"):
+        await _collect_into(convert_responses_stream(failing_stream()), events)
+    assert events == []
+
+
+def test_messages_params_to_responses_params_maps_request_fields() -> None:
+    params = MessagesParams(
+        model="gpt-5.6",
+        max_tokens=128,
+        system="Be brief.",
+        temperature=0.5,
+        top_p=0.9,
+        prompt_cache_key="cache-key",
+        service_tier="auto",
+        tools=[_WEATHER_TOOL],
+        tool_choice={"type": "tool", "name": "get_weather", "disable_parallel_tool_use": True},
+        thinking={"type": "enabled", "budget_tokens": 2048},
+        messages=[
+            {"role": "user", "content": "Weather?"},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "need weather", "signature": ""},
+                    {"type": "text", "text": "Checking."},
+                    {"type": "tool_use", "id": "call_1", "name": "get_weather", "input": {"city": "Paris"}},
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "call_1", "content": "Sunny"},
+                    {"type": "text", "text": "And this?"},
+                    {"type": "image", "source": {"type": "url", "url": "https://example.com/a.png"}},
+                    {"type": "document", "source": {"type": "url", "url": "https://example.com/a.pdf"}},
+                ],
+            },
+        ],
+    )
+    converted = messages_params_to_responses_params(params)
+
+    assert converted.instructions == "Be brief."
+    assert converted.temperature == 0.5
+    assert converted.top_p == 0.9
+    assert converted.prompt_cache_key == "cache-key"
+    assert converted.service_tier == "auto"
+    assert converted.tool_choice == {"type": "function", "name": "get_weather"}
+    assert converted.parallel_tool_calls is False
+    assert converted.input == [
+        {"role": "user", "content": "Weather?"},
+        {"type": "reasoning", "summary": [{"type": "summary_text", "text": "need weather"}]},
+        {"role": "assistant", "content": "Checking."},
+        {"type": "function_call", "call_id": "call_1", "name": "get_weather", "arguments": '{"city": "Paris"}'},
+        {"type": "function_call_output", "call_id": "call_1", "output": "Sunny"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "And this?"},
+                {"type": "input_image", "image_url": "https://example.com/a.png", "detail": "auto"},
+                {"type": "document", "source": {"type": "url", "url": "https://example.com/a.pdf"}},
+            ],
+        },
+    ]
+
+
+def test_messages_params_to_responses_params_passes_structured_output_type() -> None:
+    class Weather(BaseModel):
+        city: str
+
+    params = MessagesParams(
+        model="gpt-5.6",
+        max_tokens=128,
+        messages=[{"role": "user", "content": "Weather?"}],
+        tools=[_WEATHER_TOOL],
+        tool_choice={"type": "auto"},
+        thinking={"type": "enabled", "budget_tokens": 2048},
+        output_format=Weather,
+    )
+    converted = messages_params_to_responses_params(params)
+    assert converted.response_format is Weather
+    assert converted.tool_choice == "auto"
+    assert converted.parallel_tool_calls is None
+
+
+def test_response_to_message_response_text_refusal_and_bad_arguments() -> None:
+    response = {
+        "id": "resp-1",
+        "model": "gpt-5.6",
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": "Hi"}, {"type": "refusal", "refusal": "No"}],
+            },
+            {"type": "function_call", "call_id": "call_1", "name": "get_weather", "arguments": "{not json"},
+            {"type": "function_call", "id": "fc_2", "name": "get_weather", "arguments": "[1]"},
+        ],
+    }
+    converted = response_to_message_response(response)
+    assert converted.content == [
+        TextBlock(type="text", text="Hi"),
+        TextBlock(type="text", text="No"),
+        ToolUseBlock(type="tool_use", id="call_1", name="get_weather", input={}),
+        ToolUseBlock(type="tool_use", id="fc_2", name="get_weather", input={}),
+    ]
+    assert converted.stop_reason == "tool_use"
+    assert converted.usage.input_tokens == 0
+
+
+def test_response_to_message_response_incomplete_without_output() -> None:
+    converted = response_to_message_response({"id": "resp-1", "model": "gpt-5.6", "status": "incomplete", "output": []})
+    assert converted.content == [TextBlock(type="text", text="")]
+    assert converted.stop_reason == "max_tokens"
+
+
+def test_responses_stream_text_tool_arguments_and_incomplete() -> None:
+    """A stream without response.created still opens the message, and incomplete ends it as max_tokens."""
+    stream: list[dict[str, Any]] = [
+        {"type": "response.in_progress"},
+        {"type": "response.output_item.added", "item": {"type": "message", "id": "msg-1"}},
+        {"type": "response.output_text.delta", "item_id": "msg-1", "delta": "Hi"},
+        {"type": "response.output_text.delta", "item_id": "msg-1", "delta": ""},
+        {"type": "response.output_text.delta", "item_id": "unknown", "delta": "lost"},
+        {"type": "response.output_item.done", "item": {"type": "message", "id": "msg-1"}},
+        {"type": "response.output_item.added", "item": {"type": "reasoning", "id": "rs-1"}},
+        {"type": "response.reasoning_summary_part.added", "item_id": "unknown", "summary_index": 1},
+        {"type": "response.reasoning_text.delta", "item_id": "unknown", "delta": "lost"},
+        {"type": "response.reasoning_text.delta", "item_id": "rs-1", "delta": ""},
+        {"type": "response.output_item.added", "item": {"type": "web_search_call", "id": "ws-1"}},
+        {"type": "response.function_call_arguments.delta", "item_id": "unknown", "delta": "{}"},
+        {"type": "response.incomplete", "response": {"usage": None}},
+    ]
+    state = ResponsesStreamingState()
+    events = [e for event in stream for e in response_stream_event_to_message_events(event, state)]
+
+    assert isinstance(events[0], MessageStartEvent)
+    assert events[0].message.id == "msg_stream"
+    assert [
+        e.delta.text for e in events if isinstance(e, ContentBlockDeltaEvent) and isinstance(e.delta, TextDelta)
+    ] == ["Hi"]
+    message_delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    assert message_delta.delta.stop_reason == "max_tokens"
+    assert isinstance(events[-1], MessageStopEvent)
+
+
+def test_responses_stream_function_call_arguments() -> None:
+    stream: list[dict[str, Any]] = [
+        {"type": "response.created", "response": {"id": "resp-1", "model": "gpt-5.6"}},
+        {
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc-1", "call_id": "call_1", "name": "get_weather"},
+        },
+        {"type": "response.function_call_arguments.delta", "item_id": "fc-1", "delta": '{"city":'},
+        {"type": "response.function_call_arguments.delta", "item_id": "fc-1", "delta": ""},
+        {"type": "response.completed", "response": {"usage": None}},
+    ]
+    state = ResponsesStreamingState()
+    events = [e for event in stream for e in response_stream_event_to_message_events(event, state)]
+
+    deltas = [e.delta for e in events if isinstance(e, ContentBlockDeltaEvent)]
+    assert deltas == [InputJSONDelta(type="input_json_delta", partial_json='{"city":')]
+    message_delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
+    assert message_delta.delta.stop_reason == "tool_use"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extra", "match"),
+    [
+        ({"container": "container-1"}, "container"),
+        ({"betas": ["some-beta"]}, "betas"),
+    ],
+)
+async def test_amessages_tools_and_thinking_rejects_native_only_params(extra: dict[str, Any], match: str) -> None:
+    with patch.object(OpenaiProvider, "_init_client"):
+        provider = OpenaiProvider(api_key="test-key")
+        mock_aresponses = AsyncMock()
+        with (
+            patch.object(OpenaiProvider, "_aresponses", mock_aresponses),
+            pytest.raises(NotImplementedError, match=match),
+        ):
+            await provider.amessages(
+                model="gpt-5.6",
+                max_tokens=128,
+                thinking={"type": "enabled", "budget_tokens": 2048},
+                tools=[_WEATHER_TOOL],
+                messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+                **extra,
+            )
+        mock_aresponses.assert_not_awaited()
 
 
 def _multipart_file_part(request: httpx.Request) -> tuple[str | None, str, bytes]:

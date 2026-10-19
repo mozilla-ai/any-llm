@@ -34,6 +34,7 @@ from any_llm.utils.messages_compat import (
     _convert_tool_choice_to_openai,
     _convert_tools_to_openai,
     _output_config_to_response_format,
+    split_cached_input_tokens,
 )
 from any_llm.utils.structured_output import is_structured_output_type
 
@@ -169,7 +170,11 @@ def _openai_messages_to_responses_input(messages: list[dict[str, Any]]) -> list[
                     parts.append({"type": "input_image", "image_url": url, "detail": "auto"})
                 elif ptype == "file":
                     file_data = (part.get("file") or {}).get("file_data", "")
-                    parts.append({"type": "input_file", "file_data": file_data})
+                    # A URL document reaches here as a plain URL in file_data; Responses takes it as file_url.
+                    if file_data.startswith("data:"):
+                        parts.append({"type": "input_file", "file_data": file_data})
+                    else:
+                        parts.append({"type": "input_file", "file_url": file_data})
                 else:
                     parts.append(part)
             items.append({"role": role, "content": parts})
@@ -184,6 +189,25 @@ def _item_attr(item: Any, key: str, default: Any = None) -> Any:
     return getattr(item, key, default)
 
 
+def _usage_counts(raw_usage: Any) -> tuple[int, int | None, int | None, int]:
+    """Return disjoint (input, cache read, cache write, output) counts from Responses usage."""
+    details = _item_attr(raw_usage, "input_tokens_details")
+    cached = _item_attr(details, "cached_tokens") if details is not None else None
+    cache_write = _item_attr(details, "cache_write_tokens") if details is not None else None
+    input_tokens, cache_read = split_cached_input_tokens(
+        int(_item_attr(raw_usage, "input_tokens") or 0), cached, cache_write
+    )
+    return input_tokens, cache_read, cache_write, int(_item_attr(raw_usage, "output_tokens") or 0)
+
+
+def _reasoning_text(item: Any) -> str:
+    """Prefer the full reasoning text over its summary so one block never holds both."""
+    parts = [_item_attr(part, "text") for part in _item_attr(item, "content") or []]
+    if not any(parts):
+        parts = [_item_attr(summary, "text") for summary in _item_attr(item, "summary") or []]
+    return "\n\n".join(text for text in parts if text)
+
+
 def response_to_message_response(response: Any) -> MessageResponse:
     """Convert a Responses API result to an Anthropic MessageResponse."""
     content_blocks: list[MessageContentBlock] = []
@@ -192,17 +216,8 @@ def response_to_message_response(response: Any) -> MessageResponse:
     for item in _item_attr(response, "output") or []:
         item_type = _item_attr(item, "type")
         if item_type == "reasoning":
-            texts: list[str] = []
-            for summary in _item_attr(item, "summary") or []:
-                text = _item_attr(summary, "text")
-                if text:
-                    texts.append(text)
-            for part in _item_attr(item, "content") or []:
-                text = _item_attr(part, "text")
-                if text:
-                    texts.append(text)
-            if texts:
-                content_blocks.append(ThinkingBlock(type="thinking", thinking="".join(texts)))
+            if thinking := _reasoning_text(item):
+                content_blocks.append(ThinkingBlock(type="thinking", thinking=thinking))
         elif item_type == "message":
             for part in _item_attr(item, "content") or []:
                 part_type = _item_attr(part, "type")
@@ -237,9 +252,12 @@ def response_to_message_response(response: Any) -> MessageResponse:
     usage = MessageUsage(input_tokens=0, output_tokens=0)
     raw_usage = _item_attr(response, "usage")
     if raw_usage is not None:
+        input_tokens, cache_read, cache_write, output_tokens = _usage_counts(raw_usage)
         usage = MessageUsage(
-            input_tokens=int(_item_attr(raw_usage, "input_tokens") or 0),
-            output_tokens=int(_item_attr(raw_usage, "output_tokens") or 0),
+            input_tokens=input_tokens,
+            cache_read_input_tokens=cache_read,
+            cache_creation_input_tokens=cache_write,
+            output_tokens=output_tokens,
         )
 
     return MessageResponse(
@@ -261,11 +279,26 @@ class ResponsesStreamingState:
         self.model = "unknown"
         self.message_id = ""
         self.input_tokens = 0
+        self.cache_read_input_tokens: int | None = None
+        self.cache_creation_input_tokens: int | None = None
         self.output_tokens = 0
         self.stop_reason: StopReason | None = None
         self.block_by_item: dict[str, int] = {}
         self.open_indexes: set[int] = set()
         self.next_index = 0
+
+
+def _usage_delta(state: ResponsesStreamingState, stop_reason: StopReason | None) -> MessageDeltaEvent:
+    return MessageDeltaEvent(
+        type="message_delta",
+        delta=MessageDelta(stop_reason=stop_reason),
+        usage=MessageDeltaUsage(
+            output_tokens=state.output_tokens,
+            input_tokens=state.input_tokens,
+            cache_read_input_tokens=state.cache_read_input_tokens,
+            cache_creation_input_tokens=state.cache_creation_input_tokens,
+        ),
+    )
 
 
 def response_stream_event_to_message_events(
@@ -276,6 +309,17 @@ def response_stream_event_to_message_events(
     events: list[MessageStreamEvent] = []
     etype = _item_attr(event, "type")
     index: int | None
+
+    if etype == "response.failed":
+        # A failed response can still carry the usage it spent before failing.
+        raw_usage = _item_attr(_item_attr(event, "response"), "usage")
+        if raw_usage is not None:
+            (
+                state.input_tokens,
+                state.cache_read_input_tokens,
+                state.cache_creation_input_tokens,
+                state.output_tokens,
+            ) = _usage_counts(raw_usage)
 
     if etype in ("response.failed", "error"):
         # Responses reports a failed stream as an event rather than an exception, so
@@ -364,6 +408,18 @@ def response_stream_event_to_message_events(
             )
         return events
 
+    if etype == "response.reasoning_summary_part.added" and (_item_attr(event, "summary_index") or 0) > 0:
+        index = state.block_by_item.get(_item_attr(event, "item_id") or "")
+        if index is not None:
+            events.append(
+                ContentBlockDeltaEvent(
+                    type="content_block_delta",
+                    index=index,
+                    delta=ThinkingDelta(type="thinking_delta", thinking="\n\n"),
+                )
+            )
+        return events
+
     if etype in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta"):
         item_id = _item_attr(event, "item_id") or ""
         index = state.block_by_item.get(item_id)
@@ -427,23 +483,18 @@ def response_stream_event_to_message_events(
         response = _item_attr(event, "response")
         raw_usage = _item_attr(response, "usage")
         if raw_usage is not None:
-            state.input_tokens = int(_item_attr(raw_usage, "input_tokens") or 0)
-            state.output_tokens = int(_item_attr(raw_usage, "output_tokens") or 0)
+            (
+                state.input_tokens,
+                state.cache_read_input_tokens,
+                state.cache_creation_input_tokens,
+                state.output_tokens,
+            ) = _usage_counts(raw_usage)
         if etype == "response.incomplete" and state.stop_reason is None:
             state.stop_reason = "max_tokens"
         for index in sorted(state.open_indexes):
             events.append(ContentBlockStopEvent(type="content_block_stop", index=index))
         state.open_indexes.clear()
-        events.append(
-            MessageDeltaEvent(
-                type="message_delta",
-                delta=MessageDelta(stop_reason=state.stop_reason or "end_turn"),
-                usage=MessageDeltaUsage(
-                    output_tokens=state.output_tokens,
-                    input_tokens=state.input_tokens,
-                ),
-            )
-        )
+        events.append(_usage_delta(state, state.stop_reason or "end_turn"))
         events.append(MessageStopEvent(type="message_stop"))
         return events
 
@@ -459,5 +510,11 @@ async def convert_responses_stream(
         async for event in stream:
             for msg_event in response_stream_event_to_message_events(event, state):
                 yield msg_event
+    except Exception:
+        # Same contract as the Completions bridge: report the tokens spent so far, with no
+        # stop_reason and no message_stop, before re-raising.
+        if state.started:
+            yield _usage_delta(state, None)
+        raise
     finally:
         await aclose_quietly(stream)

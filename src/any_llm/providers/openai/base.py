@@ -123,6 +123,12 @@ class BaseOpenAIProvider(AnyLLM):
 
     # The OpenAI SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
+
+    # OpenAI's Chat Completions rejects function tools with a reasoning effort on newer
+    # reasoning models, so those Messages requests go to Responses instead. Off by default:
+    # other OpenAI-compatible backends accept the combination on Chat Completions, and their
+    # Responses endpoints differ in which tool and reasoning fields they support.
+    _MESSAGES_TOOLS_THINKING_VIA_RESPONSES = False
     MAX_RETRIES_SUPPORT: Literal["unsupported", "native", "mapped"] = "native"
 
     _DEFAULT_REASONING_EFFORT: ReasoningEffort | None = None
@@ -330,15 +336,8 @@ class BaseOpenAIProvider(AnyLLM):
     async def _amessages(
         self, params: MessagesParams, **kwargs: Any
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | AsyncIterator[MessageStreamEvent]:
-        """Route tools + thinking through Responses when this provider supports it.
-
-        Chat Completions rejects function tools combined with a non-none reasoning_effort on
-        newer OpenAI reasoning models. The Responses API accepts that combination, so when the
-        caller asked for Messages with both and ``SUPPORTS_RESPONSES``, serve via ``_aresponses``
-        instead of guessing by model name (#1432). Providers without Responses keep the
-        Completions bridge from ``AnyLLM._amessages``.
-        """
-        if not (self.SUPPORTS_RESPONSES and messages_needs_responses(params)):
+        """Serve Messages requests with tools and enabled thinking through Responses when opted in."""
+        if not (self._MESSAGES_TOOLS_THINKING_VIA_RESPONSES and messages_needs_responses(params)):
             return await super()._amessages(params, **kwargs)
 
         if params.container is not None:
