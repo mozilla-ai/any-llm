@@ -32,6 +32,7 @@ A Pydantic `BaseModel` containing provider information and feature flags.
 | `messages_native` | `bool` |  |
 | `batch_completion` | `bool` |  |
 | `image_generation` | `bool` |  |
+| `image_edit` | `bool` |  |
 | `audio_transcription` | `bool` |  |
 | `audio_speech` | `bool` |  |
 | `rerank` | `bool` |  |
