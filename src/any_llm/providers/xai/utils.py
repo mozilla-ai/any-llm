@@ -128,7 +128,8 @@ def _convert_xai_chunk_to_anyllm_chunk(chunk: XaiChunk) -> ChatCompletionChunk:
         created=chunk.proto.created.seconds,
         model=chunk.proto.model,
         object="chat.completion.chunk",
-        usage=_convert_xai_usage(chunk.proto.usage),
+        # A chunk without usage would otherwise report cached_tokens=0 and overwrite an earlier count.
+        usage=_convert_xai_usage(chunk.proto.usage) if chunk.proto.usage.total_tokens else None,
     )
 
 
