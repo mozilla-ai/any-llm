@@ -4,6 +4,7 @@ import pytest
 from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+from any_llm import tools
 from any_llm.tools import callable_to_tool
 
 
@@ -98,3 +99,9 @@ def test_tool_model_fields_with_defaults_are_not_required(model: type) -> None:
     schema = _item_schema(model)
     assert schema["properties"] == {"public_value": {"type": "integer"}}
     assert "required" not in schema
+
+
+def test_validate_by_alias_is_ignored_on_pydantic_without_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tools, "_PYDANTIC_HAS_VALIDATE_BY_ALIAS", False)
+    schema = _item_schema(ValidateByNameOnly)
+    assert schema["properties"] == {"public_value": {"type": "integer"}}

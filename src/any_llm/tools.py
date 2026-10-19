@@ -15,7 +15,7 @@ from typing import Literal as _Literal
 from typing import NotRequired as _NotRequired
 from typing import Required as _Required
 
-from pydantic import AliasChoices, AliasPath
+from pydantic import AliasChoices, AliasPath, ConfigDict
 from pydantic import BaseModel as PydanticBaseModel
 from typing_extensions import ReadOnly as _ReadOnly
 from typing_extensions import is_typeddict as _is_typeddict
@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 
 # A self-referencing TypedDict would otherwise expand forever once its forward references are resolved.
 _EXPANDING_TYPED_DICTS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_TYPED_DICTS", default=frozenset())
+
+# Pydantic < 2.11 has no validate_by_alias and ignores the key, so aliases stay accepted there.
+_PYDANTIC_HAS_VALIDATE_BY_ALIAS = "validate_by_alias" in ConfigDict.__annotations__
 
 
 def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
@@ -89,7 +92,7 @@ def _pydantic_input_name(name: str, field_info: FieldInfo, config: Mapping[str, 
 
     An AliasPath is only representable when it is a single string key; otherwise the field name is used.
     """
-    if not config.get("validate_by_alias", True):
+    if _PYDANTIC_HAS_VALIDATE_BY_ALIAS and not config.get("validate_by_alias", True):
         return name
     alias = field_info.validation_alias
     choices = alias.choices if isinstance(alias, AliasChoices) else [alias]
