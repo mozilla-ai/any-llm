@@ -518,6 +518,9 @@ def _convert_tool_choice(params: CompletionParams) -> dict[str, Any]:
     if parallel_tool_calls is None:
         parallel_tool_calls = True
     tool_choice = params.tool_choice or "auto"
+    if tool_choice == "none":
+        # Anthropic's "none" choice takes no other field and rejects disable_parallel_tool_use.
+        return {"type": "none"}
     if tool_choice == "required":
         tool_choice = "any"
     elif isinstance(tool_choice, dict):
