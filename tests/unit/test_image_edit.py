@@ -112,6 +112,22 @@ async def test_aimage_edit_passes_params_and_extra_options_to_the_provider() -> 
     assert kwargs == {"output_format": "jpeg"}
 
 
+def test_image_edit_passes_params_and_extra_options_to_the_provider() -> None:
+    image = ("cat.png", b"cat", "image/png")
+    provider = OpenaiProvider(api_key="test_key")
+
+    with (
+        patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create,
+        patch.object(provider, "_aimage_edit", AsyncMock(return_value=ImagesResponse(created=1, data=[]))) as mock_edit,
+    ):
+        image_edit("gpt-image-1", image, "Add a hat", provider="openai", quality="low", output_format="jpeg")
+
+    assert mock_create.call_args[0][0] == LLMProvider.OPENAI
+    params, kwargs = mock_edit.call_args
+    assert params == (ImageEditParams(model_id="gpt-image-1", image=image, prompt="Add a hat", quality="low"),)
+    assert kwargs == {"output_format": "jpeg"}
+
+
 @pytest.mark.asyncio
 async def test_aimage_edit_raises_on_a_provider_without_it_before_sending() -> None:
     requests: list[httpx.Request] = []
