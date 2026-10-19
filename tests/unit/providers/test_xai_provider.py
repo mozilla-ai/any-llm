@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from any_llm.types.completion import ChatCompletion, CompletionParams
+from any_llm.types.completion import ChatCompletion, CompletionParams, CompletionUsage
 
 
 @contextmanager
@@ -147,6 +147,91 @@ def test_stream_chunk_finish_reason_is_mapped(xai_finish_reason_name: str, expec
     chunk = _convert_xai_chunk_to_anyllm_chunk(XaiChunk(proto, index=None))
 
     assert chunk.choices[0].finish_reason == expected
+
+
+def _convert_xai_usage_via(path: str, usage_fields: dict[str, Any]) -> CompletionUsage | None:
+    from xai_sdk.chat import Chunk as XaiChunk
+    from xai_sdk.chat import Response as XaiResponse
+    from xai_sdk.proto import chat_pb2, usage_pb2
+
+    from any_llm.providers.xai.utils import (
+        _convert_xai_chunk_to_anyllm_chunk,
+        _convert_xai_completion_to_anyllm_response,
+    )
+
+    usage = usage_pb2.SamplingUsage(**usage_fields)
+    if path == "response":
+        response = chat_pb2.GetChatCompletionResponse(usage=usage)
+        return _convert_xai_completion_to_anyllm_response(XaiResponse(response, index=None)).usage
+    chunk = chat_pb2.GetChatCompletionChunk(usage=usage)
+    return _convert_xai_chunk_to_anyllm_chunk(XaiChunk(chunk, index=None)).usage
+
+
+@pytest.mark.parametrize("path", ["response", "chunk"])
+@pytest.mark.parametrize(
+    ("usage_fields", "expected_counts", "expected_cached", "expected_reasoning"),
+    [
+        pytest.param(
+            {
+                "prompt_tokens": 180,
+                "prompt_text_tokens": 100,
+                "cached_prompt_text_tokens": 80,
+                "completion_tokens": 5,
+                "reasoning_tokens": 400,
+                "total_tokens": 585,
+            },
+            (180, 405, 585),
+            80,
+            400,
+            id="reasoning-outside-completion",
+        ),
+        pytest.param(
+            {
+                "prompt_tokens": 131,
+                "prompt_text_tokens": 131,
+                "completion_tokens": 567,
+                "reasoning_tokens": 249,
+                "total_tokens": 698,
+            },
+            (131, 567, 698),
+            0,
+            249,
+            id="reasoning-inside-completion",
+        ),
+        pytest.param(
+            {"prompt_tokens": 12, "prompt_text_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+            (12, 3, 15),
+            0,
+            None,
+            id="no-cache-hit-no-reasoning",
+        ),
+    ],
+)
+def test_usage_counts_cached_text_and_reasoning(
+    path: str,
+    usage_fields: dict[str, Any],
+    expected_counts: tuple[int, int, int],
+    expected_cached: int,
+    expected_reasoning: int | None,
+) -> None:
+    """xAI's prompt_text_tokens leaves out cached text tokens, and completion_tokens may leave out
+    reasoning tokens that total_tokens includes."""
+    usage = _convert_xai_usage_via(path, usage_fields)
+
+    assert usage is not None
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == expected_counts
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == expected_cached
+    if expected_reasoning is None:
+        assert usage.completion_tokens_details is None
+    else:
+        assert usage.completion_tokens_details is not None
+        assert usage.completion_tokens_details.reasoning_tokens == expected_reasoning
+
+
+def test_stream_chunk_without_usage_reports_no_usage() -> None:
+    """A zeroed usage would report cached_tokens=0 and overwrite the count from an earlier chunk."""
+    assert _convert_xai_usage_via("chunk", {}) is None
 
 
 @pytest.mark.asyncio
