@@ -9,6 +9,7 @@ import pytest
 from any_llm import AnyLLM
 from any_llm.api import aimage_edit, image_edit
 from any_llm.constants import LLMProvider
+from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.types.image import ImageEditParams, ImagesResponse
 
 
@@ -88,6 +89,16 @@ async def test_aimage_edit_raises_when_the_provider_has_no_implementation(suppor
     base.SUPPORTS_IMAGE_EDIT = supported
     with pytest.raises(NotImplementedError, match=message):
         await AnyLLM._aimage_edit(base, ImageEditParams(model_id="some-model", image=b"cat", prompt="Add a hat"))
+
+
+@pytest.mark.asyncio
+async def test_aimage_edit_raises_on_an_openai_compatible_provider_without_it() -> None:
+    provider = Mock(spec=BaseOpenAIProvider)
+    provider.SUPPORTS_IMAGE_EDIT = False
+    with pytest.raises(NotImplementedError, match="doesn't support image edit"):
+        await BaseOpenAIProvider._aimage_edit(
+            provider, ImageEditParams(model_id="some-model", image=b"cat", prompt="Add a hat")
+        )
 
 
 def test_only_openai_supports_image_edit() -> None:

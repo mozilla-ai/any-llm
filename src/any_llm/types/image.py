@@ -8,8 +8,8 @@ from openai.types.image import Image as OpenAIImage
 from pydantic import BaseModel, ConfigDict, SkipValidation
 
 ImageInput: TypeAlias = FileTypes | list[FileTypes]
-"""One image or a list of them, each as bytes, a binary file object, a ``pathlib.Path``, or a
-``(filename, content, content_type)`` tuple."""
+"""One image or a list of them, each as a ``(filename, content, content_type)`` tuple, a named binary
+file object, or a ``pathlib.Path``. Bare bytes go up as application/octet-stream, which OpenAI rejects."""
 
 
 class ImageGenerationParams(BaseModel):

@@ -347,6 +347,9 @@ class BaseOpenAIProvider(AnyLLM):
 
     @override
     async def _aimage_edit(self, params: ImageEditParams, **kwargs: Any) -> ImagesResponse:
+        if not self.SUPPORTS_IMAGE_EDIT:
+            msg = "Provider doesn't support image edit."
+            raise NotImplementedError(msg)
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
 
