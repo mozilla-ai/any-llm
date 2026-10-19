@@ -45,11 +45,6 @@ data:[DONE]
 """
 
 
-@pytest.fixture(autouse=True)
-def clear_liner_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(LinerProvider.ENV_API_BASE_NAME, raising=False)
-
-
 def _provider(respond: Callable[[httpx.Request], httpx.Response], **kwargs: Any) -> LinerProvider:
     return LinerProvider(api_key="test-key", transport=httpx.MockTransport(respond), **kwargs)
 

@@ -28,11 +28,6 @@ from any_llm.types.responses import ParsedResponse, Response
 from any_llm.utils.structured_output import parse_responses_output
 
 
-@pytest.fixture(autouse=True)
-def clear_openai_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(OpenaiProvider.ENV_API_BASE_NAME, raising=False)
-
-
 def test_prompt_cache_key_capability_is_opt_in() -> None:
     assert BaseOpenAIProvider.PROMPT_CACHE_KEY_SUPPORT == "unsupported"
     assert OpenaiProvider.PROMPT_CACHE_KEY_SUPPORT == "supported"

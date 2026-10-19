@@ -13,11 +13,6 @@ from any_llm.providers.huggingface.utils import _create_openai_chunk_from_huggin
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
-@pytest.fixture(autouse=True)
-def clear_huggingface_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(HuggingfaceProvider.ENV_API_BASE_NAME, raising=False)
-
-
 @contextmanager
 def mock_huggingface_provider():  # type: ignore[no-untyped-def]
     with (

@@ -46,11 +46,6 @@ TEST_PDF_BYTES = b"%PDF-1.4\ntest"
 TEST_AUDIO_BYTES = b"RIFF-test-audio"
 
 
-@pytest.fixture(autouse=True)
-def clear_gemini_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(GeminiProvider.ENV_API_BASE_NAME, raising=False)
-
-
 class StructuredAnswer(BaseModel):
     answer: str
 

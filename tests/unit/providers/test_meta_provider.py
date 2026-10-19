@@ -44,11 +44,6 @@ from any_llm.types.messages import (
 )
 
 
-@pytest.fixture(autouse=True)
-def clear_meta_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(MetaProvider.ENV_API_BASE_NAME, raising=False)
-
-
 def _build_provider(api_base: str | None = None) -> MetaProvider:
     with (
         patch("any_llm.providers.meta.meta.AsyncOpenAI") as mock_openai,
