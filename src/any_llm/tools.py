@@ -9,18 +9,25 @@ import types as _types
 from collections.abc import Callable, Mapping, Sequence
 from contextvars import ContextVar
 from datetime import date, datetime, time
+from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
 from typing import Annotated as _Annotated
-from typing import Any, get_args, get_origin, get_type_hints
 from typing import Literal as _Literal
 from typing import NotRequired as _NotRequired
 from typing import Required as _Required
 
+from pydantic import AliasChoices, AliasPath, ConfigDict
 from pydantic import BaseModel as PydanticBaseModel
 from typing_extensions import ReadOnly as _ReadOnly
 from typing_extensions import is_typeddict as _is_typeddict
 
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
+
 # A self-referencing TypedDict would otherwise expand forever once its forward references are resolved.
 _EXPANDING_TYPED_DICTS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_TYPED_DICTS", default=frozenset())
+
+# Pydantic < 2.11 has no validate_by_alias and ignores the key, so aliases stay accepted there.
+_PYDANTIC_HAS_VALIDATE_BY_ALIAS = "validate_by_alias" in ConfigDict.__annotations__
 
 
 def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
@@ -80,6 +87,23 @@ def callable_to_tool(func: Callable[..., Any]) -> dict[str, Any]:
     }
 
 
+def _pydantic_input_name(name: str, field_info: FieldInfo, config: Mapping[str, Any]) -> str:
+    """Return the key Pydantic accepts for a field on input.
+
+    An AliasPath is only representable when it is a single string key; otherwise the field name is used.
+    """
+    if _PYDANTIC_HAS_VALIDATE_BY_ALIAS and not config.get("validate_by_alias", True):
+        return name
+    alias = field_info.validation_alias
+    choices = alias.choices if isinstance(alias, AliasChoices) else [alias]
+    for choice in choices:
+        if isinstance(choice, str):
+            return choice
+        if isinstance(choice, AliasPath) and len(choice.path) == 1 and isinstance(choice.path[0], str):
+            return choice.path[0]
+    return name
+
+
 def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     """Convert Python type annotation to a JSON Schema for a parameter.
 
@@ -99,7 +123,8 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     - Literal[...]/Enum -> enum with appropriate type inference when uniform
     - TypedDict -> object with properties/required per annotations; Required/NotRequired/ReadOnly
       qualifiers are unwrapped, and a self-reference becomes a bare object
-    - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields
+    - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields;
+      Pydantic fields are named the way Pydantic validates them (see _pydantic_input_name)
     """
     origin = get_origin(python_type)
     args = get_args(python_type)
@@ -188,16 +213,26 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
 
     if inspect.isclass(python_type) and dataclasses.is_dataclass(python_type):
         type_hints = get_type_hints(python_type)
+        # Pydantic dataclasses keep their FieldInfo (aliases, defaults) here, not on the stdlib field.
+        dc_pydantic_fields: dict[str, FieldInfo] = getattr(python_type, "__pydantic_fields__", {})
+        dc_config: Mapping[str, Any] = getattr(python_type, "__pydantic_config__", {})
         dc_properties: dict[str, Any] = {}
         dc_required: list[str] = []
         for field in dataclasses.fields(python_type):
             field_type = type_hints.get(field.name, Any)
-            dc_properties[field.name] = _python_type_to_json_schema(field_type)
-            if (
-                field.default is dataclasses.MISSING
-                and getattr(field, "default_factory", dataclasses.MISSING) is dataclasses.MISSING
-            ):
-                dc_required.append(field.name)
+            dc_field_info = dc_pydantic_fields.get(field.name)
+            if dc_field_info is not None:
+                dc_name = _pydantic_input_name(field.name, dc_field_info, dc_config)
+                dc_is_required = dc_field_info.is_required()
+            else:
+                dc_name = field.name
+                dc_is_required = (
+                    field.default is dataclasses.MISSING
+                    and getattr(field, "default_factory", dataclasses.MISSING) is dataclasses.MISSING
+                )
+            dc_properties[dc_name] = _python_type_to_json_schema(field_type)
+            if dc_is_required:
+                dc_required.append(dc_name)
         schema_dc: dict[str, Any] = {"type": "object", "properties": dc_properties}
         if dc_required:
             schema_dc["required"] = dc_required
@@ -209,10 +244,11 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         pd_required: list[str] = []
         model_fields = getattr(python_type, "model_fields", {})
         for name, field_info in model_fields.items():
-            pd_properties[name] = _python_type_to_json_schema(model_type_hints.get(name, Any))
+            schema_name = _pydantic_input_name(name, field_info, python_type.model_config)
+            pd_properties[schema_name] = _python_type_to_json_schema(model_type_hints.get(name, Any))
             is_required = getattr(field_info, "is_required", None)
             if callable(is_required) and is_required():
-                pd_required.append(name)
+                pd_required.append(schema_name)
         schema_pd: dict[str, Any] = {"type": "object", "properties": pd_properties}
         if pd_required:
             schema_pd["required"] = pd_required
