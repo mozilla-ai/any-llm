@@ -272,6 +272,30 @@ async def test_completion_with_tool_choice_required() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("parallel_tool_calls", [None, True, False])
+async def test_completion_with_tool_choice_none_sends_only_its_type(parallel_tool_calls: bool | None) -> None:
+    """Anthropic refuses disable_parallel_tool_use on a "none" choice, whatever its value."""
+    api_key = "test-api-key"
+    model = "model-id"
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key=api_key)
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model, messages=messages, tool_choice="none", parallel_tool_calls=parallel_tool_calls
+            )
+        )
+
+        mock_anthropic.return_value.messages.create.assert_called_once_with(
+            model=model,
+            messages=messages,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            tool_choice={"type": "none"},
+        )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "tool_choice",
     [
