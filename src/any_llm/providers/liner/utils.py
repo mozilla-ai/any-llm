@@ -18,6 +18,8 @@ PROVIDER_NAME = "liner"
 
 # Liner's agents fail with a bare 502 on any other role, so they are refused before the call.
 _ROLES = frozenset({"user", "assistant"})
+# Instructions Liner has no role for: sent as the conversation's first user turn instead.
+_INSTRUCTION_ROLES = frozenset({"system", "developer"})
 
 # Reference fields kept on a citation, under the names Exa's answer endpoint uses for the same data.
 _REFERENCE_FIELDS = {
@@ -41,16 +43,27 @@ def _text_content(content: Any, role: str) -> str:
 
 
 def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """Reduce messages to the plain user and assistant text that Liner's agents accept."""
+    """Reduce messages to the plain user and assistant text that Liner's agents accept.
+
+    Liner has no system role and fails on one, so system and developer messages,
+    wherever they appear, are joined into a user turn that leads the conversation.
+    Any other role Liner cannot take is refused rather than dropped.
+    """
+    instructions: list[str] = []
     converted: list[dict[str, str]] = []
     for message in messages:
         role = message.get("role")
+        if role in _INSTRUCTION_ROLES:
+            instructions.append(_text_content(message.get("content"), role))
+            continue
         if role not in _ROLES:
             msg = "messages"
             raise UnsupportedParameterError(
                 msg, PROVIDER_NAME, f"Liner accepts only user and assistant messages, not '{role}'."
             )
         converted.append({"role": role, "content": _text_content(message.get("content"), role)})
+    if instructions:
+        converted.insert(0, {"role": "user", "content": "\n\n".join(instructions)})
     if converted and converted[-1]["role"] != "user":
         msg = "messages"
         raise UnsupportedParameterError(msg, PROVIDER_NAME, "Liner needs the conversation to end with a user message.")
