@@ -408,7 +408,6 @@ async def test_download_full_consumption_and_consumer_error_close_stream() -> No
 
 @pytest.mark.asyncio
 async def test_download_cancellation_closes_upstream() -> None:
-
     stream = CountingStream()
     provider = provider_for(lambda _: httpx.Response(200, stream=stream))
     try:
@@ -423,7 +422,6 @@ async def test_download_cancellation_closes_upstream() -> None:
 
 @pytest.mark.asyncio
 async def test_download_network_error_during_iteration_is_unified(monkeypatch: pytest.MonkeyPatch) -> None:
-
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
 
     class BrokenStream(CountingStream):
@@ -458,7 +456,6 @@ async def test_invalid_file_ids_are_rejected(file_id: str) -> None:
 
 @pytest.mark.asyncio
 async def test_timeout_is_forwarded_and_upload_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
-
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
     requests: list[httpx.Request] = []
 
@@ -478,7 +475,6 @@ async def test_timeout_is_forwarded_and_upload_is_not_retried(monkeypatch: pytes
 
 
 def test_sync_list_delete_and_complete_download() -> None:
-
     def handle(request: httpx.Request) -> httpx.Response:
         if request.method == "DELETE":
             return httpx.Response(200, json={"id": "file_123", "type": "file_deleted"})
@@ -498,7 +494,6 @@ def test_sync_list_delete_and_complete_download() -> None:
 
 @pytest.mark.asyncio
 async def test_file_handle_upload_is_bounded_and_does_not_close_callers_handle() -> None:
-
     class BoundedFile(BytesIO):
         @override
         def read(self, size: int | None = -1) -> bytes:

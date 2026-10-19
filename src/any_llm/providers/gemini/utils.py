@@ -2,11 +2,14 @@ import base64
 import binascii
 import json
 import mimetypes
+from bisect import bisect_right
+from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
 from time import time
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from google.genai import types
 from google.genai.pagers import Pager
@@ -357,6 +360,16 @@ def _extract_google_thought_signature(container: dict[str, Any], provider_name: 
 
 
 _SYNTHETIC_CODE_EXECUTION_ID_PREFIX = "code_exec_"
+_SYNTHETIC_TOOL_CALL_ID_PREFIX = "call_anyllm_"
+
+
+def _tool_call_id(function_call: types.FunctionCall, response_id: str | None, index: int) -> str:
+    """The id Gemini issued for a function call, else one minted from the response so converting it again repeats it."""
+    if function_call.id:
+        return function_call.id
+    if response_id:
+        return f"{_SYNTHETIC_TOOL_CALL_ID_PREFIX}{response_id}_{index}"
+    return f"{_SYNTHETIC_TOOL_CALL_ID_PREFIX}{uuid4().hex}"
 
 
 @dataclass
@@ -489,6 +502,17 @@ def _convert_messages(
     formatted_messages = []
     system_instruction = None
     tool_names: dict[str, str] = {}  # tool_call id -> function name, for tool results that carry no name
+    # An id any-llm minted was never issued by Gemini, and one shared by several calls (as ids from
+    # older any-llm versions are) pairs ambiguously, so neither is sent back.
+    id_counts = Counter(
+        tool_call.get("id")
+        for message in messages
+        if message["role"] == "assistant"
+        for tool_call in message.get("tool_calls") or []
+    )
+    call_order: dict[str, int] = {}  # tool_call id -> position among the latest model turn's calls
+    sent_call_ids: set[str] = set()  # ids sent on the latest model turn's calls
+    pending_order: list[int] = []  # call positions of the results in the pending user turn
 
     for message in messages:
         if message["role"] in ("system", "developer"):
@@ -528,11 +552,18 @@ def _convert_messages(
                         ),
                     )
                 )
+            call_order = {}
+            sent_call_ids = set()
             if message.get("tool_calls"):
                 for i, tool_call in enumerate(message["tool_calls"]):
                     function_call = tool_call["function"]
+                    sent_id = None
                     if tool_call_id := tool_call.get("id"):
                         tool_names[tool_call_id] = function_call["name"]
+                        call_order.setdefault(tool_call_id, i)
+                        if id_counts[tool_call_id] == 1 and not tool_call_id.startswith(_SYNTHETIC_TOOL_CALL_ID_PREFIX):
+                            sent_id = tool_call_id
+                            sent_call_ids.add(tool_call_id)
                     arguments = function_call.get("arguments")
                     if isinstance(arguments, (str, bytes, bytearray)) and arguments:
                         try:
@@ -555,26 +586,39 @@ def _convert_messages(
 
                     parts.append(
                         types.Part(
-                            function_call=types.FunctionCall(name=function_call["name"], args=args),
+                            function_call=types.FunctionCall(id=sent_id, name=function_call["name"], args=args),
                             thought_signature=cast("bytes | None", thought_signature),
                         )
                     )
 
             formatted_messages.append(types.Content(role="model", parts=parts))
         elif message["role"] == "tool":
-            name = message.get("name") or tool_names.get(message.get("tool_call_id", ""), "unknown")
+            tool_call_id = message.get("tool_call_id") or ""
+            name = message.get("name") or tool_names.get(tool_call_id, "unknown")
             content = message["content"]
             if isinstance(content, (str, bytes, bytearray)):
                 with suppress(json.JSONDecodeError, UnicodeDecodeError):
                     content = json.loads(content)
-            part = types.Part.from_function_response(name=name, response=_normalize_tool_response(content))
+            # Gemini 3 maps each result to its call by id; an id matching no call it was sent would not pair.
+            part = types.Part(
+                function_response=types.FunctionResponse(
+                    id=tool_call_id if tool_call_id in sent_call_ids else None,
+                    name=name,
+                    response=_normalize_tool_response(content),
+                )
+            )
+            position = call_order.get(tool_call_id, len(call_order))
             # The API documents only "user" and "model" as Content roles. "function" is tolerated by
             # older models and rejected with 400 INVALID_ARGUMENT by gemini-3.5-flash-lite, 3.7-flash
             # and 3.8-flash. Results of parallel calls share one user turn, as google-genai emits them.
             if (pending := _pending_function_response_parts(formatted_messages)) is not None:
-                pending.append(part)
+                # Models that issue no ids pair results with calls by position, so results go in call order.
+                index = bisect_right(pending_order, position)
+                pending.insert(index, part)
+                pending_order.insert(index, position)
             else:
                 formatted_messages.append(types.Content(role="user", parts=[part]))
+                pending_order = [position]
 
     if not formatted_messages and isinstance(system_instruction, str):
         # Gemini refuses a request with no contents ("contents are required"), and OpenAI-style
@@ -821,7 +865,7 @@ def _convert_response_to_response_dict(
                         args_dict[key] = value
 
                 tool_call_dict: dict[str, Any] = {
-                    "id": f"call_{hash(function_call.name)}_{len(tool_calls_list)}",
+                    "id": _tool_call_id(function_call, response.response_id, len(tool_calls_list)),
                     "function": {
                         "name": function_call.name,
                         "arguments": json.dumps(args_dict),
@@ -944,9 +988,8 @@ def _create_openai_chunk_from_google_chunk(
         response: The Google GenerateContentResponse streaming chunk.
         tool_call_counter: Optional single-element list holding the number of tool
             calls already emitted earlier in the same stream. This should be created
-            once per stream and passed in by the caller so that ``index`` (and the
-            generated tool call ``id``) stay stable and unique across chunks, rather
-            than restarting at 0 for every chunk.
+            once per stream and passed in by the caller so that ``index`` stays stable
+            and unique across chunks, rather than restarting at 0 for every chunk.
         code_execution_state: Optional per-stream state, like ``tool_call_counter``, so a
             code execution result in a later chunk pairs with the code emitted before it.
     """
@@ -989,7 +1032,7 @@ def _create_openai_chunk_from_google_chunk(
             tool_calls_list.append(
                 ChoiceDeltaToolCall(
                     index=tool_call_index,
-                    id=f"call_{hash(function_call.name)}_{tool_call_index}",
+                    id=_tool_call_id(function_call, response.response_id, tool_call_index),
                     type="function",
                     function=ChoiceDeltaToolCallFunction(
                         name=function_call.name,
