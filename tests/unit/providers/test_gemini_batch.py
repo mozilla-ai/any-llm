@@ -1,12 +1,15 @@
 import json
 import tempfile
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
 from any_llm.exceptions import BatchNotCompleteError
+
+if TYPE_CHECKING:
+    from google.genai import types
 
 
 def _make_mock_batch_job(
@@ -274,8 +277,6 @@ def test_convert_openai_request_to_inlined_request_basic() -> None:
 
 def test_convert_openai_request_sends_tool_result_images_as_parts_for_the_model() -> None:
     pytest.importorskip("google.genai")
-    from google.genai import types
-
     from any_llm.providers.gemini.utils import _convert_openai_request_to_inlined_request
 
     tool_call = {"id": "c1", "type": "function", "function": {"name": "take_screenshot", "arguments": "{}"}}
