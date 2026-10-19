@@ -46,3 +46,22 @@ def test_patch_json_schema_patches_any_of_union_without_type() -> None:
     }
     _patch_json_schema(schema)
     assert schema["function"]["parameters"]["properties"]["x"]["type"] == "string"
+
+
+def test_patch_json_schema_leaves_typed_and_non_union_props_unchanged() -> None:
+    typed_union = {"anyOf": [{"type": "integer"}, {"type": "number"}], "type": "number"}
+    plain = {"type": "integer"}
+    schema: dict[str, Any] = {
+        "type": "function",
+        "function": {
+            "name": "fn",
+            "parameters": {
+                "type": "object",
+                "properties": {"typed_union": dict(typed_union), "plain": dict(plain)},
+            },
+        },
+    }
+    _patch_json_schema(schema)
+    props = schema["function"]["parameters"]["properties"]
+    assert props["typed_union"] == typed_union
+    assert props["plain"] == plain
