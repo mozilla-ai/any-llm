@@ -97,18 +97,21 @@ def _extract_ollama_timing_details(response: OllamaChatResponse) -> dict[str, in
     return {field: value for field, value in timing.items() if value is not None}
 
 
+def _ollama_timestamp_to_epoch(created_at: str) -> int:
+    """Convert an Ollama RFC 3339 ``created_at`` string to Unix seconds."""
+    parsed = datetime.fromisoformat(created_at)
+    if parsed.tzinfo is None:
+        # A naive datetime would otherwise be read in the host's local timezone.
+        parsed = parsed.replace(tzinfo=UTC)
+    return int(parsed.timestamp())
+
+
 def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> ChatCompletionChunk:
     """Convert an Ollama streaming chunk to OpenAI ChatCompletionChunk format."""
 
     message = ollama_chunk.message
     created_str = ollama_chunk.created_at
-    created = 0
-    if created_str:
-        if "." in created_str and len(created_str.split(".")[1].rstrip("Z")) > 6:
-            parts = created_str.split(".")
-            microseconds = parts[1][:6]
-            created_str = f"{parts[0]}.{microseconds}Z"
-        created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC).timestamp())
+    created = _ollama_timestamp_to_epoch(created_str) if created_str else 0
 
     content = message.content
 
@@ -186,11 +189,7 @@ def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -
         msg = "Expected Ollama to provide a created_at timestamp"
         raise ValueError(msg)
 
-    if "." in created_str and len(created_str.split(".")[1].rstrip("Z")) > 6:
-        parts = created_str.split(".")
-        microseconds = parts[1][:6]
-        created_str = f"{parts[0]}.{microseconds}Z"
-    created = int(datetime.strptime(created_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC).timestamp())
+    created = _ollama_timestamp_to_epoch(created_str)
 
     prompt_tokens = response.prompt_eval_count or 0
     completion_tokens = response.eval_count or 0

@@ -1,6 +1,8 @@
 import json
 import logging
-from collections.abc import AsyncIterator
+import os
+import time
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -1092,3 +1094,78 @@ async def test_completion_passes_explicit_num_ctx(stream: bool) -> None:
         options = provider.client.chat.call_args.kwargs["options"]
 
     assert options["num_ctx"] == 4096
+
+
+@pytest.mark.parametrize(
+    "created_at",
+    [
+        "2024-01-01T12:00:00Z",
+        "2024-01-01T12:00:00.123456789Z",
+        "2024-01-01T14:00:00+02:00",
+        "2024-01-01T14:00:00.123456789+02:00",
+        "2024-01-01T06:30:00.123456-05:30",
+    ],
+)
+@pytest.mark.parametrize("stream", [False, True])
+def test_ollama_created_at_accepts_rfc3339_timestamps(created_at: str, stream: bool) -> None:
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at=created_at,
+        message=OllamaMessage(role="assistant", content="Hello"),
+        done=True,
+        done_reason="stop",
+    )
+    result = (
+        _create_openai_chunk_from_ollama_chunk(response)
+        if stream
+        else _create_chat_completion_from_ollama_response(response)
+    )
+    assert result.created == 1704110400
+
+
+@pytest.fixture
+def non_utc_local_timezone() -> Iterator[None]:
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset is unavailable on this platform")
+    original = os.environ.get("TZ")
+    # A POSIX rule string needs no tz database on the host.
+    os.environ["TZ"] = "EST+05"
+    time.tzset()
+    yield
+    if original is None:
+        del os.environ["TZ"]
+    else:
+        os.environ["TZ"] = original
+    time.tzset()
+
+
+@pytest.mark.usefixtures("non_utc_local_timezone")
+@pytest.mark.parametrize("stream", [False, True])
+def test_ollama_created_at_without_offset_is_read_as_utc(stream: bool) -> None:
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at="2024-01-01T12:00:00.123456",
+        message=OllamaMessage(role="assistant", content="Hello"),
+        done=True,
+        done_reason="stop",
+    )
+    result = (
+        _create_openai_chunk_from_ollama_chunk(response)
+        if stream
+        else _create_chat_completion_from_ollama_response(response)
+    )
+    assert result.created == 1704110400
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ollama_created_at_invalid_raises(stream: bool) -> None:
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at="not-a-timestamp",
+        message=OllamaMessage(role="assistant", content="Hello"),
+        done=True,
+        done_reason="stop",
+    )
+    converter = _create_openai_chunk_from_ollama_chunk if stream else _create_chat_completion_from_ollama_response
+    with pytest.raises(ValueError, match="Invalid isoformat string"):
+        converter(response)
