@@ -690,6 +690,31 @@ def test_convert_tool_spec_additional_properties_routes_through_json_schema() ->
     assert decl.parameters_json_schema == raw_params
 
 
+def test_convert_tool_spec_malformed_schema_is_refused_before_the_request() -> None:
+    """Only keywords ``types.Schema`` does not model go out raw; a malformed shape is the caller's error."""
+    openai_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "render",
+                "description": "Render.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "assets": {
+                            "type": "array",
+                            "items": {"type": "object", "properties": {"w": {"type": "number"}}, "required": "w"},
+                        }
+                    },
+                },
+            },
+        }
+    ]
+
+    with pytest.raises(InvalidRequestError, match="'render' has an invalid parameters schema"):
+        _convert_tool_spec(openai_tools, "gemini")
+
+
 def test_convert_tool_spec_without_type_unions_still_uses_openapi_path() -> None:
     """The reshaping path is unchanged for schemas types.Schema can represent."""
     openai_tools = [
