@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from ollama import ChatResponse as OllamaChatResponse
@@ -97,14 +97,21 @@ def _extract_ollama_timing_details(response: OllamaChatResponse) -> dict[str, in
     return {field: value for field, value in timing.items() if value is not None}
 
 
+def _ollama_timestamp_to_epoch(created_at: str) -> int:
+    """Convert an Ollama RFC 3339 ``created_at`` string to Unix seconds."""
+    parsed = datetime.fromisoformat(created_at)
+    if parsed.tzinfo is None:
+        # A naive datetime would otherwise be read in the host's local timezone.
+        parsed = parsed.replace(tzinfo=UTC)
+    return int(parsed.timestamp())
+
+
 def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> ChatCompletionChunk:
-    """Convert an Ollama streaming chunk, preserving its RFC 3339 timestamp offset."""
+    """Convert an Ollama streaming chunk to OpenAI ChatCompletionChunk format."""
 
     message = ollama_chunk.message
     created_str = ollama_chunk.created_at
-    created = 0
-    if created_str:
-        created = int(datetime.fromisoformat(created_str).timestamp())
+    created = _ollama_timestamp_to_epoch(created_str) if created_str else 0
 
     content = message.content
 
@@ -175,14 +182,14 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
 
 
 def _create_chat_completion_from_ollama_response(response: OllamaChatResponse) -> ChatCompletion:
-    """Convert an Ollama response, preserving its RFC 3339 timestamp offset."""
+    """Convert an Ollama completion response directly to an OpenAI-compatible ChatCompletion."""
 
     created_str = response.created_at
     if created_str is None:
         msg = "Expected Ollama to provide a created_at timestamp"
         raise ValueError(msg)
 
-    created = int(datetime.fromisoformat(created_str).timestamp())
+    created = _ollama_timestamp_to_epoch(created_str)
 
     prompt_tokens = response.prompt_eval_count or 0
     completion_tokens = response.eval_count or 0

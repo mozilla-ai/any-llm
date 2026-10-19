@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -1119,3 +1120,40 @@ def test_ollama_created_at_accepts_rfc3339_timestamps(created_at: str, stream: b
         else _create_chat_completion_from_ollama_response(response)
     )
     assert result.created == 1704110400
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ollama_created_at_without_offset_is_read_as_utc(stream: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        response = OllamaChatResponse(
+            model="llama3.1",
+            created_at="2024-01-01T12:00:00.123456",
+            message=OllamaMessage(role="assistant", content="Hello"),
+            done=True,
+            done_reason="stop",
+        )
+        result = (
+            _create_openai_chunk_from_ollama_chunk(response)
+            if stream
+            else _create_chat_completion_from_ollama_response(response)
+        )
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    assert result.created == 1704110400
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_ollama_created_at_invalid_raises(stream: bool) -> None:
+    response = OllamaChatResponse(
+        model="llama3.1",
+        created_at="not-a-timestamp",
+        message=OllamaMessage(role="assistant", content="Hello"),
+        done=True,
+        done_reason="stop",
+    )
+    converter = _create_openai_chunk_from_ollama_chunk if stream else _create_chat_completion_from_ollama_response
+    with pytest.raises(ValueError, match="Invalid isoformat string"):
+        converter(response)
