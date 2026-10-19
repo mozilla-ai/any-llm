@@ -135,6 +135,29 @@ for chunk in completion(
     output += chunk_content
 ```
 
+### Rebuilding the message from a stream
+
+To replay a streamed turn, for example to send tool results back, feed the chunks to `ChatCompletionAccumulator`. It assembles the same message a non-streaming call returns: text, reasoning, tool calls, and the `extra_content` that providers use to carry state across turns (Gemini's `thought_signature`, Anthropic's thinking `signature`, DeepSeek's `reasoning_content`).
+
+```python
+from any_llm import completion
+from any_llm.utils.streaming import ChatCompletionAccumulator
+
+messages = [{"role": "user", "content": "Hello!"}]
+accumulator = ChatCompletionAccumulator()
+for chunk in completion(
+    model="mistral-small-latest",
+    provider="mistral",
+    messages=messages,
+    stream=True
+):
+    accumulator.add(chunk)
+
+messages.append(accumulator.completion.choices[0].message)
+```
+
+`accumulate_chunks` and `aaccumulate_chunks` do the same for a whole stream in one call. Tool-call fragments are grouped by `index` and their `arguments` are joined; a repeated `extra_content` list is joined, and any other repeated key keeps its latest value. Reading `completion` before every choice has a `finish_reason` raises `ValueError`, since a partial turn is not safe to replay. Audio output is not aggregated.
+
 ## Multiple Choices
 
 `n` asks for more than one choice in a single completion. `n=1` is OpenAI's default, so any-llm drops it before the request reaches any provider, and clients that always send it (Haystack's `OpenAIChatGenerator`, for example) work everywhere. Any other value is forwarded only to providers that can return several choices: the providers built on the OpenAI-compatible base (including registry gateways and `AnyLLM.create_openai_compatible` endpoints), `cerebras`, `huggingface`, `mistral` and `together`. `vertexai` forwards `n` for its partner models only and refuses values above 1 for Gemini models. `deepseek` drops `n`, like the other fields its API does not define. The rest raise `UnsupportedParameterError` naming `n` instead of silently returning one choice.

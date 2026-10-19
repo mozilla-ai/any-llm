@@ -10,12 +10,14 @@ from typing_extensions import override
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.providers.deepseek.utils import (
+    ReasoningReplayStream,
     _inject_cached_tokens,
     _inject_cached_tokens_chunk,
     _inject_reasoning_extra_content,
     _preprocess_messages,
 )
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.types.completion import ChatCompletion
 from any_llm.types.messages import MessageResponse
 from any_llm.utils.messages_compat import (
     anthropic_client_kwargs,
@@ -30,7 +32,7 @@ if TYPE_CHECKING:
     from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage
     from anthropic.types.parsed_message import ParsedMessage
 
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, ReasoningEffort
+    from any_llm.types.completion import ChatCompletionChunk, CompletionParams, ReasoningEffort
     from any_llm.types.messages import MessagesParams, MessageStreamEvent
 
 # Each entry maps an any-llm effort to DeepSeek's top-level effort and thinking toggle.
@@ -201,7 +203,10 @@ class DeepseekProvider(BaseOpenAIProvider):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        return await super()._acompletion(_preprocess_messages(params), **kwargs)
+        response = await super()._acompletion(_preprocess_messages(params), **kwargs)
+        if isinstance(response, ChatCompletion):
+            return response
+        return ReasoningReplayStream(response)
 
     @override
     async def _amessages(
