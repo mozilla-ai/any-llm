@@ -2782,30 +2782,66 @@ def test_output_config_bare_type_without_schema_is_still_wrapped() -> None:
     assert normalize_output_config({"type": "json_schema"}) == {"format": {"type": "json_schema"}}
 
 
-def test_output_format_effort_only_leaves_response_format_unset() -> None:
-    """An effort-only config asks for no structured output, so there is nothing to translate."""
+def test_output_format_effort_only_sets_reasoning_effort_and_no_response_format() -> None:
+    """An effort-only config asks for no structured output, only a reasoning level."""
     params = MessagesParams(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
         output_format={"effort": "high"},
     )
-    assert "response_format" not in messages_params_to_completion_params(params)
+    result = messages_params_to_completion_params(params)
+    assert "response_format" not in result
+    assert result["reasoning_effort"] == "high"
 
 
-def test_output_format_effort_beside_a_schema_is_ignored_not_rejected() -> None:
-    """effort gets the same treatment in both shapes: ignored, never a reason to reject."""
+def test_output_format_effort_beside_a_schema_sets_both() -> None:
+    """effort and format are independent: the schema becomes response_format, effort reasoning_effort."""
     params = MessagesParams(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
-        output_format={"effort": "high", "format": {"type": "json_schema", "schema": {"type": "object"}}},
+        output_format={"effort": "max", "format": {"type": "json_schema", "schema": {"type": "object"}}},
     )
     result = messages_params_to_completion_params(params)
     assert result["response_format"] == {
         "type": "json_schema",
         "json_schema": {"name": "structured_output", "schema": {"type": "object"}},
     }
+    assert result["reasoning_effort"] == "max"
+
+
+@pytest.mark.parametrize(
+    ("thinking", "expected"),
+    [
+        ({"type": "enabled", "budget_tokens": 1024}, "low"),
+        ({"type": "adaptive"}, "low"),
+        ({"type": "disabled"}, "none"),
+    ],
+)
+def test_output_format_effort_against_thinking(thinking: dict[str, Any], expected: str) -> None:
+    """effort is the explicit level and beats a budget; thinking disabled still turns reasoning off."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=4096,
+        thinking=thinking,
+        output_format={"effort": "low"},
+    )
+    assert messages_params_to_completion_params(params)["reasoning_effort"] == expected
+
+
+@pytest.mark.parametrize("effort", ["extreme", "none", "minimal", "auto"])
+def test_output_format_effort_outside_anthropic_levels_raises(effort: str) -> None:
+    """Only Anthropic's levels are accepted, even where reasoning_effort would take the value."""
+    params = MessagesParams(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=1024,
+        output_format={"effort": effort},
+    )
+    with pytest.raises(InvalidRequestError, match=repr(effort)):
+        messages_params_to_completion_params(params)
 
 
 def test_output_format_naming_a_format_without_a_schema_raises() -> None:

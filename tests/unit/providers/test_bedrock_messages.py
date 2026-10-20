@@ -624,6 +624,7 @@ async def test_claude_schema_output_config_keeps_the_converse_bridge() -> None:
 
     client.invoke_model.assert_not_called()
     client.converse.assert_called_once()
+    assert "additionalModelRequestFields" not in client.converse.call_args.kwargs
 
 
 @pytest.mark.asyncio

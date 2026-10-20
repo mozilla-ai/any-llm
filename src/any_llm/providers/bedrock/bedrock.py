@@ -157,6 +157,24 @@ def _formatless_output_config(params: MessagesParams) -> dict[str, Any] | None:
     return None if "format" in output_config else output_config
 
 
+def _without_effort_beside_a_format(params: MessagesParams) -> MessagesParams:
+    """Drop `effort` from an `output_format` dict that also names a format.
+
+    Converse emulates the format with a forced tool call, and the bridge would send effort as
+    `reasoning_effort`, which Converse can only express as extended thinking, which Claude
+    refuses beside a forced tool call. Effort alone (no format) is kept.
+    """
+    if not isinstance(params.output_format, dict) or "effort" not in params.output_format:
+        return params
+    output_config = normalize_output_config(params.output_format)
+    if "format" not in output_config:
+        return params
+    logger.debug("Dropping output_config effort, which Converse cannot apply beside a structured output format")
+    return params.model_copy(
+        update={"output_format": {key: value for key, value in output_config.items() if key != "effort"}}
+    )
+
+
 class BedrockProvider(AnyLLM):
     """AWS Bedrock Provider using boto3."""
 
@@ -485,7 +503,7 @@ class BedrockProvider(AnyLLM):
         if (params.output_format is not None and output_config is None) or not self.serves_messages_natively(
             params.model
         ):
-            return await super()._amessages(params, **kwargs)
+            return await super()._amessages(_without_effort_beside_a_format(params), **kwargs)
 
         body = self._native_messages_body(params)
         if output_config:
