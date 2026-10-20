@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, cast
 
-from openai import DEFAULT_TIMEOUT as OPENAI_DEFAULT_TIMEOUT
+import httpx
 from openai import AsyncStream
 from openresponses_types import ResponseResource
 from typing_extensions import override
@@ -29,6 +29,11 @@ except ImportError as e:
 
 if TYPE_CHECKING:
     from fireworks._types import RequestOptions
+
+# The OpenAI client's default. The SDK's own 60s read timeout would cut off long non-streaming
+# reasoning calls. openai's DEFAULT_TIMEOUT cannot be reused: newer openai releases build it on
+# httpx2, and the Fireworks SDK, which is on httpx, takes it for a number.
+DEFAULT_TIMEOUT = httpx.Timeout(timeout=600.0, connect=5.0)
 
 
 def _sdk_base_url(api_base: str) -> str:
@@ -69,12 +74,10 @@ class FireworksProvider(BaseOpenAIProvider):
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         super()._init_client(api_key=api_key, api_base=api_base, **kwargs)
-        # The SDK's 60s default read timeout would cut off long non-streaming reasoning calls
-        # that the OpenAI client's default allows.
         self.fireworks_client = AsyncFireworks(
             api_key=api_key,
             base_url=_sdk_base_url(api_base or self.API_BASE),
-            **{"timeout": OPENAI_DEFAULT_TIMEOUT, **kwargs},
+            **{"timeout": DEFAULT_TIMEOUT, **kwargs},
         )
 
     @staticmethod

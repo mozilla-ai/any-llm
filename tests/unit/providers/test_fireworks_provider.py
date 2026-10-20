@@ -5,12 +5,11 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
-from openai import DEFAULT_TIMEOUT
 from pydantic import BaseModel
 
 from any_llm.exceptions import ModelNotFoundError, UnsupportedParameterError
 from any_llm.providers.fireworks import FireworksProvider
-from any_llm.providers.fireworks.fireworks import _sdk_base_url
+from any_llm.providers.fireworks.fireworks import DEFAULT_TIMEOUT, _sdk_base_url
 from any_llm.providers.fireworks.utils import convert_fireworks_rerank_response, extract_reasoning_from_response
 from any_llm.types.completion import (
     ChatCompletion,
@@ -430,6 +429,8 @@ def test_init_client_points_the_sdk_at_the_default_inference_root() -> None:
 def test_init_client_defaults_the_sdk_timeout_to_the_openai_clients() -> None:
     """The SDK's own 60s read timeout is not used unless the caller asks for it."""
     provider = FireworksProvider(api_key="test-key")
+    assert isinstance(provider.fireworks_client.timeout, httpx.Timeout)
+    assert provider.fireworks_client.timeout.read == 600.0
     assert provider.fireworks_client.timeout == DEFAULT_TIMEOUT
 
 
