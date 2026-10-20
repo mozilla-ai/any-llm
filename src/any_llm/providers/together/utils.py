@@ -49,7 +49,9 @@ _TOGETHER_TO_OPENAI_BATCH_STATUS: dict[str, str] = {
 def _convert_together_usage(usage: dict[str, Any]) -> CompletionUsage:
     """Convert Together usage, keeping the token details its SDK models do not declare."""
     prompt_details = usage.get("prompt_tokens_details") or {}
-    cached_tokens = prompt_details.get("cached_tokens", usage.get("cached_tokens"))
+    cached_tokens = prompt_details.get("cached_tokens")
+    if cached_tokens is None:
+        cached_tokens = usage.get("cached_tokens")
     reasoning_tokens = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
     return CompletionUsage(
         prompt_tokens=usage.get("prompt_tokens") or 0,

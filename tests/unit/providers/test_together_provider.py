@@ -272,6 +272,25 @@ def test_convert_response_reads_top_level_cached_tokens() -> None:
     assert result.usage.prompt_tokens_details.cached_tokens == 64
 
 
+def test_convert_response_reads_top_level_cached_tokens_when_nested_is_null() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 1,
+                "total_tokens": 101,
+                "prompt_tokens_details": {"cached_tokens": None},
+                "cached_tokens": 64,
+            }
+        },
+        "model",
+    )
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 64
+
+
 def test_convert_response_without_usage_details() -> None:
     result = _convert_together_response_to_chat_completion(
         {"usage": {"prompt_tokens": 3, "completion_tokens": None, "total_tokens": 3}},
