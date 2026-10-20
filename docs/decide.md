@@ -71,6 +71,29 @@ For OpenRouter and llama.cpp, `timeout` (in seconds) and `extra_headers` apply t
 Other keyword arguments, and the keys of `extra_body`, are added to the request body, so OpenRouter
 fields such as `session_id` or `provider` go through unchanged.
 
+## Retries
+
+The SDK clients behind every decide provider retry a failed request twice by default: on a rate limit,
+a timeout, or a server error. A retry spends time, so for a tight time limit turn retries off with
+`max_retries=0`. The client then sends each request once.
+
+```python
+from any_llm import AnyLLM, decide
+from any_llm.types.decide import Noul
+
+questions = {"billing": Noul(instructions="Is this ticket about billing?")}
+
+# For every call on one client:
+llm = AnyLLM.create("openrouter", max_retries=0)
+result = llm.decide("typesafe/jev-1.13", "I was charged twice.", questions)
+
+# For one call: the top-level functions make a new client for each call.
+result = decide("openrouter:typesafe/jev-1.13", "I was charged twice.", questions, client_args={"max_retries": 0})
+```
+
+TypeSafe also takes the SDK's own policy for one call, such as `retry=RetryPolicy(max_retries=0)` from
+`typesafe_sdk`.
+
 ## Images
 
 Pass `images`, a list of data URLs (`data:image/...;base64,...`), when the questions are about a picture.
