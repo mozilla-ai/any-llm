@@ -486,7 +486,7 @@ _DECISIONS_BODY = {
     "model": "typesafe/jev-1.13",
     "provider": "TypeSafe",
     "answers": {"billing": {"type": "noul", "noul": 0.9}},
-    "usage": {"input_tokens": 12, "output_tokens": 1},
+    "usage": {"input_tokens": 12, "output_tokens": 1, "cost": 0.0000005},
 }
 
 
@@ -544,6 +544,7 @@ async def test_adecide_posts_the_system_one_body_to_the_decisions_endpoint() -> 
     assert result.nouls["billing"].noul == 0.9
     assert result.usage is not None
     assert result.usage.input_tokens == 12
+    assert result.usage.cost == 0.0000005
 
 
 @pytest.mark.asyncio
