@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import inspect
 import json
-from typing import TYPE_CHECKING, Any, cast, get_args
+from typing import TYPE_CHECKING, Any, cast
 
 from anthropic import AsyncAnthropic
 from anthropic.types import CacheCreation, CodeExecutionToolResultBlock, ServerToolUseBlock
 
 from any_llm.exceptions import InvalidRequestError
-from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, ReasoningEffort
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -601,15 +601,19 @@ def _convert_tool_choice_to_openai(tool_choice: dict[str, Any]) -> str | dict[st
     return "auto"
 
 
+# The levels Anthropic's output_config.effort takes, each also a ReasoningEffort value.
+_OUTPUT_CONFIG_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
 def output_config_effort(params: MessagesParams) -> str | None:
     """Return ``output_config.effort`` as a completion ``reasoning_effort``, or None if unset.
 
-    Anthropic's effort levels are a subset of ``ReasoningEffort``, so the value carries over
-    as is, and each provider maps ``reasoning_effort`` to what its API takes.
+    Each of Anthropic's effort levels is a ``ReasoningEffort`` value, so it carries over as
+    is, and each provider maps ``reasoning_effort`` to what its API takes.
 
     Raises:
-        InvalidRequestError: when effort is not a level ``reasoning_effort`` accepts. Dropping
-            it would leave the caller believing a level is in force.
+        InvalidRequestError: when effort is not one of Anthropic's levels. Dropping it would
+            leave the caller believing a level is in force.
 
     """
     if not isinstance(params.output_format, dict):
@@ -617,8 +621,8 @@ def output_config_effort(params: MessagesParams) -> str | None:
     effort = params.output_format.get("effort")
     if effort is None:
         return None
-    if effort not in get_args(ReasoningEffort):
-        msg = f"output_config effort {effort!r} is not one of {', '.join(get_args(ReasoningEffort))}."
+    if effort not in _OUTPUT_CONFIG_EFFORTS:
+        msg = f"output_config effort {effort!r} is not one of {', '.join(_OUTPUT_CONFIG_EFFORTS)}."
         raise InvalidRequestError(msg)
     return cast("str", effort)
 

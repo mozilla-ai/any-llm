@@ -2831,15 +2831,16 @@ def test_output_format_effort_against_thinking(thinking: dict[str, Any], expecte
     assert messages_params_to_completion_params(params)["reasoning_effort"] == expected
 
 
-def test_output_format_unknown_effort_raises() -> None:
-    """An effort reasoning_effort cannot express is refused, not dropped."""
+@pytest.mark.parametrize("effort", ["extreme", "none", "minimal", "auto"])
+def test_output_format_effort_outside_anthropic_levels_raises(effort: str) -> None:
+    """Only Anthropic's levels are accepted, even where reasoning_effort would take the value."""
     params = MessagesParams(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Hello"}],
         max_tokens=1024,
-        output_format={"effort": "extreme"},
+        output_format={"effort": effort},
     )
-    with pytest.raises(InvalidRequestError, match="extreme"):
+    with pytest.raises(InvalidRequestError, match=repr(effort)):
         messages_params_to_completion_params(params)
 
 
