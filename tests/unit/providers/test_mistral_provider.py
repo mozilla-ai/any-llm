@@ -1679,3 +1679,24 @@ def test_create_mistral_chunk_keeps_cached_tokens() -> None:
     assert chunk.usage.prompt_tokens == 13406
     assert chunk.usage.prompt_tokens_details is not None
     assert chunk.usage.prompt_tokens_details.cached_tokens == 13376
+
+
+@pytest.mark.asyncio
+async def test_acompletion_forwards_prompt_cache_key() -> None:
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.mistral import MistralProvider
+
+    with (
+        patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral,
+        patch("any_llm.providers.mistral.mistral._create_mistral_completion_from_response"),
+    ):
+        provider = MistralProvider(api_key="test-api-key")
+        mocked_mistral.return_value.chat.complete_async = AsyncMock(return_value=Mock())
+
+        await provider.acompletion(
+            model="mistral-small-latest",
+            messages=[{"role": "user", "content": "Hello"}],
+            prompt_cache_key="tenant-1",
+        )
+
+        assert mocked_mistral.return_value.chat.complete_async.call_args[1]["prompt_cache_key"] == "tenant-1"

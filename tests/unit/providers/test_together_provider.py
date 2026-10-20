@@ -710,3 +710,45 @@ def test_together_convert_embedding_params_forwards_kwargs() -> None:
     from any_llm.providers.together.together import TogetherProvider
 
     assert TogetherProvider._convert_embedding_params("hello", timeout=5) == {"input": "hello", "timeout": 5}
+
+
+def test_convert_completion_params_sends_prompt_cache_key_in_extra_body() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+        stream_options={"include_usage": True},
+        prompt_cache_key="tenant-1",
+    )
+    result = TogetherProvider._convert_completion_params(params, extra_body={"other": 1})
+
+    assert "prompt_cache_key" not in result
+    assert result["extra_body"] == {
+        "other": 1,
+        "stream_options": {"include_usage": True},
+        "prompt_cache_key": "tenant-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_acompletion_accepts_prompt_cache_key() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    with (
+        patch("any_llm.providers.together.together.together.AsyncTogether") as mock_together,
+        patch.object(TogetherProvider, "_convert_completion_response", return_value=Mock()),
+    ):
+        mock_together.return_value.chat.completions.create = AsyncMock(return_value=Mock())
+        provider = TogetherProvider(api_key="test-api-key")
+
+        await provider.acompletion(
+            model="deepseek-ai/DeepSeek-V4.1-Flash",
+            messages=[{"role": "user", "content": "Hi"}],
+            prompt_cache_key="tenant-1",
+        )
+
+        call_kwargs = mock_together.return_value.chat.completions.create.call_args[1]
+        assert "prompt_cache_key" not in call_kwargs
+        assert call_kwargs["extra_body"] == {"prompt_cache_key": "tenant-1"}
