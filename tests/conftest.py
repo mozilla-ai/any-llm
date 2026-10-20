@@ -214,6 +214,8 @@ def rerank_provider_model_map() -> dict[LLMProvider, str]:
 @pytest.fixture
 def decide_provider_model_map() -> dict[LLMProvider, str]:
     return {
+        # llama-server ignores the model when it serves one model.
+        LLMProvider.LLAMACPP: "N/A",
         LLMProvider.OPENROUTER: "typesafe/jev-1.13",
         LLMProvider.TYPESAFE: "jev-latest",
     }

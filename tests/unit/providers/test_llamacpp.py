@@ -1,8 +1,13 @@
+import json
+
+import httpx
 import pytest
 
+from any_llm import adecide
 from any_llm.any_llm import AnyLLM
 from any_llm.constants import LLMProvider
 from any_llm.providers.llamacpp.llamacpp import LlamacppProvider
+from any_llm.types.decide import Noul
 
 
 def test_provider_metadata() -> None:
@@ -54,9 +59,53 @@ def test_capability_flags() -> None:
     assert not LlamacppProvider.SUPPORTS_IMAGE_GENERATION
     assert not LlamacppProvider.SUPPORTS_RERANK
     assert not LlamacppProvider.SUPPORTS_RESPONSES
+    assert LlamacppProvider.SUPPORTS_DECIDE
 
 
 def test_registered_in_enum_and_loader() -> None:
     assert LLMProvider.from_string("llamacpp") is LLMProvider.LLAMACPP
     assert AnyLLM.get_provider_class("llamacpp") is LlamacppProvider
     assert "llamacpp" in AnyLLM.get_supported_providers()
+
+
+def _answering(requests: list[httpx.Request]) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = {"model": "tev1", "answers": {"spam": {"type": "noul", "noul": 0.2}}, "usage": {"input_tokens": 5}}
+        return httpx.Response(200, json=body)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.asyncio
+async def test_adecide_posts_to_systemone_under_the_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLAMACPP_API_KEY", raising=False)
+    requests: list[httpx.Request] = []
+    provider = LlamacppProvider(http_client=_answering(requests))
+
+    result = await provider.adecide("tev1", "Buy now!", {"spam": Noul(instructions="Is this spam?")})
+
+    (request,) = requests
+    assert str(request.url) == "http://127.0.0.1:8080/v1/systemone"
+    assert json.loads(request.content) == {
+        "model": "tev1",
+        "state": "Buy now!",
+        "questions": {"spam": {"type": "noul", "instructions": "Is this spam?"}},
+    }
+    assert result.nouls["spam"].noul == 0.2
+
+
+@pytest.mark.asyncio
+async def test_top_level_adecide_dispatches_on_the_llamacpp_prefix() -> None:
+    requests: list[httpx.Request] = []
+
+    result = await adecide(
+        "llamacpp:tev1",
+        "Buy now!",
+        {"spam": Noul(instructions="Is this spam?")},
+        api_base="http://gpu-box:8080/v1",
+        client_args={"http_client": _answering(requests)},
+    )
+
+    assert str(requests[0].url) == "http://gpu-box:8080/v1/systemone"
+    assert result.model == "tev1"
