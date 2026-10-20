@@ -598,6 +598,60 @@ async def test_claude_output_format_keeps_the_converse_bridge() -> None:
 
 
 @pytest.mark.asyncio
+async def test_claude_schema_output_config_keeps_the_converse_bridge() -> None:
+    client = Mock()
+    client.converse.return_value = {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"toolUse": {"toolUseId": "t1", "name": "any_llm_structured_output", "input": {"city": "Paris"}}}
+                ],
+            }
+        },
+        "stopReason": "tool_use",
+        "usage": {"inputTokens": 3, "outputTokens": 1, "totalTokens": 4},
+    }
+    provider = BedrockProvider(client=client)
+    schema = {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}
+
+    await provider.amessages(
+        model=CLAUDE_MODEL,
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=64,
+        output_format={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
+    )
+
+    client.invoke_model.assert_not_called()
+    client.converse.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_claude_effort_only_output_config_takes_the_native_path(stream: bool) -> None:
+    client = Mock()
+    client.invoke_model.return_value = {"body": Mock(read=Mock(return_value=json.dumps(_CLAUDE_MESSAGE).encode()))}
+    client.invoke_model_with_response_stream.return_value = {"body": _FakeEventStream([])}
+    provider = BedrockProvider(client=client)
+
+    result = await provider.amessages(
+        model=CLAUDE_MODEL,
+        messages=_THINKING_HISTORY,
+        max_tokens=64,
+        output_format={"effort": "high"},
+        stream=stream,
+    )
+    if stream:
+        await _drain(cast("AsyncIterator[Any]", result), [])
+
+    client.converse.assert_not_called()
+    method = client.invoke_model_with_response_stream if stream else client.invoke_model
+    body = _sent_body(method)
+    assert body["output_config"] == {"effort": "high"}
+    assert body["messages"] == _THINKING_HISTORY
+
+
+@pytest.mark.asyncio
 async def test_claude_timeout_uses_a_client_built_with_that_timeout() -> None:
     with patch("boto3.Session") as session_cls:
         session_client = session_cls.return_value.client
