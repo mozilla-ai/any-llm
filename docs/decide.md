@@ -43,6 +43,12 @@ print(result.nouls["billing"].noul, result.choices["tone"].choice)
 `adecide` is the async version and takes the same arguments. Change the prefix to change the provider,
 for example `typesafe:jev-latest`.
 
+## Response
+
+The result is a `DecideResponse`. `answers` holds the answers keyed by question name, and `nouls`,
+`choices` and `scores` group them by type. `usage` holds the token counts and, when the provider
+reports one, `cost`: what the provider charged in USD. OpenRouter reports it.
+
 ## Request options
 
 For OpenRouter and llama.cpp, `timeout` (in seconds) and `extra_headers` apply to the HTTP request.

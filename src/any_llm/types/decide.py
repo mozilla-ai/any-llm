@@ -108,6 +108,8 @@ class DecideUsage(BaseModel):
     """Input tokens used, or `None` when the provider did not report it."""
     output_tokens: int | None = None
     """Output tokens used, or `None` when the provider did not report it."""
+    cost: float | None = None
+    """What the provider charged for the request in USD, or `None` when it did not report it."""
 
 
 class DecideResponse(BaseModel):

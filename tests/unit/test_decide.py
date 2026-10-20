@@ -114,6 +114,13 @@ def test_response_answers_validate_by_type() -> None:
     assert response.usage == DecideUsage(input_tokens=10, output_tokens=2)
 
 
+def test_usage_keeps_the_reported_cost() -> None:
+    usage = DecideUsage.model_validate({"input_tokens": 10, "output_tokens": 0, "cost": 0.00042})
+
+    assert usage.cost == 0.00042
+    assert DecideUsage().cost is None
+
+
 def test_score_answer_keys_are_integer_levels() -> None:
     answer = _response().scores["urgency"]
 
