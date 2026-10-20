@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from cohere import V2ChatResponse
 from cohere.types import ListModelsResponse as CohereListModelsResponse
+from cohere.types import Usage as CohereUsage
 
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.completion import (
@@ -15,6 +16,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Embedding,
     Function,
+    PromptTokensDetails,
     Reasoning,
     Usage,
 )
@@ -187,6 +189,7 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any, model: str) -> ChatComple
                     (getattr(chunk_delta.usage.tokens, "input_tokens", 0) or 0)
                     + (getattr(chunk_delta.usage.tokens, "output_tokens", 0) or 0)
                 ),
+                "prompt_tokens_details": _prompt_tokens_details(chunk_delta.usage),
             }
 
     choice_dict = {
@@ -199,6 +202,13 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any, model: str) -> ChatComple
     chunk_dict["choices"] = [choice_dict]
 
     return ChatCompletionChunk.model_validate(chunk_dict)
+
+
+def _prompt_tokens_details(usage: CohereUsage) -> PromptTokensDetails | None:
+    """Map Cohere's top-level cached_tokens, the prompt tokens that hit its cache."""
+    if usage.cached_tokens is None:
+        return None
+    return PromptTokensDetails(cached_tokens=int(usage.cached_tokens))
 
 
 def _convert_response(response: V2ChatResponse, model: str) -> ChatCompletion:
@@ -214,6 +224,7 @@ def _convert_response(response: V2ChatResponse, model: str) -> ChatCompletion:
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=prompt_tokens + completion_tokens,
+        prompt_tokens_details=_prompt_tokens_details(response.usage) if response.usage else None,
     )
 
     if response.finish_reason == "TOOL_CALL" and response.message.tool_calls:
