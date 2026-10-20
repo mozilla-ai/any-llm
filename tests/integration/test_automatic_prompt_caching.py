@@ -13,7 +13,7 @@ import pytest
 
 from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionUsage
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage, CompletionUsage
 from tests.constants import EXPECTED_PROVIDERS
 
 # Models confirmed to report cache hits; the default small models do not all do so.
@@ -39,7 +39,7 @@ def _create_llm(provider: LLMProvider, provider_client_config: dict[LLMProvider,
         pytest.skip(f"{provider.value} API key not provided, skipping")
 
 
-def _messages() -> list[dict[str, Any]]:
+def _messages() -> list[dict[str, Any] | ChatCompletionMessage]:
     # A fresh prefix per test keeps one run from riding on a cache another run warmed.
     prefix = f"Session {uuid.uuid4()}. You are a helpful assistant. " + " ".join(
         f"Fact {i}: the sky over city {i} is blue." for i in range(800)
