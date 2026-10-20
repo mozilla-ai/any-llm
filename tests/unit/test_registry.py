@@ -190,6 +190,8 @@ def test_row_defaults_are_conservative(community_row: OpenAICompatibleProviderCo
     assert not cls.SUPPORTS_BATCH
     assert not cls.SUPPORTS_IMAGE_GENERATION
     assert not cls.SUPPORTS_RERANK
+    assert not cls.SUPPORTS_DECIDE
+    assert cls.DECIDE_PATH is None
     assert not community_row.api_key_optional
 
 

@@ -17,6 +17,7 @@ shape, so one call works with each of them. There are three question types:
 
 | Provider | `SUPPORTS_DECIDE` | Notes |
 |----------|-------------------|-------|
+| llama.cpp | Yes | `POST /v1/systemone` on llama-server (build b11371 or newer) through the OpenAI client. The server must load a decision model; with one model loaded, the `model` you pass is ignored. Set `api_base` (or `LLAMACPP_API_BASE`) to the server's `/v1` URL; the default is `http://127.0.0.1:8080/v1`. No API key is needed. |
 | OpenRouter | Yes | `POST /api/alpha/decisions` through the OpenAI client. Use an OpenRouter model ID, such as `typesafe/jev-1.13`. |
 | TypeSafe | Yes | `POST /v1/systemone` through the TypeSafe SDK. See [TypeSafe](typesafe.md). |
 
@@ -44,6 +45,23 @@ for example `typesafe:jev-latest`.
 
 ## Request options
 
-For OpenRouter, `timeout` (in seconds) and `extra_headers` apply to the HTTP request. Other keyword
-arguments, and the keys of `extra_body`, are added to the request body, so OpenRouter fields such as
-`session_id` or `provider` go through unchanged.
+For OpenRouter and llama.cpp, `timeout` (in seconds) and `extra_headers` apply to the HTTP request.
+Other keyword arguments, and the keys of `extra_body`, are added to the request body, so OpenRouter
+fields such as `session_id` or `provider` go through unchanged.
+
+## llama.cpp
+
+To reach a llama-server on another host, pass its `/v1` URL:
+
+```python
+from any_llm import decide
+from any_llm.types.decide import Noul
+
+result = decide(
+    "llamacpp:laya",
+    "I was charged twice.",
+    {"billing": Noul(instructions="Is this ticket about billing?")},
+    api_base="http://gpu-box:8080/v1",
+)
+print(result.nouls["billing"].noul)
+```
