@@ -437,3 +437,35 @@ async def test_messages_bedrock_claude_takes_thinking_display_updates(
     else:
         assert isinstance(result, MessageResponse)
         assert result.content
+
+
+@pytest.mark.asyncio
+async def test_messages_bedrock_claude_effort_keeps_the_native_path(
+    provider: LLMProvider,
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """An effort-only output_config is accepted natively, so cache_control still caches (Converse drops it)."""
+    if provider != LLMProvider.BEDROCK:
+        pytest.skip("Targets the native Messages path for Claude models on Bedrock")
+
+    request: dict[str, Any] = {
+        "model": _BEDROCK_ADAPTIVE_CLAUDE_MODEL,
+        "max_tokens": 256,
+        "system": [{"type": "text", "text": _CACHEABLE_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        "messages": [{"role": "user", "content": "Say hello in exactly one word."}],
+        "output_format": {"effort": "low"},
+    }
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        first = await llm.amessages(**request)
+        second = await llm.amessages(**request)
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except Exception as exc:
+        _skip_without_bedrock_credentials(exc)
+
+    assert isinstance(first, MessageResponse)
+    assert isinstance(second, MessageResponse)
+    assert (second.usage.cache_read_input_tokens or 0) > 0
