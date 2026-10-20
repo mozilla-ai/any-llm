@@ -628,3 +628,32 @@ async def test_adecide_refuses_images() -> None:
         )
 
     assert not requests
+
+
+def _overloaded(requests: list[httpx.Request]) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        # A 1 ms retry-after keeps the SDK's default retries fast.
+        return httpx.Response(529, json={"error": {"message": "Provider overloaded"}}, headers={"retry-after-ms": "1"})
+
+    return handler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("client_args", "expected_requests"), [({}, 3), ({"max_retries": 0}, 1)])
+async def test_adecide_retries_only_when_max_retries_allows_it(
+    client_args: dict[str, Any], expected_requests: int
+) -> None:
+    requests: list[httpx.Request] = []
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(_overloaded(requests)))
+
+    with pytest.raises(ProviderError):
+        await adecide(
+            "openrouter:typesafe/jev-1.13",
+            "state",
+            {"q": Noul(instructions="?")},
+            api_key="test-key",
+            client_args={"http_client": http_client, "unified_exceptions": True, **client_args},
+        )
+
+    assert len(requests) == expected_requests

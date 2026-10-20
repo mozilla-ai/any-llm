@@ -6,6 +6,7 @@ import pytest
 from any_llm import adecide
 from any_llm.any_llm import AnyLLM
 from any_llm.constants import LLMProvider
+from any_llm.exceptions import AnyLLMError
 from any_llm.providers.llamacpp.llamacpp import LlamacppProvider
 from any_llm.types.decide import Noul
 
@@ -121,3 +122,21 @@ async def test_adecide_sends_images_in_the_body() -> None:
     await provider.adecide("laya", "What is in the picture?", {"spam": Noul(instructions="Is it spam?")}, images=images)
 
     assert json.loads(requests[0].content)["images"] == images
+
+
+@pytest.mark.asyncio
+async def test_adecide_sends_one_request_with_max_retries_zero() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(503, json={"error": {"message": "Loading model"}})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = LlamacppProvider(max_retries=0, unified_exceptions=True, http_client=http_client)
+
+    with pytest.raises(AnyLLMError) as exc_info:
+        await provider.adecide("laya", "state", {"spam": Noul(instructions="Is it spam?")})
+
+    assert exc_info.value.status_code == 503
+    assert len(requests) == 1

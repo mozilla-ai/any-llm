@@ -24,6 +24,7 @@ from typesafe_sdk import Noul as TypeSafeNoul
 
 from any_llm import AnyLLM
 from any_llm.exceptions import (
+    AnyLLMError,
     InsufficientFundsError,
     InvalidRequestError,
     MissingApiKeyError,
@@ -366,6 +367,42 @@ def _provider_answering(body: dict[str, Any], headers: dict[str, str] | None = N
     return TypesafeProvider(
         api_key="test_key", unified_exceptions=True, http_client=httpx2.AsyncClient(transport=transport)
     )
+
+
+def _provider_overloaded(requests: list[httpx2.Request], **kwargs: Any) -> TypesafeProvider:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        # A 1 ms retry-after keeps the SDK's default retries fast.
+        return httpx2.Response(503, json={"detail": "overloaded"}, headers={"retry-after-ms": "1"})
+
+    transport = httpx2.MockTransport(handler)
+    return TypesafeProvider(
+        api_key="test_key", unified_exceptions=True, http_client=httpx2.AsyncClient(transport=transport), **kwargs
+    )
+
+
+@pytest.mark.parametrize(("kwargs", "expected_requests"), [({}, 3), ({"max_retries": 0}, 1)])
+@pytest.mark.asyncio
+async def test_adecide_retries_only_when_max_retries_allows_it(kwargs: dict[str, Any], expected_requests: int) -> None:
+    requests: list[httpx2.Request] = []
+    provider = _provider_overloaded(requests, **kwargs)
+
+    with pytest.raises(AnyLLMError) as exc_info:
+        await provider.adecide(_MODEL, "state", _QUESTIONS)
+
+    assert exc_info.value.status_code == 503
+    assert len(requests) == expected_requests
+
+
+@pytest.mark.asyncio
+async def test_adecide_retry_policy_turns_retries_off_for_one_call() -> None:
+    requests: list[httpx2.Request] = []
+    provider = _provider_overloaded(requests)
+
+    with pytest.raises(AnyLLMError):
+        await provider.adecide(_MODEL, "state", _QUESTIONS, retry=RetryPolicy(max_retries=0))
+
+    assert len(requests) == 1
 
 
 @pytest.mark.parametrize(
