@@ -1019,6 +1019,28 @@ def test_messages_params_to_responses_params_sets_summary_auto() -> None:
     assert converted.tools[0]["name"] == "get_weather"
 
 
+@pytest.mark.parametrize(
+    ("thinking", "expected"),
+    [
+        (None, {"effort": "high"}),
+        ({"type": "enabled", "budget_tokens": 2048}, {"effort": "high", "summary": "auto"}),
+        ({"type": "disabled"}, None),
+    ],
+)
+def test_messages_params_to_responses_params_carries_output_config_effort(
+    thinking: dict[str, Any] | None, expected: dict[str, Any] | None
+) -> None:
+    """output_config.effort sets the Responses reasoning effort, over a thinking budget."""
+    params = MessagesParams(
+        model="gpt-5.6",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+        thinking=thinking,
+        output_format={"effort": "high"},
+    )
+    assert messages_params_to_responses_params(params).reasoning == expected
+
+
 def test_response_to_message_response_thinking_requires_summary_text() -> None:
     """Empty summary (live without summary=auto) → no ThinkingBlock; filled summary → ThinkingBlock."""
     empty = response_to_message_response(_make_responses_result_with_tool_call(with_summary=False))

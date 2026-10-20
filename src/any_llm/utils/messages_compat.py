@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import inspect
 import json
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, cast, get_args
 
 from anthropic import AsyncAnthropic
 from anthropic.types import CacheCreation, CodeExecutionToolResultBlock, ServerToolUseBlock
 
 from any_llm.exceptions import InvalidRequestError
-from any_llm.types.completion import ChatCompletionMessageFunctionToolCall
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, ReasoningEffort
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -47,10 +47,7 @@ def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str
     Both dict shapes ``normalize_output_config`` accepts are handled. ``None`` means the config
     asked for no structured output, so the caller leaves ``response_format`` unset.
 
-    ``output_config.effort`` is never translated: chat completions has no equivalent, and the
-    nearest field, ``reasoning_effort``, governs reasoning rather than output. It is ignored
-    whether or not a schema sits beside it, so an effort-only config is not rejected in one
-    shape while being dropped in the other.
+    ``output_config.effort`` is not part of the format; ``output_config_effort`` reads it.
 
     Raises:
         InvalidRequestError: when the config names a format but no usable schema. The caller
@@ -186,12 +183,15 @@ def messages_params_to_completion_params(params: MessagesParams, *, cache_breakp
         if params.tool_choice.get("disable_parallel_tool_use") is True:
             result["parallel_tool_calls"] = False
 
-    if params.thinking:
-        if params.thinking.get("type") == "enabled":
-            budget = params.thinking.get("budget_tokens", 8192)
-            result["reasoning_effort"] = _budget_to_reasoning_effort(budget)
-        elif params.thinking.get("type") == "disabled":
-            result["reasoning_effort"] = "none"
+    thinking_type = (params.thinking or {}).get("type")
+    effort = output_config_effort(params)
+    if thinking_type == "disabled":
+        result["reasoning_effort"] = "none"
+    elif effort is not None:
+        result["reasoning_effort"] = effort
+    elif thinking_type == "enabled":
+        budget = cast("dict[str, Any]", params.thinking).get("budget_tokens", 8192)
+        result["reasoning_effort"] = _budget_to_reasoning_effort(budget)
 
     return result
 
@@ -599,6 +599,28 @@ def _convert_tool_choice_to_openai(tool_choice: dict[str, Any]) -> str | dict[st
     if tc_type == "tool":
         return {"type": "function", "function": {"name": tool_choice.get("name", "")}}
     return "auto"
+
+
+def output_config_effort(params: MessagesParams) -> str | None:
+    """Return ``output_config.effort`` as a completion ``reasoning_effort``, or None if unset.
+
+    Anthropic's effort levels are a subset of ``ReasoningEffort``, so the value carries over
+    as is, and each provider maps ``reasoning_effort`` to what its API takes.
+
+    Raises:
+        InvalidRequestError: when effort is not a level ``reasoning_effort`` accepts. Dropping
+            it would leave the caller believing a level is in force.
+
+    """
+    if not isinstance(params.output_format, dict):
+        return None
+    effort = params.output_format.get("effort")
+    if effort is None:
+        return None
+    if effort not in get_args(ReasoningEffort):
+        msg = f"output_config effort {effort!r} is not one of {', '.join(get_args(ReasoningEffort))}."
+        raise InvalidRequestError(msg)
+    return cast("str", effort)
 
 
 def _budget_to_reasoning_effort(budget: int) -> str:
