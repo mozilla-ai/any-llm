@@ -405,6 +405,21 @@ async def test_adecide_retry_policy_turns_retries_off_for_one_call() -> None:
     assert len(requests) == 1
 
 
+@pytest.mark.asyncio
+async def test_unified_error_message_can_quote_the_upstream_body() -> None:
+    body = {"detail": "State refused: I was charged twice."}
+    transport = httpx2.MockTransport(lambda _request: httpx2.Response(400, json=body))
+    provider = TypesafeProvider(
+        api_key="test_key", unified_exceptions=True, http_client=httpx2.AsyncClient(transport=transport)
+    )
+
+    with pytest.raises(InvalidRequestError) as exc_info:
+        await provider.adecide(_MODEL, "I was charged twice.", _QUESTIONS)
+
+    assert "I was charged twice." in exc_info.value.message
+    assert exc_info.value.status_code == 400
+
+
 @pytest.mark.parametrize(
     ("headers", "expected_id"),
     [({"x-typesafe-request-id": "req_123"}, "req_123"), (None, None)],

@@ -6,7 +6,7 @@ import pytest
 from any_llm import adecide
 from any_llm.any_llm import AnyLLM
 from any_llm.constants import LLMProvider
-from any_llm.exceptions import AnyLLMError
+from any_llm.exceptions import AnyLLMError, InvalidRequestError
 from any_llm.providers.llamacpp.llamacpp import LlamacppProvider
 from any_llm.types.decide import Noul
 
@@ -140,3 +140,17 @@ async def test_adecide_sends_one_request_with_max_retries_zero() -> None:
 
     assert exc_info.value.status_code == 503
     assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_unified_decide_error_keeps_the_upstream_status() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"code": 400, "message": "the loaded model is not a decision model"}})
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = LlamacppProvider(unified_exceptions=True, http_client=http_client)
+
+    with pytest.raises(InvalidRequestError) as exc_info:
+        await provider.adecide("qwen", "state", {"spam": Noul(instructions="Is it spam?")})
+
+    assert exc_info.value.status_code == 400
