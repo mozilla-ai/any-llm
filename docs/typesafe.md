@@ -105,3 +105,6 @@ shared status and message rules run:
 
 Everything else, such as rate limits, authentication failures, and timeouts, follows the
 [shared rules](api/exceptions.md).
+
+The SDK puts part of the error body it got into the message, so a message can quote the request's
+`state`. See [Decide errors](decide.md#errors) for how to log errors without it.

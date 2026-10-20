@@ -133,3 +133,31 @@ result = decide(
 )
 print(result.nouls["billing"].noul)
 ```
+
+## Errors
+
+With `unified_exceptions=True`, a failed request raises an any-llm exception (see
+[Exceptions](api/exceptions.md)). Its `status_code` is the HTTP status the provider sent, and
+`provider_name` names the provider. A failure that has no HTTP response, such as a timeout, has
+`status_code=None`.
+
+The `message` comes from the provider's own error, and it can include text from the error body the
+provider sent. That body can quote the `state` or the questions of the request, which is user content.
+If your logs must not hold user content, log the class, the provider and the status instead of the
+message:
+
+```python
+from any_llm import decide
+from any_llm.exceptions import AnyLLMError
+from any_llm.types.decide import Noul
+
+try:
+    result = decide(
+        "openrouter:typesafe/jev-1.13",
+        "I was charged twice.",
+        {"billing": Noul(instructions="Is this ticket about billing?")},
+        client_args={"unified_exceptions": True},
+    )
+except AnyLLMError as error:
+    print(f"{type(error).__name__} from {error.provider_name}: HTTP {error.status_code}")
+```
