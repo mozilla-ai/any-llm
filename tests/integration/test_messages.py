@@ -437,3 +437,36 @@ async def test_messages_bedrock_claude_takes_thinking_display_updates(
     else:
         assert isinstance(result, MessageResponse)
         assert result.content
+
+
+@pytest.mark.asyncio
+async def test_messages_output_config_effort(
+    provider: LLMProvider,
+    provider_reasoning_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """An effort-only output_config, as Claude Code sends it, is accepted by every reasoning provider."""
+    try:
+        if provider not in provider_reasoning_model_map:
+            pytest.skip(f"{provider.value} has no reasoning model to test, skipping")
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        result = await llm.amessages(
+            model=provider_reasoning_model_map[provider],
+            messages=[{"role": "user", "content": "Say hello in exactly one word."}],
+            max_tokens=4096,
+            output_format={"effort": "low"},
+        )
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local Model host is not set up, skipping")
+        raise
+    except Exception as exc:
+        if provider == LLMProvider.BEDROCK:
+            _skip_without_bedrock_credentials(exc)
+        raise
+    assert isinstance(result, MessageResponse)
+    assert any(block.type == "text" for block in result.content)
