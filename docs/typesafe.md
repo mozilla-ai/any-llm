@@ -100,6 +100,8 @@ shared status and message rules run:
 - A 400 or 422 raises `InvalidRequestError`, whatever the question names in its message say.
 - A response the SDK cannot read with its own models raises `ProviderError`. Its `status_code` is the
   status the server sent, usually 200.
+- A response the SDK reads but `DecideResponse` cannot, such as an answer with no `type`, raises
+  `ProviderError` with or without unified exceptions.
 
 Everything else, such as rate limits, authentication failures, and timeouts, follows the
 [shared rules](api/exceptions.md).

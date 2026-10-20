@@ -481,11 +481,14 @@ def test_convert_models_list_preserves_extra_openrouter_fields() -> None:
     assert converted.model_extra["pricing"] == {"prompt": "0.001", "completion": "0.002"}
 
 
-_DECISIONS_BODY = {
+_DECISIONS_BODY: dict[str, Any] = {
     "id": "gen-1",
     "model": "typesafe/jev-1.13",
     "provider": "TypeSafe",
-    "answers": {"billing": {"type": "noul", "noul": 0.9}},
+    "answers": {
+        "billing": {"type": "noul", "noul": 0.9},
+        "logo": {"type": "box", "box": {"top": 1, "bottom": 2, "left": 3, "right": 4}},
+    },
     "usage": {"input_tokens": 12, "output_tokens": 1, "cost": 0.0000005},
 }
 
@@ -545,6 +548,8 @@ async def test_adecide_posts_the_system_one_body_to_the_decisions_endpoint() -> 
     assert result.usage is not None
     assert result.usage.input_tokens == 12
     assert result.usage.cost == 0.0000005
+    assert result.model_extra == {"provider": "TypeSafe"}
+    assert result.answers["logo"].model_dump() == _DECISIONS_BODY["answers"]["logo"]
 
 
 @pytest.mark.asyncio

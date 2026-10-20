@@ -4,6 +4,7 @@ import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
+from pydantic import ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -189,12 +190,19 @@ class TypesafeProvider(AnyLLM):
 
     @staticmethod
     def _convert_decide_response(response: SystemOneResponse) -> DecideResponse:
+        # The SDK drops fields and answer types it does not model, so read the body it was built from.
+        body = response.raw_http_response.json()
         try:
-            request_id: str | None = response.request_id
+            body["id"] = response.request_id
         except TypeSafeError:
             # The SDK raises when the server sent no x-typesafe-request-id header.
-            request_id = None
-        return DecideResponse.model_validate({**response.model_dump(), "id": request_id})
+            pass
+        try:
+            return DecideResponse.model_validate(body)
+        except ValidationError as error:
+            # The validation error can quote the answers, so it stays on the cause.
+            msg = "TypeSafe returned a System One response that is not valid"
+            raise ProviderError(msg, provider_name=TypesafeProvider.PROVIDER_NAME) from error
 
     @override
     async def _adecide(

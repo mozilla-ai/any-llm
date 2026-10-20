@@ -20,6 +20,7 @@ from any_llm.types.decide import (
     Question,
     Score,
     ScoreAnswer,
+    UnknownAnswer,
 )
 from any_llm.utils.decide import question_to_dict
 
@@ -119,6 +120,60 @@ def test_usage_keeps_the_reported_cost() -> None:
 
     assert usage.cost == 0.00042
     assert DecideUsage().cost is None
+
+
+def test_response_keeps_fields_it_does_not_model() -> None:
+    response = DecideResponse.model_validate(
+        {
+            "model": "jev-1",
+            "provider": "TypeSafe",
+            "answers": {"billing": {"type": "noul", "noul": 0.9, "calibrated": True}},
+            "usage": {"input_tokens": 10, "cached_tokens": 4},
+        }
+    )
+
+    assert response.model_extra == {"provider": "TypeSafe"}
+    assert response.nouls["billing"].model_extra == {"calibrated": True}
+    assert response.usage is not None
+    assert response.usage.model_extra == {"cached_tokens": 4}
+    assert response.model_dump(exclude_none=True) == {
+        "model": "jev-1",
+        "provider": "TypeSafe",
+        "answers": {"billing": {"type": "noul", "noul": 0.9, "calibrated": True}},
+        "usage": {"input_tokens": 10, "cached_tokens": 4},
+    }
+
+
+def test_answer_of_an_unknown_type_is_kept_whole() -> None:
+    box = {"type": "box", "box": {"top": 1, "bottom": 2, "left": 3, "right": 4}, "confidence": 0.9}
+
+    response = DecideResponse.model_validate({"answers": {"logo": box, "billing": {"type": "noul", "noul": 0.2}}})
+
+    answer = response.answers["logo"]
+    assert isinstance(answer, UnknownAnswer)
+    assert answer.type == "box"
+    assert answer.model_dump() == box
+    assert list(response.nouls) == ["billing"]
+    assert not response.choices
+    assert not response.scores
+
+
+def test_unknown_answer_is_frozen() -> None:
+    answer = UnknownAnswer(type="box")
+
+    with pytest.raises(ValidationError):
+        answer.type = "noul"
+
+
+@pytest.mark.parametrize("answer", [{"noul": 0.2}, {"type": 1}, "noul"])
+def test_answer_without_a_type_name_is_rejected(answer: object) -> None:
+    with pytest.raises(ValidationError):
+        DecideResponse.model_validate({"answers": {"billing": answer}})
+
+
+def test_known_answer_types_still_validate_their_fields() -> None:
+    with pytest.raises(ValidationError):
+        DecideResponse.model_validate({"answers": {"billing": {"type": "noul"}}})
 
 
 def test_score_answer_keys_are_integer_levels() -> None:
