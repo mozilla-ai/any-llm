@@ -56,6 +56,7 @@ class OpenAICompatibleProviderConfig:
     decide_path: str | None = None
     """Path of the System One decisions endpoint, relative to the API base. Setting it
     turns on ``SUPPORTS_DECIDE``; see ``BaseOpenAIProvider.DECIDE_PATH``."""
+    supports_decide_image: bool = False
     api_key_optional: bool = False
     """Resolve the key as the explicit argument, then the env var, then the
     ``"no-key-required"`` placeholder, instead of raising ``MissingApiKeyError``.
@@ -135,6 +136,7 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_embedding=True,
         supports_moderation=True,
         decide_path="systemone",
+        supports_decide_image=True,
         api_key_optional=True,
     ),
     "moonshot": OpenAICompatibleProviderConfig(
@@ -293,6 +295,7 @@ def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOp
         "SUPPORTS_RERANK": config.supports_rerank,
         "SUPPORTS_DECIDE": config.decide_path is not None,
         "DECIDE_PATH": config.decide_path,
+        "SUPPORTS_DECIDE_IMAGE": config.supports_decide_image,
     }
     # The class name follows the same convention as folder-based providers so
     # metadata.class_name is stable across a migration.

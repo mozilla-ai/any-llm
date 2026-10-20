@@ -10,7 +10,7 @@ from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 from pydantic import ValidationError
 
 from any_llm import adecide
-from any_llm.exceptions import ProviderError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.openrouter import OpenrouterProvider
 from any_llm.providers.openrouter.utils import _convert_models_list
 from any_llm.types.completion import (
@@ -615,3 +615,16 @@ async def test_adecide_reports_an_unreadable_response_as_a_provider_error(unifie
         await provider.adecide("typesafe/jev-1.13", "state", {"q": Noul(instructions="?")})
 
     assert isinstance(info.value.__cause__, ValidationError)
+
+
+@pytest.mark.asyncio
+async def test_adecide_refuses_images() -> None:
+    requests: list[httpx.Request] = []
+    provider = _decisions_provider(_answering(requests))
+
+    with pytest.raises(UnsupportedParameterError, match="images"):
+        await provider.adecide(
+            "typesafe/jev-1.13", "state", {"q": Noul(instructions="?")}, images=["data:image/png;base64,"]
+        )
+
+    assert not requests

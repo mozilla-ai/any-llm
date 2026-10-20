@@ -1526,6 +1526,7 @@ def decide(
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
+    images: list[str] | None = None,
     **kwargs: Any,
 ) -> DecideResponse:
     """Answer named yes/no, choice, and score questions about a state.
@@ -1539,6 +1540,8 @@ def decide(
         api_key: Provider API key. Falls back to environment variable.
         api_base: Provider API base URL. Falls back to environment variable.
         client_args: Additional arguments passed to the provider client constructor.
+        images: Images the questions refer to, as data URLs (`data:image/...;base64,...`).
+            Providers that do not accept images raise `UnsupportedParameterError`.
         **kwargs: Additional arguments for the call, such as `timeout` in seconds.
 
     Returns:
@@ -1551,7 +1554,7 @@ def decide(
 
     """
     llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
-    return llm.decide(model_name, state, questions, **kwargs)
+    return llm.decide(model_name, state, questions, images=images, **kwargs)
 
 
 async def adecide(
@@ -1563,6 +1566,7 @@ async def adecide(
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
+    images: list[str] | None = None,
     **kwargs: Any,
 ) -> DecideResponse:
     """Answer named yes/no, choice, and score questions about a state (async).
@@ -1570,7 +1574,7 @@ async def adecide(
     See decide() for full documentation.
     """
     llm, model_name = _resolve_llm(model, provider, api_key, api_base, client_args)
-    return await llm.adecide(model_name, state, questions, **kwargs)
+    return await llm.adecide(model_name, state, questions, images=images, **kwargs)
 
 
 def list_models(

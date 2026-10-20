@@ -561,8 +561,8 @@ async def alist_models(self, **kwargs) -> Sequence[Model]
     parts.append("")
     parts.append(
         """```
-def decide(self, model, state, questions, **kwargs) -> DecideResponse
-async def adecide(self, model, state, questions, *, timeout=None, **kwargs) -> DecideResponse
+def decide(self, model, state, questions, *, images=None, **kwargs) -> DecideResponse
+async def adecide(self, model, state, questions, *, images=None, timeout=None, **kwargs) -> DecideResponse
 ```"""
     )
 

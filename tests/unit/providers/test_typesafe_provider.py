@@ -243,6 +243,14 @@ async def test_adecide_accepts_sdk_question_objects(provider: TypesafeProvider) 
 
 
 @pytest.mark.asyncio
+async def test_adecide_refuses_images(provider: TypesafeProvider) -> None:
+    with pytest.raises(UnsupportedParameterError, match="images"):
+        await provider.adecide(_MODEL, "state", _QUESTIONS, images=["data:image/png;base64,"])
+
+    provider.client.system_one.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
 async def test_adecide_rejects_response_model(provider: TypesafeProvider) -> None:
     with pytest.raises(UnsupportedParameterError, match="response_model") as exc_info:
         await provider.adecide(_MODEL, "state", _QUESTIONS, response_model=SystemOneResponse)
