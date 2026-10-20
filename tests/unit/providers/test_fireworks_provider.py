@@ -412,12 +412,28 @@ def _chunk(delta: dict[str, Any], finish_reason: str | None = None, **extra: Any
     [
         ("https://api.fireworks.ai/inference/v1", "https://api.fireworks.ai/inference"),
         ("https://fireworks.test/inference/v1/", "https://fireworks.test/inference"),
-        ("https://proxy.test/fireworks", "https://proxy.test/fireworks"),
     ],
 )
-def test_sdk_base_url_drops_the_openai_v1_suffix(api_base: str, expected: str) -> None:
-    """The SDK appends /v1 itself, so only a trailing /v1 is removed from api_base."""
+def test_sdk_base_url_drops_the_openai_v1_suffix(
+    api_base: str, expected: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The SDK appends /v1 itself, so a trailing /v1 is removed from api_base."""
     assert _sdk_base_url(api_base) == expected
+    assert not caplog.records
+
+
+def test_sdk_base_url_warns_when_api_base_does_not_end_in_v1(caplog: pytest.LogCaptureFixture) -> None:
+    """Without /v1 the SDK and OpenAI clients would use different path layouts, so a warning is logged."""
+    assert _sdk_base_url("https://proxy.test/fireworks/") == "https://proxy.test/fireworks"
+    assert "does not end in /v1" in caplog.text
+    assert "https://proxy.test/fireworks/v1/..." in caplog.text
+
+
+def test_init_client_drops_client_args_the_sdk_does_not_accept() -> None:
+    """OpenAI-only client arguments reach the OpenAI client and are kept from the Fireworks SDK."""
+    provider = FireworksProvider(api_key="test-key", organization="org-1", default_headers={"X-Test": "1"})
+    assert provider.client.organization == "org-1"
+    assert provider.fireworks_client.default_headers["X-Test"] == "1"
 
 
 def test_init_client_points_the_sdk_at_the_default_inference_root() -> None:

@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, cast
 
@@ -7,6 +8,7 @@ from openresponses_types import ResponseResource
 from typing_extensions import override
 
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.logging import logger
 from any_llm.providers.openai.base import BaseOpenAIProvider, OpenAIChunkStream
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 from any_llm.types.rerank import RerankResponse
@@ -39,10 +41,33 @@ DEFAULT_TIMEOUT = httpx.Timeout(timeout=600.0, connect=5.0)
 def _sdk_base_url(api_base: str) -> str:
     """Return the Fireworks SDK base URL for an OpenAI-compatible `api_base`.
 
-    `api_base` names the inference root that already ends in `/v1`, as the OpenAI client expects,
-    while the SDK appends `/v1/...` to an overridden base URL itself.
+    `api_base` must name the inference root ending in `/v1`, as the OpenAI client expects, because
+    the SDK appends `/v1/...` to an overridden base URL itself. Any other `api_base` is passed on
+    unchanged, so chat completions and rerank go to `<api_base>/v1/...` while Responses and model
+    listing go to `<api_base>/...`; a warning is logged.
     """
-    return api_base.rstrip("/").removesuffix("/v1")
+    base = api_base.rstrip("/")
+    if not base.endswith("/v1"):
+        logger.warning(
+            "Fireworks api_base %s does not end in /v1, so chat completions and rerank go to %s/v1/... "
+            "while Responses and model listing go to %s/...",
+            api_base,
+            base,
+            base,
+        )
+        return base
+    return base.removesuffix("/v1")
+
+
+def _sdk_client_kwargs(client_args: dict[str, Any]) -> dict[str, Any]:
+    """Return the client arguments the Fireworks SDK constructor accepts.
+
+    The provider builds an `AsyncFireworks` beside an `AsyncOpenAI` from one set of client
+    arguments, and OpenAI-only ones such as `organization` or `project` would make the Fireworks
+    constructor raise `TypeError` and break the whole provider.
+    """
+    accepted = inspect.signature(AsyncFireworks.__init__).parameters
+    return {key: value for key, value in client_args.items() if key in accepted}
 
 
 class FireworksProvider(BaseOpenAIProvider):
@@ -77,7 +102,7 @@ class FireworksProvider(BaseOpenAIProvider):
         self.fireworks_client = AsyncFireworks(
             api_key=api_key,
             base_url=_sdk_base_url(api_base or self.API_BASE),
-            **{"timeout": DEFAULT_TIMEOUT, **kwargs},
+            **{"timeout": DEFAULT_TIMEOUT, **_sdk_client_kwargs(kwargs)},
         )
 
     @staticmethod
