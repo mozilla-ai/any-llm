@@ -21,6 +21,7 @@ from any_llm.types.decide import (
     Score,
     ScoreAnswer,
 )
+from any_llm.utils.decide import question_to_dict
 
 
 def _response() -> DecideResponse:
@@ -134,6 +135,17 @@ def test_response_optional_fields_default_to_none() -> None:
     assert response.id is None
     assert response.model is None
     assert response.usage is None
+
+
+def test_question_to_dict_leaves_unset_fields_off() -> None:
+    assert question_to_dict(Noul()) == {"type": "noul"}
+    assert question_to_dict(Choice(criteria={"calm": None})) == {"type": "choice", "criteria": {"calm": None}}
+
+
+def test_question_to_dict_leaves_undescribed_noul_outcomes_off() -> None:
+    question = Noul(instructions="Spam?", criteria=NoulCriteria(true="spam"))
+
+    assert question_to_dict(question) == {"type": "noul", "instructions": "Spam?", "criteria": {"true": "spam"}}
 
 
 @pytest.fixture

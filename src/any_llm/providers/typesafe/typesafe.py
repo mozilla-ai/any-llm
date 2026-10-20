@@ -14,8 +14,9 @@ from any_llm.exceptions import (
     ProviderError,
     UnsupportedParameterError,
 )
-from any_llm.types.decide import DecideResponse, Noul, Question
+from any_llm.types.decide import DecideResponse, Question
 from any_llm.types.model import Model
+from any_llm.utils.decide import question_to_dict
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 try:
@@ -184,11 +185,7 @@ class TypesafeProvider(AnyLLM):
         The SDK sends a dict as is, so nested values its encoder accepts (dates, UUIDs, Decimals)
         survive, where its question classes would reject or coerce them.
         """
-        data = question.model_dump()
-        if isinstance(question, Noul) and question.criteria is not None:
-            # An undescribed outcome is left off rather than sent as null, as the dict form always did.
-            data["criteria"] = {side: value for side, value in data["criteria"].items() if value is not None}
-        return cast("TypeSafeQuestionModel", {field: value for field, value in data.items() if value is not None})
+        return cast("TypeSafeQuestionModel", question_to_dict(question))
 
     @staticmethod
     def _convert_decide_response(response: SystemOneResponse) -> DecideResponse:
