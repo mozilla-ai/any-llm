@@ -10,7 +10,15 @@ from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 from pydantic import ValidationError
 
 from any_llm import adecide
-from any_llm.exceptions import ProviderError, UnsupportedParameterError
+from any_llm.exceptions import (
+    AnyLLMError,
+    AuthenticationError,
+    InsufficientFundsError,
+    InvalidRequestError,
+    ProviderError,
+    RateLimitError,
+    UnsupportedParameterError,
+)
 from any_llm.providers.openrouter import OpenrouterProvider
 from any_llm.providers.openrouter.utils import _convert_models_list
 from any_llm.types.completion import (
@@ -657,3 +665,36 @@ async def test_adecide_retries_only_when_max_retries_allows_it(
         )
 
     assert len(requests) == expected_requests
+
+
+def _failing(status: int, body: dict[str, Any]) -> Callable[[httpx.Request], httpx.Response]:
+    return lambda _request: httpx.Response(status, json=body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "error_class"),
+    [(400, InvalidRequestError), (401, AuthenticationError), (402, InsufficientFundsError), (429, RateLimitError)],
+)
+async def test_unified_decide_errors_keep_the_upstream_status(status: int, error_class: type[AnyLLMError]) -> None:
+    provider = _decisions_provider(
+        _failing(status, {"error": {"message": "Request refused", "code": status}}), unified_exceptions=True
+    )
+
+    with pytest.raises(error_class) as exc_info:
+        await provider.adecide("typesafe/jev-1.13", "state", {"q": Noul(instructions="?")}, max_retries=0)
+
+    assert exc_info.value.status_code == status
+    assert exc_info.value.provider_name == "openrouter"
+
+
+@pytest.mark.asyncio
+async def test_unified_decide_error_message_can_quote_the_upstream_body() -> None:
+    body = {"error": {"message": "Invalid state: 'I was charged twice.'", "code": 400}}
+    provider = _decisions_provider(_failing(400, body), unified_exceptions=True)
+
+    with pytest.raises(InvalidRequestError) as exc_info:
+        await provider.adecide("typesafe/jev-1.13", "I was charged twice.", {"q": Noul(instructions="?")})
+
+    assert "I was charged twice." in exc_info.value.message
+    assert exc_info.value.status_code == 400
