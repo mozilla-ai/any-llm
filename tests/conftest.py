@@ -212,6 +212,14 @@ def rerank_provider_model_map() -> dict[LLMProvider, str]:
 
 
 @pytest.fixture
+def decide_provider_model_map() -> dict[LLMProvider, str]:
+    return {
+        LLMProvider.OPENROUTER: "typesafe/jev-1.13",
+        LLMProvider.TYPESAFE: "jev-latest",
+    }
+
+
+@pytest.fixture
 def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
     return {
         LLMProvider.ANTHROPIC: {"timeout": 10},

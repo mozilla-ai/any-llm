@@ -936,7 +936,7 @@ def generate_decide_page() -> str:
         "description: Answer named yes/no, choice and score questions about a state",
         "---",
         "",
-        "The `decide` and `adecide` functions answer named questions about a state (text, a JSON object, or an array) with a provider that supports the decide API, such as [TypeSafe](../typesafe.md).",
+        "The `decide` and `adecide` functions answer named questions about a state (text, a JSON object, or an array) with a provider that supports the decide API. See [Decide](../decide.md) for the providers.",
         "",
         "## `any_llm.decide()`",
         "",

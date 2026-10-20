@@ -1,9 +1,16 @@
+import json
+from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+from pydantic import ValidationError
 
+from any_llm import adecide
+from any_llm.exceptions import ProviderError
 from any_llm.providers.openrouter import OpenrouterProvider
 from any_llm.providers.openrouter.utils import _convert_models_list
 from any_llm.types.completion import (
@@ -13,6 +20,7 @@ from any_llm.types.completion import (
     CompletionParams,
     Reasoning,
 )
+from any_llm.types.decide import Noul
 from any_llm.types.model import Model
 from any_llm.types.responses import Response
 
@@ -471,3 +479,133 @@ def test_convert_models_list_preserves_extra_openrouter_fields() -> None:
     assert converted.model_extra is not None
     assert converted.model_extra["name"] == "Qwen3.7 Max"
     assert converted.model_extra["pricing"] == {"prompt": "0.001", "completion": "0.002"}
+
+
+_DECISIONS_BODY = {
+    "id": "gen-1",
+    "model": "typesafe/jev-1.13",
+    "provider": "TypeSafe",
+    "answers": {"billing": {"type": "noul", "noul": 0.9}},
+    "usage": {"input_tokens": 12, "output_tokens": 1},
+}
+
+
+def _decisions_provider(
+    handler: Callable[[httpx.Request], httpx.Response],
+    api_base: str | None = None,
+    unified_exceptions: bool | None = None,
+) -> OpenrouterProvider:
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return OpenrouterProvider(
+        api_key="test-key", api_base=api_base, unified_exceptions=unified_exceptions, http_client=http_client
+    )
+
+
+def _answering(requests: list[httpx.Request], body: Any = None) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_DECISIONS_BODY if body is None else body)
+
+    return handler
+
+
+def test_openrouter_supports_decide() -> None:
+    assert OpenrouterProvider.get_provider_metadata().decide is True
+
+
+@pytest.mark.asyncio
+async def test_adecide_posts_the_system_one_body_to_the_decisions_endpoint() -> None:
+    requests: list[httpx.Request] = []
+    provider = _decisions_provider(_answering(requests))
+
+    result = await provider.adecide(
+        "typesafe/jev-1.13",
+        "I was charged twice.",
+        {
+            "billing": Noul(instructions="Is this about billing?"),
+            "tone": {"type": "choice", "criteria": {"calm": None}},
+        },
+    )
+
+    (request,) = requests
+    assert request.method == "POST"
+    assert str(request.url) == "https://openrouter.ai/api/alpha/decisions"
+    assert request.headers["authorization"] == "Bearer test-key"
+    assert json.loads(request.content) == {
+        "model": "typesafe/jev-1.13",
+        "state": "I was charged twice.",
+        "questions": {
+            "billing": {"type": "noul", "instructions": "Is this about billing?"},
+            "tone": {"type": "choice", "criteria": {"calm": None}},
+        },
+    }
+    assert result.id == "gen-1"
+    assert result.model == "typesafe/jev-1.13"
+    assert result.nouls["billing"].noul == 0.9
+    assert result.usage is not None
+    assert result.usage.input_tokens == 12
+
+
+@pytest.mark.asyncio
+async def test_adecide_keeps_a_custom_api_base_root() -> None:
+    requests: list[httpx.Request] = []
+    provider = _decisions_provider(_answering(requests), api_base="https://proxy.example/openrouter/api/v1")
+
+    await provider.adecide("typesafe/jev-1.13", "state", {"q": Noul(instructions="?")})
+
+    assert str(requests[0].url) == "https://proxy.example/openrouter/api/alpha/decisions"
+
+
+@pytest.mark.asyncio
+async def test_adecide_sends_extra_fields_headers_and_timeout() -> None:
+    requests: list[httpx.Request] = []
+    provider = _decisions_provider(_answering(requests))
+
+    await provider.adecide(
+        "typesafe/jev-1.13",
+        {"ticket": 1},
+        {"q": Noul(instructions="?")},
+        timeout=2.5,
+        session_id="s-1",
+        extra_body={"user": "u-1"},
+        extra_headers={"X-Title": "otari"},
+    )
+
+    (request,) = requests
+    body = json.loads(request.content)
+    assert body["state"] == {"ticket": 1}
+    assert body["session_id"] == "s-1"
+    assert body["user"] == "u-1"
+    assert "timeout" not in body
+    assert request.headers["x-title"] == "otari"
+    assert request.extensions["timeout"]["read"] == 2.5
+
+
+@pytest.mark.asyncio
+async def test_top_level_adecide_dispatches_on_the_openrouter_prefix() -> None:
+    requests: list[httpx.Request] = []
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(_answering(requests)))
+
+    result = await adecide(
+        "openrouter:typesafe/jev-1.13",
+        "state",
+        {"billing": Noul(instructions="?")},
+        api_key="test-key",
+        client_args={"http_client": http_client},
+    )
+
+    assert json.loads(requests[0].content)["model"] == "typesafe/jev-1.13"
+    assert result.nouls["billing"].noul == 0.9
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unified_exceptions", [True, False])
+async def test_adecide_reports_an_unreadable_response_as_a_provider_error(unified_exceptions: bool) -> None:
+    provider = _decisions_provider(
+        _answering([], body={"answers": {"q": {"type": "noul"}}}), unified_exceptions=unified_exceptions
+    )
+
+    with pytest.raises(ProviderError, match="openrouter returned a decisions response that is not valid") as info:
+        await provider.adecide("typesafe/jev-1.13", "state", {"q": Noul(instructions="?")})
+
+    assert isinstance(info.value.__cause__, ValidationError)

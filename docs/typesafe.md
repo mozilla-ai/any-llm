@@ -13,7 +13,7 @@ state (text, a JSON object, or an array) instead of generating text. There are t
 - `Score`: place the state on an ordered scale of criteria.
 
 TypeSafe has no chat completions or embeddings. It implements the `decide` and `adecide` methods
-(`SUPPORTS_DECIDE`), and `list_models` against the hosted API.
+(`SUPPORTS_DECIDE`), and `list_models` against the hosted API. Other providers serve the same API; see [Decide](decide.md).
 
 ## Installation
 
