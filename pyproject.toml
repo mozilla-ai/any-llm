@@ -69,6 +69,10 @@ cerebras = [
   "cerebras_cloud_sdk>=1.23.0",
 ]
 
+fireworks = [
+  "fireworks-ai>=1.2.0",
+]
+
 groq = [
   "groq"
 ]
@@ -115,7 +119,6 @@ azureopenai = []
 cascadia = []
 databricks = []
 deepseek = []
-fireworks = []
 gmi = []
 otari = [
   "otari>=0.4.0,<0.5",
@@ -251,10 +254,6 @@ ignore_missing_imports = true # pytest related modules are not found
 [tool.pytest.ini_options]
 timeout = 120
 filterwarnings = [
-  # Silence Pydantic V1-style validator deprecation warnings coming from fireworks only
-  "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",
-  # Silence fireworks generated protos deprecation about BaseModelDetails.tunable only
-  "ignore:BaseModelDetails\\.tunable is deprecated:DeprecationWarning:fireworks\\.control_plane\\.generated\\.protos\\.gateway.*",
   # Silence model format deprecation warnings
   "ignore:Model format 'provider/model' is deprecated:DeprecationWarning",
 ]
