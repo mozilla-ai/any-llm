@@ -5,8 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat.chat_completion_usage import ChatCompletionUsage as TogetherChatCompletionUsage
 
-from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
+from any_llm.providers.together.utils import (
+    _convert_together_response_to_chat_completion,
+    _create_openai_chunk_from_together_chunk,
+)
 from any_llm.types.completion import ChatCompletionChunk, CompletionParams, Usage
 from any_llm.types.model import Model
 
@@ -17,7 +21,7 @@ def make_together_chunk(
     reasoning: str | None = None,
     tool_calls: list[Any] | None = None,
     finish_reason: str = "stop",
-    usage: dict[str, int] | None = None,
+    usage: dict[str, Any] | None = None,
 ) -> Mock:
     """Create a mock TogetherChatCompletionChunk for testing."""
     delta_mock = Mock()
@@ -31,19 +35,14 @@ def make_together_chunk(
     choice_mock.index = 0
     choice_mock.finish_reason = finish_reason
 
-    usage_mock = None
-    if usage:
-        usage_mock = Mock()
-        usage_mock.prompt_tokens = usage.get("prompt_tokens", 0)
-        usage_mock.completion_tokens = usage.get("completion_tokens", 0)
-        usage_mock.total_tokens = usage.get("total_tokens", 0)
+    usage_model = TogetherChatCompletionUsage.model_validate(usage) if usage else None
 
     together_chunk = Mock(spec=TogetherChatCompletionChunk)
     together_chunk.choices = [choice_mock]
     together_chunk.id = "test-id"
     together_chunk.created = int(datetime.now().timestamp())
     together_chunk.model = "test-model"
-    together_chunk.usage = usage_mock
+    together_chunk.usage = usage_model
 
     return together_chunk
 
@@ -215,6 +214,104 @@ def test_create_openai_chunk_with_usage() -> None:
     assert result.usage.prompt_tokens == 10
     assert result.usage.completion_tokens == 5
     assert result.usage.total_tokens == 15
+
+
+def test_create_openai_chunk_keeps_usage_details() -> None:
+    """Together reports cache hits and reasoning tokens as extras its SDK model does not declare."""
+    together_chunk = make_together_chunk(
+        content=None,
+        usage={
+            "prompt_tokens": 10439,
+            "completion_tokens": 5,
+            "total_tokens": 10444,
+            "prompt_tokens_details": {"cached_tokens": 10368},
+            "completion_tokens_details": {"reasoning_tokens": 5},
+        },
+    )
+    result = _create_openai_chunk_from_together_chunk(together_chunk)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 10368
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 5
+
+
+def test_convert_response_keeps_usage_details() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {
+            "id": "resp-1",
+            "choices": [{"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": 10439,
+                "completion_tokens": 5,
+                "total_tokens": 10444,
+                "prompt_tokens_details": {"cached_tokens": 10368},
+                "completion_tokens_details": {"reasoning_tokens": 5},
+            },
+        },
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+    )
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 10439
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 10368
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 5
+
+
+def test_convert_response_reads_top_level_cached_tokens() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {"usage": {"prompt_tokens": 100, "completion_tokens": 1, "total_tokens": 101, "cached_tokens": 64}},
+        "model",
+    )
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 64
+
+
+def test_convert_response_without_usage_details() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {"usage": {"prompt_tokens": 3, "completion_tokens": None, "total_tokens": 3}},
+        "model",
+    )
+
+    assert result.usage is not None
+    assert result.usage.completion_tokens == 0
+    assert result.usage.prompt_tokens_details is None
+    assert result.usage.completion_tokens_details is None
+
+
+def test_convert_completion_params_sends_stream_options_in_extra_body() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    result = TogetherProvider._convert_completion_params(params, extra_body={"other": 1})
+
+    assert "stream_options" not in result
+    assert result["extra_body"] == {"other": 1, "stream_options": {"include_usage": True}}
+
+
+def test_convert_completion_params_drops_stream_options_when_not_streaming() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=False,
+        stream_options={"include_usage": True},
+    )
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "stream_options" not in result
+    assert "extra_body" not in result
 
 
 def test_convert_completion_params_with_pydantic_response_format() -> None:

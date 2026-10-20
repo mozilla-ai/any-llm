@@ -122,6 +122,13 @@ class TogetherProvider(AnyLLM):
                 converted_params["response_format"] = _convert_response_format(params.response_format)
 
         converted_params.update(kwargs)
+        # The Together SDK has no stream_options argument, but the API only reports usage
+        # on a stream when stream_options.include_usage is set.
+        if params.stream and params.stream_options is not None:
+            converted_params["extra_body"] = {
+                **(converted_params.get("extra_body") or {}),
+                "stream_options": params.stream_options,
+            }
         return converted_params
 
     @staticmethod
