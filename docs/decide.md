@@ -71,6 +71,29 @@ For OpenRouter and llama.cpp, `timeout` (in seconds) and `extra_headers` apply t
 Other keyword arguments, and the keys of `extra_body`, are added to the request body, so OpenRouter
 fields such as `session_id` or `provider` go through unchanged.
 
+## Images
+
+Pass `images`, a list of data URLs (`data:image/...;base64,...`), when the questions are about a picture.
+Only providers with `SUPPORTS_DECIDE_IMAGE` accept them: llama.cpp, with a vision decision model.
+OpenRouter and TypeSafe raise `UnsupportedParameterError` before anything is sent, because their APIs take
+text only.
+
+```python
+import base64
+
+from any_llm import decide
+from any_llm.types.decide import Noul
+
+image = "data:image/png;base64," + base64.b64encode(b"<png bytes>").decode()
+result = decide(
+    "llamacpp:laya",
+    "A screenshot of a support ticket.",
+    {"billing": Noul(instructions="Is this ticket about billing?")},
+    images=[image],
+)
+print(result.nouls["billing"].noul)
+```
+
 ## llama.cpp
 
 To reach a llama-server on another host, pass its `/v1` URL:

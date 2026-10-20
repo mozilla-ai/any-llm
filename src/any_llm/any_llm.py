@@ -143,6 +143,9 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_DECIDE: bool = False
     """Decide API - answer named yes/no, choice, and score questions about a state."""
 
+    SUPPORTS_DECIDE_IMAGE: bool = False
+    """Decide API - accept images (data URLs) alongside the state."""
+
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
 
@@ -1882,6 +1885,8 @@ class AnyLLM(FilesMixin, ABC):
         model: str,
         state: JSONContent,
         questions: QuestionsInput,
+        *,
+        images: list[str] | None = None,
         **kwargs: Any,
     ) -> DecideResponse:
         """Answer named questions about a state synchronously.
@@ -1889,7 +1894,9 @@ class AnyLLM(FilesMixin, ABC):
         See [AnyLLM.adecide][any_llm.any_llm.AnyLLM.adecide]
         """
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
-        return run_async_in_sync(self.adecide(model, state, questions, **kwargs), allow_running_loop=allow_running_loop)
+        return run_async_in_sync(
+            self.adecide(model, state, questions, images=images, **kwargs), allow_running_loop=allow_running_loop
+        )
 
     @handle_exceptions()
     async def adecide(
@@ -1898,6 +1905,7 @@ class AnyLLM(FilesMixin, ABC):
         state: JSONContent,
         questions: QuestionsInput,
         *,
+        images: list[str] | None = None,
         timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
     ) -> DecideResponse:
@@ -1908,6 +1916,9 @@ class AnyLLM(FilesMixin, ABC):
             state: Text, a JSON object, or an array the questions refer to.
             questions: Names mapped to `Noul`, `Choice` or `Score` questions, their dict forms, or
                 objects with the same attributes. The response uses the same names to key the answers.
+            images: Images the questions refer to, as data URLs (`data:image/...;base64,...`).
+                Providers that do not accept images (`SUPPORTS_DECIDE_IMAGE`) raise
+                `UnsupportedParameterError`.
             timeout: Per-request timeout in seconds. Providers that have no per-request timeout
                 raise `UnsupportedParameterError`.
             **kwargs: Additional provider-specific arguments.
@@ -1927,6 +1938,11 @@ class AnyLLM(FilesMixin, ABC):
             # than as a timeout problem.
             msg = "Provider doesn't support decide."
             raise NotImplementedError(msg)
+        if images is not None:
+            if not self.SUPPORTS_DECIDE_IMAGE:
+                parameter_name = "images"
+                raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+            kwargs["images"] = images
         self._validate_and_forward_timeout(timeout, kwargs)
         # from_attributes accepts question objects of the same shape, such as the typesafe_sdk classes.
         validated = _QUESTIONS_ADAPTER.validate_python(questions, from_attributes=True)

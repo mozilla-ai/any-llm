@@ -255,6 +255,55 @@ async def test_supported_provider_must_implement_adecide(provider: OpenaiProvide
 
 
 @pytest.mark.asyncio
+async def test_adecide_forwards_images_when_supported(provider: OpenaiProvider) -> None:
+    images = ["data:image/png;base64,iVBORw0KGgo="]
+
+    with (
+        patch.object(provider, "SUPPORTS_DECIDE_IMAGE", True),
+        patch.object(provider, "_adecide", new=AsyncMock(return_value=_response())) as adecide,
+    ):
+        await provider.adecide("model", "state", {"billing": Noul()}, images=images)
+
+    adecide.assert_awaited_once_with("model", "state", {"billing": Noul()}, images=images)
+
+
+@pytest.mark.asyncio
+async def test_adecide_leaves_images_off_when_not_given(provider: OpenaiProvider) -> None:
+    with patch.object(provider, "_adecide", new=AsyncMock(return_value=_response())) as adecide:
+        await provider.adecide("model", "state", {"billing": Noul()}, images=None)
+
+    adecide.assert_awaited_once_with("model", "state", {"billing": Noul()})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unified_exceptions", [True, False])
+@pytest.mark.parametrize("images", [["data:image/png;base64,iVBORw0KGgo="], []])
+async def test_adecide_rejects_images_when_unsupported(
+    provider: OpenaiProvider, unified_exceptions: bool, images: list[str]
+) -> None:
+    provider._unified_exceptions = unified_exceptions
+
+    with (
+        patch.object(provider, "_adecide", new=AsyncMock()) as adecide,
+        pytest.raises(UnsupportedParameterError, match="images"),
+    ):
+        await provider.adecide("model", "state", {"billing": Noul()}, images=images)
+
+    adecide.assert_not_awaited()
+
+
+def test_decide_forwards_images() -> None:
+    llm = Mock()
+    llm.decide.return_value = _response()
+    images = ["data:image/png;base64,iVBORw0KGgo="]
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=llm):
+        decide("llamacpp:laya", "state", {"billing": Noul()}, images=images)
+
+    llm.decide.assert_called_once_with("laya", "state", {"billing": Noul()}, images=images)
+
+
+@pytest.mark.asyncio
 async def test_adecide_validates_question_dicts(provider: OpenaiProvider) -> None:
     with patch.object(provider, "_adecide", new=AsyncMock(return_value=_response())) as adecide:
         await provider.adecide("model", "state", {"billing": {"type": "noul"}, "risk": Score(criteria=["low"])})
@@ -366,7 +415,7 @@ def test_decide_api_splits_the_provider_from_the_model() -> None:
 
     assert result == _response()
     create.assert_called_once_with("typesafe", api_key="key", api_base=None)
-    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()}, timeout=5)
+    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()}, images=None, timeout=5)
 
 
 def test_decide_api_warns_about_the_legacy_model_format_at_the_caller() -> None:
@@ -380,7 +429,7 @@ def test_decide_api_warns_about_the_legacy_model_format_at_the_caller() -> None:
         decide("typesafe/jev-latest", "state", {"billing": Noul()})
 
     assert record[0].filename == __file__
-    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()})
+    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()}, images=None)
 
 
 @pytest.mark.asyncio
@@ -400,7 +449,7 @@ async def test_adecide_api_uses_an_explicit_provider_and_client_args() -> None:
 
     assert result == _response()
     create.assert_called_once_with("typesafe", api_key=None, api_base="http://localhost:11434", max_retries=0)
-    llm.adecide.assert_awaited_once_with("jev-latest", "state", {"billing": Noul()})
+    llm.adecide.assert_awaited_once_with("jev-latest", "state", {"billing": Noul()}, images=None)
 
 
 def test_decide_is_importable_from_the_top_level() -> None:

@@ -60,6 +60,7 @@ def test_capability_flags() -> None:
     assert not LlamacppProvider.SUPPORTS_RERANK
     assert not LlamacppProvider.SUPPORTS_RESPONSES
     assert LlamacppProvider.SUPPORTS_DECIDE
+    assert LlamacppProvider.SUPPORTS_DECIDE_IMAGE
 
 
 def test_registered_in_enum_and_loader() -> None:
@@ -109,3 +110,14 @@ async def test_top_level_adecide_dispatches_on_the_llamacpp_prefix() -> None:
 
     assert str(requests[0].url) == "http://gpu-box:8080/v1/systemone"
     assert result.model == "tev1"
+
+
+@pytest.mark.asyncio
+async def test_adecide_sends_images_in_the_body() -> None:
+    requests: list[httpx.Request] = []
+    provider = LlamacppProvider(http_client=_answering(requests))
+    images = ["data:image/png;base64,iVBORw0KGgo="]
+
+    await provider.adecide("laya", "What is in the picture?", {"spam": Noul(instructions="Is it spam?")}, images=images)
+
+    assert json.loads(requests[0].content)["images"] == images
