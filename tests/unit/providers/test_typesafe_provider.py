@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx2
 import pytest
+from pydantic import ValidationError
 from typesafe_sdk import (
     ListModelsResponse,
     ModelMetadata,
@@ -42,6 +43,7 @@ from any_llm.types.decide import (
     Question,
     Score,
     ScoreAnswer,
+    UnknownAnswer,
 )
 
 _MODEL = "jev-latest"
@@ -85,7 +87,7 @@ def provider() -> Iterator[TypesafeProvider]:
         patch.object(provider.client, "system_one", new_callable=AsyncMock) as system_one,
         patch.object(provider.client.models, "list", new_callable=AsyncMock),
     ):
-        system_one.return_value = SystemOneResponse.model_validate(_SYSTEM_ONE_BODY)
+        system_one.return_value = SystemOneResponse.from_http_response(httpx2.Response(200, json=_SYSTEM_ONE_BODY))
         yield provider
 
 
@@ -369,6 +371,49 @@ async def test_adecide_carries_the_request_id(headers: dict[str, str] | None, ex
     result = await provider.adecide(_MODEL, "state", _QUESTIONS)
 
     assert result.id == expected_id
+
+
+@pytest.mark.asyncio
+async def test_adecide_keeps_fields_and_answer_types_the_sdk_drops() -> None:
+    body = {
+        **_SYSTEM_ONE_BODY,
+        "provider": "typesafe",
+        "usage": {"input_tokens": 12, "output_tokens": 3, "cost": 0.0001, "cached_tokens": 4},
+        "answers": {
+            **_SYSTEM_ONE_BODY["answers"],
+            "logo": {"type": "box", "box": {"top": 1, "bottom": 2, "left": 3, "right": 4}},
+        },
+    }
+    provider = _provider_answering(body, {"x-typesafe-request-id": "req_123"})
+
+    result = await provider.adecide(_MODEL, "state", _QUESTIONS)
+
+    assert result.id == "req_123"
+    assert result.model_extra == {"provider": "typesafe"}
+    assert result.usage is not None
+    assert result.usage.cost == 0.0001
+    assert result.usage.model_extra == {"cached_tokens": 4}
+    assert result.answers["logo"] == UnknownAnswer.model_validate(body["answers"]["logo"])
+    assert result.nouls["billing"].noul == 0.9
+
+
+@pytest.mark.asyncio
+async def test_adecide_falls_back_to_the_body_id_without_a_request_id_header() -> None:
+    provider = _provider_answering({**_SYSTEM_ONE_BODY, "id": "body_123"})
+
+    result = await provider.adecide(_MODEL, "state", _QUESTIONS)
+
+    assert result.id == "body_123"
+
+
+def test_a_body_the_sdk_reads_but_decide_cannot_is_a_provider_error() -> None:
+    response = MagicMock()
+    response.raw_http_response.json.return_value = {"answers": {"billing": {"type": 1}}}
+
+    with pytest.raises(ProviderError, match="TypeSafe returned a System One response that is not valid") as exc_info:
+        TypesafeProvider._convert_decide_response(response)
+
+    assert isinstance(exc_info.value.__cause__, ValidationError)
 
 
 @pytest.mark.asyncio

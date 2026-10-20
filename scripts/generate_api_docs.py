@@ -2122,7 +2122,12 @@ def generate_types_decide_page() -> str:
         parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
 
     parts.extend(["## Answers", ""])
-    for cls in (decide_types.NoulAnswer, decide_types.ChoiceAnswer, decide_types.ScoreAnswer):
+    for cls in (
+        decide_types.NoulAnswer,
+        decide_types.ChoiceAnswer,
+        decide_types.ScoreAnswer,
+        decide_types.UnknownAnswer,
+    ):
         parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
 
     parts.extend(["## Response", ""])
@@ -2130,7 +2135,9 @@ def generate_types_decide_page() -> str:
         parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
 
     parts.append(
-        "`DecideResponse` also exposes the answers grouped by question type as `nouls`, `choices` and `scores`."
+        "`DecideResponse` also exposes the answers grouped by question type as `nouls`, `choices` and `scores`. "
+        "The response, its usage and each answer keep the fields a provider adds; read them from `model_extra`, "
+        "or get them all from `model_dump()`."
     )
     return "\n".join(parts) + "\n"
 

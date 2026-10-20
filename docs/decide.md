@@ -49,6 +49,22 @@ The result is a `DecideResponse`. `answers` holds the answers keyed by question 
 `choices` and `scores` group them by type. `usage` holds the token counts and, when the provider
 reports one, `cost`: what the provider charged in USD. OpenRouter reports it.
 
+The response keeps every field the provider sends, including fields any-llm does not model, such as
+OpenRouter's `provider`. Read them from `model_extra`, or get the whole response with `model_dump()`.
+An answer of a type any-llm does not model, such as OpenRouter's `box`, is kept as an `UnknownAnswer`
+with all its fields. It appears in `answers`, but not in `nouls`, `choices` or `scores`.
+
+```python
+from any_llm import decide
+from any_llm.types.decide import Noul
+
+result = decide("openrouter:typesafe/jev-1.13", "I was charged twice.", {"billing": Noul(instructions="Billing?")})
+print(result.model_dump(exclude_none=True))
+```
+
+The TypeSafe SDK logs a warning when it ignores an answer type it does not know. any-llm reads the
+response body itself, so it still keeps that answer.
+
 ## Request options
 
 For OpenRouter and llama.cpp, `timeout` (in seconds) and `extra_headers` apply to the HTTP request.
