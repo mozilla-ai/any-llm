@@ -83,6 +83,7 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_COMPLETION_N = True
+    PROMPT_CACHE_KEY_SUPPORT = "supported"
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = True
@@ -105,7 +106,8 @@ class TogetherProvider(AnyLLM):
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         """Convert CompletionParams to kwargs for Together API."""
         converted_params = params.model_dump(
-            exclude_none=True, exclude={"model_id", "messages", "response_format", "stream_options"}
+            exclude_none=True,
+            exclude={"model_id", "messages", "response_format", "stream_options", "prompt_cache_key"},
         )
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
@@ -122,13 +124,15 @@ class TogetherProvider(AnyLLM):
                 converted_params["response_format"] = _convert_response_format(params.response_format)
 
         converted_params.update(kwargs)
-        # The Together SDK has no stream_options argument, but the API only reports usage
-        # on a stream when stream_options.include_usage is set.
+        # The Together SDK has no stream_options or prompt_cache_key argument, though the API
+        # takes both; it only reports usage on a stream when stream_options.include_usage is set.
+        extra_body: dict[str, Any] = {}
         if params.stream and params.stream_options is not None:
-            converted_params["extra_body"] = {
-                **(converted_params.get("extra_body") or {}),
-                "stream_options": params.stream_options,
-            }
+            extra_body["stream_options"] = params.stream_options
+        if params.prompt_cache_key is not None:
+            extra_body["prompt_cache_key"] = params.prompt_cache_key
+        if extra_body:
+            converted_params["extra_body"] = {**(converted_params.get("extra_body") or {}), **extra_body}
         return converted_params
 
     @staticmethod
