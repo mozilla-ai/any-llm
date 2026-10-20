@@ -66,6 +66,8 @@ class CerebrasProvider(AnyLLM):
         )
         if converted_params.get("reasoning_effort") in ("auto", "none"):
             converted_params.pop("reasoning_effort")
+        if params.stream and params.stream_options is not None:
+            converted_params["stream_options"] = params.stream_options
         converted_params.update(kwargs)
         return converted_params
 

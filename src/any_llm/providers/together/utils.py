@@ -15,17 +15,15 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
-    CompletionTokensDetails,
-    CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
-    PromptTokensDetails,
     Reasoning,
     Usage,
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse, RerankResult, RerankUsage
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
+from any_llm.utils.usage import completion_usage_from_dict
 
 if TYPE_CHECKING:
     from together.types import BatchJob as TogetherBatchJob
@@ -44,24 +42,6 @@ _TOGETHER_TO_OPENAI_BATCH_STATUS: dict[str, str] = {
     "CANCELLING": "cancelling",
     "CANCELLED": "cancelled",
 }
-
-
-def _convert_together_usage(usage: dict[str, Any]) -> CompletionUsage:
-    """Convert Together usage, keeping the token details its SDK models do not declare."""
-    prompt_details = usage.get("prompt_tokens_details") or {}
-    cached_tokens = prompt_details.get("cached_tokens")
-    if cached_tokens is None:
-        cached_tokens = usage.get("cached_tokens")
-    reasoning_tokens = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
-    return CompletionUsage(
-        prompt_tokens=usage.get("prompt_tokens") or 0,
-        completion_tokens=usage.get("completion_tokens") or 0,
-        total_tokens=usage.get("total_tokens") or 0,
-        prompt_tokens_details=PromptTokensDetails(cached_tokens=cached_tokens) if cached_tokens is not None else None,
-        completion_tokens_details=CompletionTokensDetails(reasoning_tokens=reasoning_tokens)
-        if reasoning_tokens is not None
-        else None,
-    )
 
 
 def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatCompletionChunk) -> ChatCompletionChunk:
@@ -127,7 +107,7 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
 
     usage = None
     if together_chunk.usage:
-        usage = _convert_together_usage(together_chunk.usage.model_dump())
+        usage = completion_usage_from_dict(together_chunk.usage.model_dump())
 
     return ChatCompletionChunk(
         id=together_chunk.id or f"chatcmpl-{uuid.uuid4()}",
@@ -166,7 +146,7 @@ def _convert_together_response_to_chat_completion(response_data: dict[str, Any],
 
     usage = None
     if response_data.get("usage"):
-        usage = _convert_together_usage(response_data["usage"])
+        usage = completion_usage_from_dict(response_data["usage"])
 
     return ChatCompletion(
         id=response_data.get("id", ""),

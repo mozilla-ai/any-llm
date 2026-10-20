@@ -1293,6 +1293,8 @@ def test_create_mistral_completion_builds_chatcompletion_from_well_formed_respon
     unit coverage beyond the error path.
     """
     pytest.importorskip("mistralai")
+    from mistralai.client.models import UsageInfo
+
     from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
 
     message = Mock()
@@ -1303,10 +1305,7 @@ def test_create_mistral_completion_builds_chatcompletion_from_well_formed_respon
     choice.message = message
     choice.finish_reason = "stop"
 
-    usage = Mock()
-    usage.prompt_tokens = 12
-    usage.completion_tokens = 7
-    usage.total_tokens = 19
+    usage = UsageInfo(prompt_tokens=12, completion_tokens=7, total_tokens=19)
 
     response = Mock()
     response.id = "chatcmpl-abc"
@@ -1628,3 +1627,55 @@ def test_create_openai_chunk_keeps_nonstandard_finish_reason() -> None:
     chunk = _create_openai_chunk_from_mistral_chunk(event)
 
     assert chunk.choices[0].finish_reason == "error"
+
+
+_MISTRAL_CACHED_USAGE = {
+    "prompt_tokens": 13406,
+    "completion_tokens": 2,
+    "total_tokens": 13408,
+    "prompt_tokens_details": {"cached_tokens": 13376},
+    "completion_tokens_details": {"reasoning_tokens": 0},
+}
+
+
+def test_create_mistral_completion_keeps_cached_tokens() -> None:
+    """Mistral sends prompt_tokens_details as an extra its UsageInfo model does not declare."""
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import UsageInfo
+
+    from any_llm.providers.mistral.utils import _create_mistral_completion_from_response
+
+    response = Mock()
+    response.id = "chatcmpl-abc"
+    response.created = 1
+    response.choices = []
+    response.usage = UsageInfo.model_validate(_MISTRAL_CACHED_USAGE)
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-small-latest")
+
+    assert completion.usage is not None
+    assert completion.usage.prompt_tokens_details is not None
+    assert completion.usage.prompt_tokens_details.cached_tokens == 13376
+    assert completion.usage.completion_tokens_details is not None
+    assert completion.usage.completion_tokens_details.reasoning_tokens == 0
+
+
+def test_create_mistral_chunk_keeps_cached_tokens() -> None:
+    pytest.importorskip("mistralai")
+    from mistralai.client.models import UsageInfo
+
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    event = Mock()
+    event.data.id = "chunk-1"
+    event.data.created = 1
+    event.data.model = "mistral-small-latest"
+    event.data.choices = []
+    event.data.usage = UsageInfo.model_validate(_MISTRAL_CACHED_USAGE)
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.usage is not None
+    assert chunk.usage.prompt_tokens == 13406
+    assert chunk.usage.prompt_tokens_details is not None
+    assert chunk.usage.prompt_tokens_details.cached_tokens == 13376
