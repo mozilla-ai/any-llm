@@ -2153,21 +2153,44 @@ async def test_amessages_effort_only_output_config_streams() -> None:
 
 
 @pytest.mark.asyncio
-async def test_amessages_output_config_dict_rejects_streaming() -> None:
-    """A raw output_config dict combined with stream=True also raises ValueError."""
-    output_config = {"format": {"type": "json_schema", "schema": {"type": "object"}}}
+async def test_amessages_output_config_dict_streams_through_the_bridge() -> None:
+    """A raw output_config dict streams as JSON text, with its schema sent as the response_format."""
+    output_config = {"effort": "high", "format": {"type": "json_schema", "schema": {"type": "object", "title": "City"}}}
+
+    async def json_stream() -> AsyncIterator[ChatCompletionChunk]:
+        for content, finish_reason in (('{"city_name": ', None), ('"Paris"}', "stop")):
+            yield ChatCompletionChunk(
+                id="chunk-1",
+                model="test-model",
+                created=0,
+                object="chat.completion.chunk",
+                choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=content), finish_reason=finish_reason)],
+            )
 
     provider = _openai_provider()
-    provider._acompletion = AsyncMock(return_value=_json_completion())
+    provider._acompletion = AsyncMock(return_value=json_stream())
 
-    with pytest.raises(ValueError, match="stream is not supported for output_format"):
-        await provider.amessages(
-            model="test-model",
-            messages=[{"role": "user", "content": "Hi"}],
-            max_tokens=128,
-            output_format=output_config,
-            stream=True,
-        )
+    result = await provider.amessages(
+        model="test-model",
+        messages=[{"role": "user", "content": "Capital of France?"}],
+        max_tokens=128,
+        output_format=output_config,
+        stream=True,
+    )
+    assert not isinstance(result, (MessageResponse, ParsedMessage, ParsedBetaMessage))
+    events = [event async for event in result]
+
+    text = "".join(
+        event.delta.text for event in events if event.type == "content_block_delta" and event.delta.type == "text_delta"
+    )
+    assert json.loads(text) == {"city_name": "Paris"}
+    assert events[-1].type == "message_stop"
+    completion_params = provider._acompletion.call_args.args[0]
+    assert completion_params.stream is True
+    assert completion_params.response_format == {
+        "type": "json_schema",
+        "json_schema": {"name": "City", "schema": {"type": "object", "title": "City"}},
+    }
 
 
 @pytest.mark.asyncio

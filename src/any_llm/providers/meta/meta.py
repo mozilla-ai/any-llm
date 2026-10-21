@@ -120,9 +120,8 @@ class MetaProvider(BaseOpenAIProvider):
 
         if params.output_format is not None:
             if params.stream:
-                # Belt-and-suspenders: the public `amessages()` entry point already rejects this
-                # combination before params reach here, but `_amessages` can be called directly
-                # (e.g. in tests), so guard here too rather than silently dropping `stream`.
+                # The native path below makes non-streaming calls only, so refuse rather than
+                # silently dropping `stream`.
                 msg = "stream is not supported for output_format"
                 raise ValueError(msg)
             native_kwargs = params.model_dump(
