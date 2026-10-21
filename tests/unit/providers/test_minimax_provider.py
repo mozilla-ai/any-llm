@@ -1,6 +1,8 @@
+import json
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, cast
 
+import httpx
 import pytest
 from openai._models import construct_type
 from openai.types.chat.chat_completion_chunk import (
@@ -16,9 +18,10 @@ from openai.types.completion_usage import CompletionUsage
 from pydantic import BaseModel
 
 from any_llm import AnyLLM
+from any_llm.constants import LLMProvider
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.minimax.minimax import MinimaxProvider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, ReasoningEffort
 
 if TYPE_CHECKING:
     from openai._streaming import AsyncStream
@@ -178,3 +181,71 @@ async def test_stream_preserves_usage_on_chunk_without_delta() -> None:
     assert result[0].choices == []
     assert result[0].usage is not None
     assert result[0].usage.total_tokens == 13
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fixture_name", ["provider_model_map", "provider_reasoning_model_map"])
+async def test_default_model_reaches_chat_transport(request: pytest.FixtureRequest, fixture_name: str) -> None:
+    model_map = request.getfixturevalue(fixture_name)
+    model = model_map[LLMProvider.MINIMAX]
+    assert model == "MiniMax-M3.1-Flash"
+    await _assert_chat_request(model, None, "auto")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["MiniMax-M3.1-Flash", "MiniMax-M3", "MiniMax-M2", "custom-model"])
+@pytest.mark.parametrize("api_base", [None, "https://api.minimax.cn/v1", "https://custom.example/v1"])
+async def test_explicit_model_reaches_chat_transport(model: str, api_base: str | None) -> None:
+    await _assert_chat_request(model, api_base, "auto")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max"])
+async def test_flash_effort_reaches_chat_transport(effort: ReasoningEffort) -> None:
+    await _assert_chat_request("MiniMax-M3.1-Flash", None, effort)
+
+
+async def _assert_chat_request(model: str, api_base: str | None, effort: ReasoningEffort) -> None:
+    requests: list[httpx.Request] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": model,
+                "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "ok"}}],
+            },
+        )
+
+    provider = MinimaxProvider(
+        api_key="test-key",
+        api_base=api_base,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle_request)),
+        max_retries=0,
+    )
+    try:
+        await provider.acompletion(
+            model=model,
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=effort,
+        )
+    finally:
+        await provider.client.close()
+
+    assert len(requests) == 1
+    outgoing = requests[0]
+    assert str(outgoing.url) == f"{api_base or MinimaxProvider.API_BASE}/chat/completions"
+    body = json.loads(outgoing.content)
+    assert body["model"] == model
+    assert body["messages"] == [{"role": "user", "content": "Hello"}]
+    if effort == "auto":
+        assert "reasoning_effort" not in body
+    else:
+        assert body["reasoning_effort"] == effort
+    assert "service_tier" not in body
+    assert "thinking" not in body
+    assert "reasoning_split" not in body

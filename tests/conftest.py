@@ -86,7 +86,7 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         # `reasoning` field TogetherProvider reads, including while streaming.
         LLMProvider.TOGETHER: "openai/gpt-oss-120b",
         LLMProvider.PORTKEY: "@nebius-any-llm/Qwen/Qwen3.5-397B-A17B",
-        LLMProvider.MINIMAX: "MiniMax-M2",
+        LLMProvider.MINIMAX: "MiniMax-M3.1-Flash",
         LLMProvider.ZAI: "glm-4.5-flash",
         LLMProvider.DEEPINFRA: "deepseek-ai/DeepSeek-R1",
         LLMProvider.TELNYX: "moonshotai/Kimi-K2.6",
@@ -140,7 +140,7 @@ def provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.PERPLEXITY: "sonar",
         LLMProvider.OPENROUTER: "google/gemini-2.5-flash-lite",
         LLMProvider.LLAMACPP: "N/A",
-        LLMProvider.MINIMAX: "MiniMax-M2",
+        LLMProvider.MINIMAX: "MiniMax-M3.1-Flash",
         LLMProvider.ZAI: "glm-4-32b-0414-128k",
         LLMProvider.DEEPINFRA: "meta-llama/Meta-Llama-3.1-8B-Instruct",
         LLMProvider.EDENAI: "openai/gpt-4o-mini",
