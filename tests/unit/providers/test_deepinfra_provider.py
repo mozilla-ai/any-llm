@@ -8,7 +8,7 @@ from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenA
 from any_llm import AnyLLM
 from any_llm.providers.deepinfra.deepinfra import DeepinfraProvider
 from any_llm.types.completion import CompletionParams
-from any_llm.types.messages import MessageResponse
+from any_llm.types.messages import ContentBlockDeltaEvent, TextDelta
 
 
 def test_provider_basics() -> None:
@@ -93,11 +93,13 @@ async def test_deepinfra_streams_messages_output_config_as_json_schema() -> None
             output_format={"effort": "high", "format": {"type": "json_schema", "schema": schema}},
             stream=True,
         )
-        assert not isinstance(stream, MessageResponse)
+        assert isinstance(stream, AsyncIterator)
         events = [event async for event in stream]
 
     text = "".join(
-        event.delta.text for event in events if event.type == "content_block_delta" and event.delta.type == "text_delta"
+        event.delta.text
+        for event in events
+        if isinstance(event, ContentBlockDeltaEvent) and isinstance(event.delta, TextDelta)
     )
     assert json.loads(text) == {"title": "Session check"}
     assert events[-1].type == "message_stop"
