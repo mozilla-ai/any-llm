@@ -154,7 +154,7 @@ class AnyLLM(FilesMixin, ABC):
     in `serves_messages_natively`."""
 
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
-    """Whether Messages structured output can be streamed by this provider."""
+    """Whether a Messages `output_format` type can be streamed by this provider."""
 
     SUPPORTS_COMPLETION_N: bool = False
     """Whether the provider can return more than one choice per request (OpenAI's ``n``).
@@ -1100,8 +1100,8 @@ class AnyLLM(FilesMixin, ABC):
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
                 JSON schemas (``parsed_output`` holds the parsed JSON). Non-streaming calls return
                 Anthropic's ``ParsedMessage`` for types or mappings with a non-empty schema dict;
-                mappings without one return ``MessageResponse``. Providers with native support
-                can stream schema-constrained Messages events instead.
+                mappings without one return ``MessageResponse``. A mapping can be streamed, as
+                schema-constrained JSON text; a type streams only on providers with native support.
                 Native Anthropic typed beta requests return ``ParsedBetaMessage`` when
                 ``context_management`` is set or beta identifiers are supplied.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
@@ -1117,19 +1117,18 @@ class AnyLLM(FilesMixin, ABC):
             Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
-            ValueError: If an `output_format` that names a format is combined with `stream=True`
-                for a provider that does not support streaming structured output.
+            ValueError: If an `output_format` type is combined with `stream=True` for a provider
+                that does not support streaming typed structured output.
             NotImplementedError: If `container`, `context_management`, or `betas` is used
                 with a provider that has no native Anthropic Messages API.
 
         """
-        # An output_config that names no format (effort alone) asks for no structured output,
-        # so there is nothing a stream could fail to honour.
-        names_format = not isinstance(output_format, dict) or "format" in normalize_output_config(output_format)
+        # A raw output_config dict streams as JSON text deltas, as Anthropic's own API does, and
+        # the bridge streams its schema as a `response_format`. Only a type needs a finished
+        # message to parse into, which a stream never produces.
         if (
-            output_format is not None
+            is_structured_output_type(output_format)
             and stream
-            and names_format
             and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING
         ):
             msg = "stream is not supported for output_format"
