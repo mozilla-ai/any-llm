@@ -80,6 +80,34 @@ async def test_preprocess_messages_with_non_pydantic_response_format() -> None:
     assert processed_params.messages == messages
 
 
+def test_preprocess_messages_with_json_schema_dict() -> None:
+    """A json_schema dict, which DeepSeek rejects, becomes JSON mode with the schema in the prompt."""
+    schema = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "Name this session"}],
+        response_format={"type": "json_schema", "json_schema": {"name": "structured_output", "schema": schema}},
+    )
+
+    processed_params = _preprocess_messages(params)
+
+    assert processed_params.response_format == {"type": "json_object"}
+    content = processed_params.messages[0]["content"]
+    assert json.dumps(schema, indent=2) in content
+    assert "Name this session" in content
+
+
+def test_preprocess_messages_leaves_json_schema_dict_without_a_schema() -> None:
+    response_format = {"type": "json_schema", "json_schema": {"name": "structured_output"}}
+    messages = [{"role": "user", "content": "Hello"}]
+    params = CompletionParams(model_id="deepseek-v4-flash", messages=messages, response_format=response_format)
+
+    processed_params = _preprocess_messages(params)
+
+    assert processed_params.response_format == response_format
+    assert processed_params.messages == messages
+
+
 @pytest.mark.asyncio
 async def test_preprocess_messages_with_dataclass() -> None:
     """Test that a dataclass is converted to DeepSeek JSON format."""
