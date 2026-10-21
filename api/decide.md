@@ -3,7 +3,7 @@ title: Decide
 description: Answer named yes/no, choice and score questions about a state
 ---
 
-The `decide` and `adecide` functions answer named questions about a state (text, a JSON object, or an array) with a provider that supports the decide API, such as [TypeSafe](../typesafe.md).
+The `decide` and `adecide` functions answer named questions about a state (text, a JSON object, or an array) with a provider that supports the decide API. See [Decide](../decide.md) for the providers.
 
 ## `any_llm.decide()`
 
@@ -17,6 +17,7 @@ def decide(
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
+    images: list[str] | None = None,
     **kwargs: Any,
 ) -> DecideResponse
 ```
@@ -35,6 +36,7 @@ async def adecide(
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
+    images: list[str] | None = None,
     **kwargs: Any,
 ) -> DecideResponse
 ```
@@ -50,6 +52,7 @@ async def adecide(
 | `api_key` | `str \| None` | None | Provider API key. Falls back to environment variable. |
 | `api_base` | `str \| None` | None | Provider API base URL. Falls back to environment variable. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional arguments passed to the provider client constructor. |
+| `images` | `list[str] \| None` | None | Images the questions refer to, as data URLs (`data:image/...;base64,...`). Providers that do not accept images raise `UnsupportedParameterError`. |
 | `**kwargs` | `Any` | *required* | Additional arguments for the call, such as `timeout` in seconds. |
 
 ## Return Value

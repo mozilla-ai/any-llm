@@ -13,7 +13,7 @@ state (text, a JSON object, or an array) instead of generating text. There are t
 - `Score`: place the state on an ordered scale of criteria.
 
 TypeSafe has no chat completions or embeddings. It implements the `decide` and `adecide` methods
-(`SUPPORTS_DECIDE`), and `list_models` against the hosted API.
+(`SUPPORTS_DECIDE`), and `list_models` against the hosted API. Other providers serve the same API; see [Decide](decide.md).
 
 ## Installation
 
@@ -100,6 +100,11 @@ shared status and message rules run:
 - A 400 or 422 raises `InvalidRequestError`, whatever the question names in its message say.
 - A response the SDK cannot read with its own models raises `ProviderError`. Its `status_code` is the
   status the server sent, usually 200.
+- A response the SDK reads but `DecideResponse` cannot, such as an answer with no `type`, raises
+  `ProviderError` with or without unified exceptions.
 
 Everything else, such as rate limits, authentication failures, and timeouts, follows the
 [shared rules](api/exceptions.md).
+
+The SDK puts part of the error body it got into the message, so a message can quote the request's
+`state`. See [Decide errors](decide.md#errors) for how to log errors without it.

@@ -84,26 +84,37 @@ The answer to a `Score` question.
 | `legend` | `dict[int, str \| Mapping[str, Any] \| Sequence[Any]]` | Score levels mapped to the criteria that define them |
 | `probabilities` | `dict[int, float]` | Probability of each score level |
 
+### `UnknownAnswer`
+
+An answer of a type any-llm does not model, such as OpenRouter's `box`, with all its fields.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` |  |
+
 ## Response
 
 ### `DecideResponse`
 
 Answers keyed by the question names of the request, provider-agnostic.
 
+Fields a provider adds, such as OpenRouter's `provider`, are kept and appear in `model_dump()`.
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `str \| None` | Provider-assigned request ID, when the provider reports one |
 | `model` | `str \| None` | Model that served the request: the provider-reported one when available, else the requested model |
-| `answers` | `dict[str, NoulAnswer \| ChoiceAnswer \| ScoreAnswer]` | One answer per question, keyed by question name |
+| `answers` | `dict[str, NoulAnswer \| ChoiceAnswer \| ScoreAnswer \| UnknownAnswer]` | One answer per question, keyed by question name |
 | `usage` | `DecideUsage \| None` | Token usage, when the provider reports it. |
 
 ### `DecideUsage`
 
-Token usage of a decide request.
+Token usage of a decide request. Fields a provider adds are kept.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `input_tokens` | `int \| None` | Input tokens used, or `None` when the provider did not report it. |
 | `output_tokens` | `int \| None` | Output tokens used, or `None` when the provider did not report it. |
+| `cost` | `float \| None` | What the provider charged for the request in USD, or `None` when it did not report it. |
 
-`DecideResponse` also exposes the answers grouped by question type as `nouls`, `choices` and `scores`.
+`DecideResponse` also exposes the answers grouped by question type as `nouls`, `choices` and `scores`. The response, its usage and each answer keep the fields a provider adds; read them from `model_extra`, or get them all from `model_dump()`.

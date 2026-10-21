@@ -153,8 +153,8 @@ async def alist_models(self, **kwargs) -> Sequence[Model]
 Answer named yes/no, choice and score questions about a state. See the [Decide](decide.md) reference.
 
 ```
-def decide(self, model, state, questions, **kwargs) -> DecideResponse
-async def adecide(self, model, state, questions, *, timeout=None, **kwargs) -> DecideResponse
+def decide(self, model, state, questions, *, images=None, **kwargs) -> DecideResponse
+async def adecide(self, model, state, questions, *, images=None, timeout=None, **kwargs) -> DecideResponse
 ```
 
 ### `create_batch()` / `acreate_batch()`

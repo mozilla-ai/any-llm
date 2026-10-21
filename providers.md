@@ -42,7 +42,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`kenari`](https://kenari.id/docs) | 🤝 Community | KENARI_API_KEY | KENARI_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`liner`](https://liner.com/developers/docs) | 🤝 Community | LINER_API_KEY | LINER_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`llama`](https://www.llama.com/products/llama-api/) | 🤝 Community | LLAMA_API_KEY | LLAMA_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| [`llamacpp`](https://github.com/ggml-org/llama.cpp) | ✅ Verified | LLAMACPP_API_KEY | LLAMACPP_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| [`llamacpp`](https://github.com/ggml-org/llama.cpp) | ✅ Verified | LLAMACPP_API_KEY | LLAMACPP_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
 | [`llamafile`](https://github.com/Mozilla-Ocho/llamafile) | ✅ Verified | None | LLAMAFILE_API_BASE | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`lmstudio`](https://lmstudio.ai/docs/python) | ✅ Verified | LM_STUDIO_API_KEY | LM_STUDIO_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | [`meta`](https://dev.meta.ai/docs) | 🤝 Community | MODEL_API_KEY | META_API_BASE | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ |
@@ -54,7 +54,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`neosantara`](https://docs.neosantara.xyz) | 🤝 Community | NEOSANTARA_API_KEY | NEOSANTARA_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | [`ollama`](https://github.com/ollama/ollama) | ✅ Verified | None | OLLAMA_HOST | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | [`openai`](https://platform.openai.com/docs/api-reference) | ✅ Verified | OPENAI_API_KEY | OPENAI_BASE_URL | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| [`openrouter`](https://openrouter.ai/docs) | ✅ Verified | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| [`openrouter`](https://openrouter.ai/docs) | ✅ Verified | OPENROUTER_API_KEY | OPENROUTER_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
 | [`otari`](https://mozilla-ai.github.io/otari/) | ✅ Verified | OTARI_API_KEY | OTARI_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | [`ovhcloud`](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started) | 🤝 Community | OVHCLOUD_API_KEY | OVHCLOUD_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`perplexity`](https://docs.perplexity.ai/) | 🤝 Community | PERPLEXITY_API_KEY | PERPLEXITY_BASE_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
