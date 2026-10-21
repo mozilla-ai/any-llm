@@ -97,15 +97,45 @@ def test_preprocess_messages_with_json_schema_dict() -> None:
     assert "Name this session" in content
 
 
-def test_preprocess_messages_leaves_json_schema_dict_without_a_schema() -> None:
-    response_format = {"type": "json_schema", "json_schema": {"name": "structured_output"}}
-    messages = [{"role": "user", "content": "Hello"}]
-    params = CompletionParams(model_id="deepseek-v4-flash", messages=messages, response_format=response_format)
+def test_preprocess_messages_with_json_schema_dict_without_a_schema() -> None:
+    """OpenAI's json_schema format makes the schema optional, so its absence asks for JSON of any shape."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format={"type": "json_schema", "json_schema": {"name": "structured_output"}},
+    )
 
     processed_params = _preprocess_messages(params)
 
-    assert processed_params.response_format == response_format
-    assert processed_params.messages == messages
+    assert processed_params.response_format == {"type": "json_object"}
+    content = processed_params.messages[0]["content"]
+    assert "Please respond with a JSON object.\n" in content
+    assert "schema" not in content
+    assert "Hello" in content
+
+
+@pytest.mark.parametrize(
+    ("response_format", "message"),
+    [
+        ({"type": "json_schema"}, "must include a 'json_schema' object"),
+        ({"type": "json_schema", "json_schema": "structured_output"}, "must include a 'json_schema' object"),
+        (
+            {"type": "json_schema", "json_schema": {"name": "structured_output", "schema": "object"}},
+            "must be a JSON schema object",
+        ),
+    ],
+)
+def test_preprocess_messages_rejects_a_malformed_json_schema_dict(
+    response_format: dict[str, Any], message: str
+) -> None:
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=response_format,
+    )
+
+    with pytest.raises(InvalidRequestError, match=message):
+        _preprocess_messages(params)
 
 
 @pytest.mark.asyncio
