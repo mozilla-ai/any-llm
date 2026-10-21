@@ -1,6 +1,14 @@
+import json
+from collections.abc import AsyncIterator
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+
 from any_llm import AnyLLM
 from any_llm.providers.deepinfra.deepinfra import DeepinfraProvider
 from any_llm.types.completion import CompletionParams
+from any_llm.types.messages import MessageResponse
 
 
 def test_provider_basics() -> None:
@@ -52,3 +60,50 @@ def test_provider_metadata() -> None:
     assert metadata.env_api_base == "DEEPINFRA_API_BASE"
     assert metadata.doc_url == "https://deepinfra.com/docs/openai_api"
     assert metadata.completion is True
+
+
+@pytest.mark.asyncio
+async def test_deepinfra_streams_messages_output_config_as_json_schema() -> None:
+    """A streamed Messages output_config schema reaches DeepInfra as a json_schema response_format.
+
+    DeepInfra serves json_schema on its OpenAI-compatible API, DeepSeek models included, so it
+    needs no JSON-mode rewrite. https://docs.deepinfra.com/chat/structured-outputs
+    """
+    schema = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
+
+    async def chunks() -> AsyncIterator[OpenAIChatCompletionChunk]:
+        for content, finish_reason in (('{"title": ', None), ('"Session check"}', "stop")):
+            yield OpenAIChatCompletionChunk.model_validate(
+                {
+                    "id": "chunk-1",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "deepseek-ai/DeepSeek-V4-Flash",
+                    "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": finish_reason}],
+                }
+            )
+
+    provider = DeepinfraProvider(api_key="dummy_key")
+    create = AsyncMock(return_value=chunks())
+    with patch.object(provider.client.chat.completions, "create", create):
+        stream = await provider.amessages(
+            model="deepseek-ai/DeepSeek-V4-Flash",
+            messages=[{"role": "user", "content": "Are you there?"}],
+            max_tokens=32000,
+            output_format={"effort": "high", "format": {"type": "json_schema", "schema": schema}},
+            stream=True,
+        )
+        assert not isinstance(stream, MessageResponse)
+        events = [event async for event in stream]
+
+    text = "".join(
+        event.delta.text for event in events if event.type == "content_block_delta" and event.delta.type == "text_delta"
+    )
+    assert json.loads(text) == {"title": "Session check"}
+    assert events[-1].type == "message_stop"
+    request = create.call_args.kwargs
+    assert request["stream"] is True
+    assert request["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "structured_output", "schema": schema},
+    }
