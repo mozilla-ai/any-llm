@@ -1,3 +1,4 @@
+import json
 from inspect import signature
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, Mock, patch
@@ -5,11 +6,141 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from pydantic import BaseModel
 
-from any_llm.providers.mistral.utils import _patch_messages
+from any_llm.providers.mistral.utils import (
+    _create_mistral_completion_from_response,
+    _create_openai_chunk_from_mistral_chunk,
+    _patch_messages,
+)
 from any_llm.types.completion import CompletionParams
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+
+@pytest.mark.parametrize("arguments", [{}, {"city": "東京"}, "", "{}", '{"city":'])
+def test_completion_preserves_tool_arguments(arguments: dict[str, Any] | str) -> None:
+    from mistralai.client.models import ChatCompletionResponse
+
+    response = ChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-tool-arguments",
+            "object": "chat.completion",
+            "model": "mistral-small-latest",
+            "created": 1,
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [{"id": "call_1", "function": {"name": "lookup", "arguments": arguments}}],
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+        }
+    )
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-small-latest")
+
+    tool_calls = completion.choices[0].message.tool_calls
+    assert tool_calls is not None
+    assert len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    assert tool_call.type == "function"
+    assert tool_call.id == "call_1"
+    assert tool_call.function.name == "lookup"
+    if isinstance(arguments, dict):
+        assert json.loads(tool_call.function.arguments) == arguments
+    else:
+        assert tool_call.function.arguments == arguments
+
+
+@pytest.mark.parametrize("arguments", [{}, {"city": "東京"}, "", "{}", '{"city":'])
+def test_streaming_preserves_tool_arguments(arguments: dict[str, Any] | str) -> None:
+    from mistralai.client.models import CompletionEvent
+
+    event = CompletionEvent.model_validate(
+        {
+            "data": {
+                "id": "chatcmpl-tool-arguments",
+                "model": "mistral-small-latest",
+                "created": 1,
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": None,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "index": 2,
+                                    "function": {"name": "lookup", "arguments": arguments},
+                                }
+                            ]
+                        },
+                    }
+                ],
+            }
+        }
+    )
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    tool_calls = chunk.choices[0].delta.tool_calls
+    assert tool_calls is not None
+    assert len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    assert tool_call.type == "function"
+    assert tool_call.id == "call_1"
+    assert tool_call.index == 2
+    assert tool_call.function is not None
+    assert tool_call.function.name == "lookup"
+    if isinstance(arguments, dict):
+        assert tool_call.function.arguments is not None
+        assert json.loads(tool_call.function.arguments) == arguments
+    else:
+        assert tool_call.function.arguments == arguments
+
+
+@pytest.mark.parametrize("tool_fields", [{}, {"tool_calls": None}, {"tool_calls": []}])
+def test_converters_preserve_absent_tool_calls(tool_fields: dict[str, Any]) -> None:
+    from mistralai.client.models import ChatCompletionResponse, CompletionEvent
+
+    response = ChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-no-tools",
+            "object": "chat.completion",
+            "model": "mistral-small-latest",
+            "created": 1,
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "Hello", **tool_fields},
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+        }
+    )
+    event = CompletionEvent.model_validate(
+        {
+            "data": {
+                "id": "chatcmpl-no-tools",
+                "model": "mistral-small-latest",
+                "created": 1,
+                "choices": [{"index": 0, "finish_reason": None, "delta": {"content": "Hello", **tool_fields}}],
+            }
+        }
+    )
+
+    completion = _create_mistral_completion_from_response(response, model="mistral-small-latest")
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert completion.choices[0].message.tool_calls is None
+    assert completion.choices[0].message.content == "Hello"
+    assert chunk.choices[0].delta.tool_calls is None
+    assert chunk.choices[0].delta.content == "Hello"
 
 
 def test_patch_messages_noop_when_no_tool_before_user() -> None:
