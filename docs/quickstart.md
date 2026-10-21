@@ -228,6 +228,8 @@ Gemini text Interactions accept string input, instructions, maximum output token
 
 Not all providers support embeddings - check the [providers documentation](providers.md) to see which ones do.
 
+For Gemini, a list of text strings produces one embedding per string, including with `gemini-embedding-2`.
+
 ```python
 from any_llm import embedding
 
