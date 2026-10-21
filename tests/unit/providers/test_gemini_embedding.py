@@ -22,9 +22,11 @@ if TYPE_CHECKING:
 async def test_gemini_embedding_text_elements_reach_official_sdk_wire(
     model: str, inputs: str | list[str], encoding_format: str
 ) -> None:
+    """Check real SDK wire boundaries separately from synthetic response values."""
     requests: list[dict[str, Any]] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
+        """Return one synthetic vector per request serialized by the real SDK."""
         assert request.url.path == f"/v1beta/models/{model}:batchEmbedContents"
         body = json.loads(request.content)
         requests.extend(body["requests"])
@@ -69,7 +71,10 @@ async def test_gemini_embedding_text_elements_reach_official_sdk_wire(
 
 @pytest.mark.asyncio
 async def test_gemini_embedding_empty_batch_is_rejected_before_http() -> None:
+    """Keep the SDK's empty-input validation ahead of HTTP transport."""
+
     async def handler(request: httpx.Request) -> httpx.Response:
+        """Fail if invalid empty inputs escape the SDK's local validation."""
         pytest.fail(f"Empty batch must not make a request: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -91,7 +96,10 @@ async def test_gemini_embedding_empty_batch_is_rejected_before_http() -> None:
 
 @pytest.mark.asyncio
 async def test_gemini_embedding_preserves_sdk_error() -> None:
+    """Keep real SDK client errors visible through the public embedding call."""
+
     async def handler(request: httpx.Request) -> httpx.Response:
+        """Supply a service error payload to the real SDK's error conversion."""
         return httpx.Response(
             400, json={"error": {"code": 400, "message": "invalid text", "status": "INVALID_ARGUMENT"}}
         )
@@ -115,6 +123,7 @@ async def test_gemini_embedding_preserves_sdk_error() -> None:
 
 @pytest.mark.parametrize("inputs", ["hello", ["first", "second"]])
 def test_vertex_embedding_keeps_original_contents(inputs: str | list[str]) -> None:
+    """Protect Vertex's shared request shape from Developer API normalization."""
     config = types.EmbedContentConfig(output_dimensionality=2)
     converted = VertexaiProvider._convert_embedding_params(inputs, config=config)
     assert converted["contents"] is inputs
