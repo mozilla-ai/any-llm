@@ -96,12 +96,13 @@ async def test_deepinfra_streams_messages_output_config_as_json_schema() -> None
         assert isinstance(stream, AsyncIterator)
         events = [event async for event in stream]
 
-    text = "".join(
+    fragments = [
         event.delta.text
         for event in events
         if isinstance(event, ContentBlockDeltaEvent) and isinstance(event.delta, TextDelta)
-    )
-    assert json.loads(text) == {"title": "Session check"}
+    ]
+    assert fragments == ['{"title": ', '"Session check"}']
+    assert json.loads("".join(fragments)) == {"title": "Session check"}
     assert events[-1].type == "message_stop"
     request = create.call_args.kwargs
     assert request["stream"] is True
