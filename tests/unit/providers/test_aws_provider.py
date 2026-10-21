@@ -6,6 +6,7 @@ import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, get_args
 from unittest.mock import Mock, patch
@@ -16,6 +17,7 @@ import pytest
 from botocore.exceptions import ClientError, ProfileNotFound
 from botocore.stub import Stubber
 from botocore.tokens import ScopedEnvTokenProvider
+from botocore.validate import validate_parameters
 from pydantic import BaseModel
 
 from any_llm.exceptions import (
@@ -1275,6 +1277,172 @@ def test_convert_tool_spec_empty_description() -> None:
     assert tool_config["tools"][0]["toolSpec"]["description"] == " "
 
 
+@pytest.fixture
+def tool_choice_tools() -> list[dict[str, Any]]:
+    return [
+        {"type": "function", "function": {"name": "lookup"}},
+        {"type": "function", "function": {"name": "search"}},
+    ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("tool_choice", "expected"),
+    [
+        (None, None),
+        ("auto", None),
+        ("required", {"any": {}}),
+        ({"type": "function", "function": {"name": "search"}}, {"tool": {"name": "search"}}),
+    ],
+)
+def test_convert_params_preserves_tool_choice(
+    tool_choice_tools: list[dict[str, Any]],
+    tool_choice: str | dict[str, Any] | None,
+    expected: dict[str, Any] | None,
+    stream: bool,
+) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=tool_choice_tools,
+        tool_choice=tool_choice,
+        stream=stream,
+    )
+    original = deepcopy(params)
+
+    result = _convert_params(params, {})
+
+    assert result["toolConfig"].get("toolChoice") == expected
+    assert [tool["toolSpec"]["name"] for tool in result["toolConfig"]["tools"]] == ["lookup", "search"]
+    assert params == original
+    service_model = botocore.session.get_session().get_service_model("bedrock-runtime")  # type: ignore[no-untyped-call]
+    operation_model = service_model.operation_model("ConverseStream" if stream else "Converse")
+    validate_parameters(result, operation_model.input_shape)  # type: ignore[no-untyped-call]
+
+
+@pytest.mark.parametrize("with_history", [False, True])
+def test_convert_params_rejects_none_tool_choice(tool_choice_tools: list[dict[str, Any]], with_history: bool) -> None:
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "Look up the answer"}]
+    if with_history:
+        messages.extend(
+            [
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "t1", "content": "The answer"},
+            ]
+        )
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4", messages=messages, tools=tool_choice_tools, tool_choice="none"
+    )
+
+    with pytest.raises(UnsupportedParameterError, match="tool_choice='none'"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        {},
+        {"type": "function"},
+        {"type": "custom", "function": {"name": "lookup"}},
+        {"type": "function", "function": None},
+        {"type": "function", "function": {}},
+        {"type": "function", "function": {"name": ""}},
+        {"type": "function", "function": {"name": 123}},
+        {"type": "function", "function": {"name": "missing"}},
+        {"type": "function", "function": {"name": "lookup", "unexpected": True}},
+        {"type": "function", "function": {"name": "lookup"}, "unexpected": True},
+    ],
+)
+def test_convert_params_rejects_invalid_tool_choice(
+    tool_choice_tools: list[dict[str, Any]], tool_choice: dict[str, Any]
+) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=tool_choice_tools,
+        tool_choice=tool_choice,
+    )
+
+    with pytest.raises(InvalidRequestError, match="tool_choice"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize("tool_choice", ["", "unsupported"])
+def test_convert_params_rejects_unsupported_tool_choice(
+    tool_choice_tools: list[dict[str, Any]], tool_choice: str
+) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=tool_choice_tools,
+        tool_choice=tool_choice,
+    )
+
+    with pytest.raises(UnsupportedParameterError, match="tool_choice"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize("tool_choice", ["required", {"type": "function", "function": {"name": "lookup"}}])
+def test_convert_params_rejects_forced_tool_choice_without_tools(tool_choice: str | dict[str, Any]) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tool_choice=tool_choice,
+    )
+
+    with pytest.raises(InvalidRequestError, match="tool_choice"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize("tool_choice", [None, "auto"])
+def test_convert_params_omits_unused_tool_config(tool_choice: str | None) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tool_choice=tool_choice,
+    )
+
+    assert "toolConfig" not in _convert_params(params, {})
+
+
+@pytest.mark.parametrize("tool_choice", ["required", {"type": "function", "function": {"name": "lookup"}}])
+@pytest.mark.parametrize("reasoning_effort", ["low", "high"])
+def test_convert_params_rejects_forced_tool_choice_with_manual_thinking(
+    tool_choice_tools: list[dict[str, Any]], tool_choice: str | dict[str, Any], reasoning_effort: Any
+) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=tool_choice_tools,
+        tool_choice=tool_choice,
+        reasoning_effort=reasoning_effort,
+    )
+
+    with pytest.raises(UnsupportedParameterError, match="tool_choice with reasoning_effort"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize("tool_choice", [None, "auto"])
+def test_convert_params_allows_automatic_tool_choice_with_manual_thinking(
+    tool_choice_tools: list[dict[str, Any]], tool_choice: str | None
+) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=tool_choice_tools,
+        tool_choice=tool_choice,
+        reasoning_effort="high",
+    )
+
+    result = _convert_params(params, {})
+
+    assert "toolChoice" not in result["toolConfig"]
+    assert result["additionalModelRequestFields"]["reasoning_config"]["type"] == "enabled"
+
+
 class _City(BaseModel):
     name: str
 
@@ -1375,6 +1543,49 @@ def test_convert_params_response_format_json_schema_non_dict_schema_raises() -> 
             ),
             {},
         )
+
+
+@pytest.mark.parametrize(
+    "tool_choice",
+    [None, "auto", "required", {"type": "function", "function": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}],
+)
+@pytest.mark.parametrize("reasoning_effort", [None, "auto", "none"])
+def test_convert_params_preserves_structured_output_tool_choice(
+    tool_choice_tools: list[dict[str, Any]], tool_choice: str | dict[str, Any] | None, reasoning_effort: Any
+) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=tool_choice_tools,
+        response_format=_City,
+        tool_choice=tool_choice,
+        reasoning_effort=reasoning_effort,
+    )
+
+    result = _convert_params(params, {})
+
+    assert result["toolConfig"]["toolChoice"] == {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    assert [tool["toolSpec"]["name"] for tool in result["toolConfig"]["tools"]] == [
+        "lookup",
+        "search",
+        _STRUCTURED_OUTPUT_TOOL_NAME,
+    ]
+
+
+@pytest.mark.parametrize("tool_choice", ["none", {"type": "function", "function": {"name": "lookup"}}])
+def test_convert_params_rejects_conflicting_structured_output_tool_choice(
+    tool_choice_tools: list[dict[str, Any]], tool_choice: str | dict[str, Any]
+) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=tool_choice_tools,
+        response_format=_City,
+        tool_choice=tool_choice,
+    )
+
+    with pytest.raises(UnsupportedParameterError, match="tool_choice"):
+        _convert_params(params, {})
 
 
 def test_convert_params_response_format_with_reasoning_effort_raises() -> None:
