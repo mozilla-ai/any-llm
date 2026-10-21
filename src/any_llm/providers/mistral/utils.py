@@ -52,14 +52,14 @@ _MISTRAL_FINISH_REASON_MAP = {"model_length": "length"}
 def _convert_mistral_tool_calls_to_any_llm(
     tool_calls: list[MistralToolCall],
 ) -> list[ChatCompletionMessageToolCall] | None:
-    """Convert Mistral tool calls to any-llm format."""
+    """Convert Mistral tool calls, serializing dictionary arguments even when empty."""
     if not tool_calls:
         return None
 
     any_llm_tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
     for tool_call in tool_calls:
         arguments = ""
-        if tool_call.function and tool_call.function.arguments:
+        if tool_call.function and tool_call.function.arguments is not None:
             if isinstance(tool_call.function.arguments, dict):
                 arguments = json.dumps(tool_call.function.arguments)
             elif isinstance(tool_call.function.arguments, str):
@@ -86,7 +86,7 @@ def _convert_mistral_tool_calls_to_any_llm(
 def _convert_mistral_streaming_tool_calls_to_any_llm(
     tool_calls: list[MistralToolCall],
 ) -> list[ChoiceDeltaToolCall] | None:
-    """Convert Mistral streaming tool calls to any-llm format."""
+    """Convert Mistral streaming tool calls, preserving empty dictionary arguments as JSON."""
     if not tool_calls:
         return None
 
@@ -95,7 +95,7 @@ def _convert_mistral_streaming_tool_calls_to_any_llm(
         index = tool_call.index if tool_call.index is not None else 0
 
         arguments = ""
-        if tool_call.function and tool_call.function.arguments:
+        if tool_call.function and tool_call.function.arguments is not None:
             if isinstance(tool_call.function.arguments, dict):
                 arguments = json.dumps(tool_call.function.arguments)
             elif isinstance(tool_call.function.arguments, str):
