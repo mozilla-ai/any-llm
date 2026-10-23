@@ -2253,7 +2253,7 @@ async def test_amessages_unrelated_unsupported_parameter_is_not_relabelled() -> 
     ("model", "sent"),
     [("deepseek-ai/DeepSeek-V4.1-Flash", "high"), ("Qwen/Qwen3-235B-A22B", "medium")],
 )
-async def test_amessages_maps_effort_for_deepseek_v4_on_bridged_provider(model: str, sent: str) -> None:
+async def test_amessages_maps_effort_for_deepseek_v41_on_bridged_provider(model: str, sent: str) -> None:
     # The bridge calls _acompletion directly, so it maps the level the way acompletion does.
     provider = AnyLLM.create("nebius", api_key="sk-test")
 

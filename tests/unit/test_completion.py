@@ -683,20 +683,22 @@ def test_sync_completion_can_be_called_repeatedly_on_one_provider() -> None:
     [
         ("deepseek-ai/DeepSeek-V4.1-Flash", "medium", "high"),
         ("deepseek-ai/DeepSeek-V4.1-Flash", "minimal", "low"),
-        ("deepseek/deepseek-v4.1-flash", "xhigh", "xhigh"),
+        ("deepseek/deepseek-v4.1-flash", "xhigh", "high"),
         ("deepseek-v4-1-flash", "low", "low"),
-        ("hf:deepseek-ai/DeepSeek-V4-Pro", "medium", "high"),
+        ("accounts/fireworks/models/deepseek-v4p1-flash", "max", "max"),
+        ("deepseek-v4.1-flash:thinking", "high", "high"),
         ("deepseek-ai/DeepSeek-V4.1-Flash", "auto", "auto"),
         ("deepseek-ai/DeepSeek-V4.1-Flash", None, None),
+        ("deepseek-ai/DeepSeek-V4-Pro", "medium", "medium"),
+        ("deepseek-v4-10-preview", "medium", "medium"),
         ("deepseek-ai/DeepSeek-V3.2", "medium", "medium"),
-        ("deepseek-v40-preview", "medium", "medium"),
         ("gpt-5", "medium", "medium"),
     ],
 )
-async def test_acompletion_maps_reasoning_effort_for_deepseek_v4(
+async def test_acompletion_maps_reasoning_effort_for_deepseek_v41(
     model: str, requested: ReasoningEffort | None, sent: ReasoningEffort | None
 ) -> None:
-    # Any host serving DeepSeek V4 runs its chat template, which lacks minimal and medium.
+    # Hosts serving DeepSeek V4.1 accept only low, high and max on every template variant.
     provider = AnyLLM.create("nebius", api_key="sk-test")
     with patch.object(provider, "_acompletion", new=AsyncMock(return_value=Mock(spec=ChatCompletion))) as mock_ac:
         await provider.acompletion(
