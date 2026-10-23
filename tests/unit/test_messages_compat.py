@@ -919,6 +919,202 @@ def test_streaming_tool_call_arguments_without_a_known_index_use_the_open_block(
     assert [(e.type, e.index) for e in events if isinstance(e, ContentBlockDeltaEvent)] == [("content_block_delta", 0)]
 
 
+def _delta_chunk(delta: ChoiceDelta, finish_reason: Literal["tool_calls"] | None = None) -> ChatCompletionChunk:
+    return ChatCompletionChunk(
+        id="chunk",
+        model="deepseek-v4",
+        created=0,
+        object="chat.completion.chunk",
+        choices=[ChunkChoice(index=0, delta=delta, finish_reason=finish_reason)],
+    )
+
+
+def _accumulate_tool_inputs(events: Sequence[object]) -> dict[int, str]:
+    """Concatenate the input_json_delta fragments of each block that a stream opened as tool_use."""
+    tool_blocks = {
+        e.index for e in events if isinstance(e, ContentBlockStartEvent) and isinstance(e.content_block, ToolUseBlock)
+    }
+    inputs: dict[int, str] = dict.fromkeys(tool_blocks, "")
+    for e in events:
+        if isinstance(e, ContentBlockDeltaEvent) and isinstance(e.delta, InputJSONDelta):
+            assert e.index in tool_blocks
+            inputs[e.index] += e.delta.partial_json
+    return inputs
+
+
+def test_streaming_empty_content_beside_tool_call_keeps_arguments_on_the_tool_block() -> None:
+    """content="" on every chunk (DeepSeek on Fireworks) opens no text block and loses no arguments."""
+    state = StreamingState()
+    chunks = [
+        _delta_chunk(ChoiceDelta(reasoning=Reasoning(content="Look it up."))),
+        _delta_chunk(ChoiceDelta(content="")),
+        _delta_chunk(
+            ChoiceDelta(
+                content="",
+                tool_calls=[
+                    ChoiceDeltaToolCall(
+                        index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather", arguments="")
+                    )
+                ],
+            )
+        ),
+        _delta_chunk(
+            ChoiceDelta(
+                content="",
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='{"city":'))],
+            )
+        ),
+        _delta_chunk(
+            ChoiceDelta(
+                content="",
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='"Paris"}'))],
+            )
+        ),
+        _delta_chunk(ChoiceDelta(content=""), finish_reason="tool_calls"),
+    ]
+    events = [e for chunk in chunks for e in chat_completion_chunk_to_message_stream_events(chunk, state)]
+    events.extend(close_open_blocks(state))
+
+    assert _block_event_indexes(events) == [
+        ("content_block_start", 0),
+        ("content_block_delta", 0),
+        ("content_block_stop", 0),
+        ("content_block_start", 1),
+        ("content_block_delta", 1),
+        ("content_block_delta", 1),
+        ("content_block_stop", 1),
+    ]
+    starts = [e for e in events if isinstance(e, ContentBlockStartEvent)]
+    assert [type(e.content_block) for e in starts] == [ThinkingBlock, ToolUseBlock]
+    assert json.loads(_accumulate_tool_inputs(events)[1]) == {"city": "Paris"}
+    assert state.stop_reason == "tool_use"
+
+
+def test_streaming_parallel_tool_calls_with_empty_content_route_by_tool_index() -> None:
+    """Interleaved fragments of parallel calls, each beside content="", land on their own blocks."""
+    state = StreamingState()
+    chunks = [
+        _delta_chunk(
+            ChoiceDelta(
+                content="",
+                tool_calls=[
+                    ChoiceDeltaToolCall(index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather")),
+                    ChoiceDeltaToolCall(index=1, id="call_b", function=ChoiceDeltaToolCallFunction(name="get_time")),
+                ],
+            )
+        ),
+        _delta_chunk(
+            ChoiceDelta(
+                content="",
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='{"tz":'))],
+            )
+        ),
+        _delta_chunk(
+            ChoiceDelta(
+                content="",
+                tool_calls=[
+                    ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='{"city":"Rome"}')),
+                    ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='"UTC"}')),
+                ],
+            )
+        ),
+        _delta_chunk(ChoiceDelta(content=""), finish_reason="tool_calls"),
+    ]
+    events = [e for chunk in chunks for e in chat_completion_chunk_to_message_stream_events(chunk, state)]
+
+    inputs = _accumulate_tool_inputs(events)
+    assert json.loads(inputs[0]) == {"city": "Rome"}
+    assert json.loads(inputs[1]) == {"tz": "UTC"}
+    assert not any(isinstance(e, ContentBlockStartEvent) and e.content_block.type == "text" for e in events)
+
+
+def test_streaming_text_mid_tool_call_keeps_later_arguments_on_the_tool_block() -> None:
+    """Non-empty text between argument fragments never receives them, though it closes the tool block."""
+    state = StreamingState()
+    chunks = [
+        _delta_chunk(
+            ChoiceDelta(
+                tool_calls=[
+                    ChoiceDeltaToolCall(
+                        index=0, id="call_a", function=ChoiceDeltaToolCallFunction(name="get_weather", arguments='{"ci')
+                    )
+                ]
+            )
+        ),
+        _delta_chunk(ChoiceDelta(content="Checking.")),
+        _delta_chunk(
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='ty":"Oslo"}'))]
+            )
+        ),
+    ]
+    events = [e for chunk in chunks for e in chat_completion_chunk_to_message_stream_events(chunk, state)]
+
+    assert json.loads(_accumulate_tool_inputs(events)[0]) == {"city": "Oslo"}
+    assert ("content_block_start", 1) in _block_event_indexes(events)
+
+
+def test_streaming_unknown_tool_fragment_is_not_sent_to_a_text_block() -> None:
+    """An argument fragment with no tool block to go to is dropped rather than filed under text."""
+    state = StreamingState()
+    chat_completion_chunk_to_message_stream_events(_delta_chunk(ChoiceDelta(content="Hi")), state)
+
+    orphan = _tool_calls_chunk(ChoiceDeltaToolCall(index=3, function=ChoiceDeltaToolCallFunction(arguments="{}")))
+    assert chat_completion_chunk_to_message_stream_events(orphan, state) == []
+
+
+def test_chat_completion_with_empty_content_and_tool_call_has_no_text_block() -> None:
+    """content="" beside a tool call adds no empty text block to the non-streaming response."""
+    completion = ChatCompletion(
+        id="chatcmpl-1",
+        model="deepseek-v4",
+        created=0,
+        object="chat.completion",
+        choices=[
+            Choice(
+                index=0,
+                finish_reason="tool_calls",
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=[
+                        ChatCompletionMessageFunctionToolCall(
+                            id="call_a",
+                            type="function",
+                            function=Function(name="get_weather", arguments='{"city":"Paris"}'),
+                        )
+                    ],
+                ),
+            )
+        ],
+    )
+    response = chat_completion_to_message_response(completion)
+
+    assert len(response.content) == 1
+    block = response.content[0]
+    assert isinstance(block, ToolUseBlock)
+    assert block.input == {"city": "Paris"}
+
+
+def test_assistant_empty_text_beside_tool_use_converts_to_null_content() -> None:
+    """A replayed empty text block next to a tool_use sends content=None, not ""."""
+    result = _convert_assistant_blocks_to_openai(
+        [
+            {"type": "text", "text": ""},
+            {"type": "tool_use", "id": "call_a", "name": "get_weather", "input": {"city": "Paris"}},
+        ]
+    )
+    assert result[0]["content"] is None
+    assert result[0]["tool_calls"][0]["function"]["arguments"] == '{"city": "Paris"}'
+
+
+def test_assistant_empty_text_alone_keeps_empty_string_content() -> None:
+    """Without tool calls an empty text block stays "", so the message still has content."""
+    result = _convert_assistant_blocks_to_openai([{"type": "text", "text": ""}])
+    assert result[0]["content"] == ""
+    assert "tool_calls" not in result[0]
+
+
 def test_close_open_blocks_closes_every_open_tool_block() -> None:
     """A stream that ends without a finish_reason still closes all parallel tool blocks."""
     state = StreamingState()
@@ -1394,8 +1590,8 @@ def test_streaming_reasoning_then_text_transition() -> None:
     assert state.current_block_type == "text"
 
 
-def test_streaming_empty_content_no_delta() -> None:
-    """Test that empty string content emits block_start but not a delta."""
+def test_streaming_empty_content_opens_no_block() -> None:
+    """Empty string content emits no text block at all."""
     state = StreamingState()
 
     chunk = ChatCompletionChunk(
@@ -1406,9 +1602,9 @@ def test_streaming_empty_content_no_delta() -> None:
         choices=[ChunkChoice(index=0, delta=ChoiceDelta(content=""), finish_reason=None)],
     )
     events = chat_completion_chunk_to_message_stream_events(chunk, state)
-    types = [e.type for e in events]
-    assert "content_block_start" in types
-    assert "content_block_delta" not in types
+    assert [e.type for e in events] == ["message_start"]
+    assert state.current_block_type is None
+    assert close_open_blocks(state) == []
 
 
 def test_streaming_finish_reason_length() -> None:
