@@ -160,10 +160,10 @@ def test_create_openai_chunk_with_tool_calls_object_format() -> None:
 
 
 def test_create_openai_chunk_with_tool_calls_missing_id() -> None:
-    """Test handling tool calls without id generates uuid."""
+    """A delta without an id keeps it absent, so a client joins it to its call by index."""
     tool_call_dict = {
         "index": 0,
-        "function": {"name": "func", "arguments": "{}"},
+        "function": {"arguments": "{}"},
     }
 
     together_chunk = make_together_chunk(tool_calls=[tool_call_dict], finish_reason="tool_calls")
@@ -171,8 +171,33 @@ def test_create_openai_chunk_with_tool_calls_missing_id() -> None:
 
     assert result.choices[0].delta.tool_calls is not None
     tool_call = result.choices[0].delta.tool_calls[0]
-    assert tool_call.id is not None
-    assert len(tool_call.id) > 0
+    assert tool_call.id is None
+    assert tool_call.type is None
+    assert tool_call.function is not None
+    assert tool_call.function.name is None
+    assert tool_call.function.arguments == "{}"
+
+
+def test_create_openai_chunk_streamed_tool_call_keeps_one_id() -> None:
+    """Together's argument deltas carry no id or name; none is invented for them."""
+    first = make_together_chunk(
+        tool_calls=[{"index": 0, "id": "call_1", "type": "function", "function": {"name": "get_weather"}}],
+        finish_reason=None,  # type: ignore[arg-type]
+    )
+    rest = [
+        make_together_chunk(tool_calls=[{"index": 0, "function": {"arguments": part}}], finish_reason=None)  # type: ignore[arg-type]
+        for part in ("{", '"location":"Paris"}')
+    ]
+
+    deltas = [
+        call
+        for chunk in (first, *rest)
+        for call in _create_openai_chunk_from_together_chunk(chunk).choices[0].delta.tool_calls or []
+    ]
+
+    assert [call.id for call in deltas] == ["call_1", None, None]
+    assert [call.function.name for call in deltas if call.function] == ["get_weather", None, None]
+    assert "".join(call.function.arguments or "" for call in deltas if call.function) == '{"location":"Paris"}'
 
 
 def test_create_openai_chunk_with_tool_calls_object_missing_function() -> None:
@@ -188,8 +213,8 @@ def test_create_openai_chunk_with_tool_calls_object_missing_function() -> None:
     assert result.choices[0].delta.tool_calls is not None
     tool_call = result.choices[0].delta.tool_calls[0]
     assert tool_call.function is not None
-    assert tool_call.function.name == ""
-    assert tool_call.function.arguments == ""
+    assert tool_call.function.name is None
+    assert tool_call.function.arguments is None
 
 
 def test_create_openai_chunk_with_reasoning() -> None:
@@ -730,6 +755,21 @@ def test_convert_completion_params_sends_prompt_cache_key_in_extra_body() -> Non
         "stream_options": {"include_usage": True},
         "prompt_cache_key": "tenant-1",
     }
+
+
+@pytest.mark.parametrize("parallel_tool_calls", [True, False])
+def test_convert_completion_params_sends_parallel_tool_calls_in_extra_body(parallel_tool_calls: bool) -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        parallel_tool_calls=parallel_tool_calls,
+    )
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "parallel_tool_calls" not in result
+    assert result["extra_body"] == {"parallel_tool_calls": parallel_tool_calls}
 
 
 @pytest.mark.asyncio

@@ -124,13 +124,16 @@ class TogetherProvider(AnyLLM):
                 converted_params["response_format"] = _convert_response_format(params.response_format)
 
         converted_params.update(kwargs)
-        # The Together SDK has no stream_options or prompt_cache_key argument, though the API
-        # takes both; it only reports usage on a stream when stream_options.include_usage is set.
+        # The Together SDK has no stream_options, prompt_cache_key or parallel_tool_calls argument,
+        # though the API takes all three; it only reports usage on a stream when
+        # stream_options.include_usage is set.
         extra_body: dict[str, Any] = {}
         if params.stream and params.stream_options is not None:
             extra_body["stream_options"] = params.stream_options
         if params.prompt_cache_key is not None:
             extra_body["prompt_cache_key"] = params.prompt_cache_key
+        if converted_params.pop("parallel_tool_calls", None) is not None:
+            extra_body["parallel_tool_calls"] = params.parallel_tool_calls
         if extra_body:
             converted_params["extra_body"] = {**(converted_params.get("extra_body") or {}), **extra_body}
         return converted_params

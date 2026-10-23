@@ -68,25 +68,28 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
         if delta_content and hasattr(delta_content, "tool_calls") and delta_content.tool_calls:
             openai_tool_calls = []
             for idx, tool_call in enumerate(delta_content.tool_calls):
+                # Together sends the id and name only on a call's first delta, as OpenAI does.
+                # The later deltas must keep them absent: clients join deltas by id, so an id
+                # minted for each one splits one call into several.
                 if isinstance(tool_call, dict):
-                    func = tool_call.get("function", {})
-                    tc_id = tool_call.get("id") or str(uuid.uuid4())
+                    func = tool_call.get("function") or {}
+                    tc_id = tool_call.get("id")
                     raw_index = tool_call.get("index")
                     tc_index = raw_index if raw_index is not None else idx
-                    name = func.get("name", "")
-                    arguments = func.get("arguments", "")
+                    name = func.get("name")
+                    arguments = func.get("arguments")
                 else:
-                    tc_id = getattr(tool_call, "id", None) or str(uuid.uuid4())
+                    tc_id = getattr(tool_call, "id", None)
                     raw_index = getattr(tool_call, "index", None)
                     tc_index = raw_index if raw_index is not None else idx
                     func = getattr(tool_call, "function", None)
-                    name = getattr(func, "name", "") if func else ""
-                    arguments = getattr(func, "arguments", "") if func else ""
+                    name = getattr(func, "name", None) if func else None
+                    arguments = getattr(func, "arguments", None) if func else None
 
                 openai_tool_call = ChoiceDeltaToolCall(
                     index=tc_index,
                     id=tc_id,
-                    type="function",
+                    type="function" if tc_id else None,
                     function=ChoiceDeltaToolCallFunction(
                         name=name,
                         arguments=arguments,
