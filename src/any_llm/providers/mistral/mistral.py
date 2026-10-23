@@ -171,6 +171,12 @@ class MistralProvider(AnyLLM):
             **kwargs,
         )
 
+    @override
+    async def aclose(self) -> None:
+        # Mistral has no close method; leaving its async context closes the async client it
+        # built, and leaves one passed in as async_client open.
+        await self.client.__aexit__(None, None, None)  # type: ignore[no-untyped-call]
+
     async def _stream_completion_async(
         self, model: str, messages: list[dict[str, Any]], **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:

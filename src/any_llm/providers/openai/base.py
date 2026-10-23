@@ -256,6 +256,10 @@ class BaseOpenAIProvider(AnyLLM):
             **kwargs,
         )
 
+    @override
+    async def aclose(self) -> None:
+        await self.client.close()
+
     def _convert_completion_response_async(
         self, response: OpenAIChatCompletion | AsyncStream[OpenAIChatCompletionChunk]
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:

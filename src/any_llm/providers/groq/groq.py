@@ -125,6 +125,10 @@ class GroqProvider(AnyLLM):
         self.kwargs = kwargs
         self.client = AsyncGroq(api_key=api_key, **kwargs)
 
+    @override
+    async def aclose(self) -> None:
+        await self.client.close()
+
     async def _stream_async_completion(
         self, params: CompletionParams, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:

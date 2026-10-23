@@ -221,6 +221,10 @@ class TogetherProvider(AnyLLM):
             **kwargs,
         )
 
+    @override
+    async def aclose(self) -> None:
+        await self.client.close()
+
     async def _stream_completion_async(
         self,
         model: str,
