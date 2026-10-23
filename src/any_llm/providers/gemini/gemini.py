@@ -67,6 +67,18 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
 
         self.client = genai.Client(api_key=api_key, **kwargs)
 
+    @staticmethod
+    @override
+    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
+        """Keep each text in a batch as a separate Gemini embedding input.
+
+        A flat list of strings is otherwise grouped into one Content by the SDK
+        for models such as gemini-embedding-2.
+        """
+        if isinstance(params, list):
+            params = [types.Content(parts=[types.Part(text=text)]) for text in params]
+        return GoogleProvider._convert_embedding_params(params, **kwargs)
+
     @override
     async def _aresponses(
         self, params: ResponsesParams, **kwargs: Any
