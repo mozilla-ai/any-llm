@@ -21,6 +21,7 @@ from any_llm.providers.gemini import GeminiProvider
 from any_llm.providers.gemini.base import GoogleProvider, _convert_reasoning_effort
 from any_llm.providers.gemini.utils import (
     _convert_messages,
+    _convert_models_list,
     _convert_response_to_response_dict,
     _convert_tool_spec,
     _create_openai_chunk_from_google_chunk,
@@ -4435,3 +4436,21 @@ async def test_functions_or_built_in_tools_alone_leave_server_side_tool_invocati
         tool_config = mock_genai.return_value.aio.models.generate_content.call_args.kwargs["config"].tool_config
 
     assert tool_config is None
+
+
+@pytest.mark.parametrize(
+    ("name", "expected_id"),
+    [
+        ("models/gemini-2.5-flash", "gemini-2.5-flash"),
+        ("publishers/google/models/gemini-2.5-flash", "gemini-2.5-flash"),
+        ("tunedModels/my-tuned-model", "tunedModels/my-tuned-model"),
+        ("publishers/meta/models/llama-4", "publishers/meta/models/llama-4"),
+        ("gemini-2.5-flash", "gemini-2.5-flash"),
+        (None, "Unknown"),
+    ],
+)
+def test_convert_models_list_strips_resource_prefix(name: str | None, expected_id: str) -> None:
+    models = _convert_models_list(cast("Any", [types.Model(name=name)]))
+
+    assert [model.id for model in models] == [expected_id]
+    assert models[0].owned_by == "google"
