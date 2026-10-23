@@ -441,7 +441,8 @@ async def test_adecide_keeps_fields_and_answer_types_the_sdk_drops() -> None:
         "usage": {"input_tokens": 12, "output_tokens": 3, "cost": 0.0001, "cached_tokens": 4},
         "answers": {
             **_SYSTEM_ONE_BODY["answers"],
-            "logo": {"type": "box", "box": {"top": 1, "bottom": 2, "left": 3, "right": 4}},
+            # typesafe-sdk 0.7.5 models box answers, so this is a type no SDK version knows.
+            "logo": {"type": "polygon", "points": [[1, 2], [3, 4], [5, 6]]},
         },
     }
     provider = _provider_answering(body, {"x-typesafe-request-id": "req_123"})
