@@ -68,12 +68,13 @@ ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 # Validated as one mapping, so every invalid question is reported under its name.
 _QUESTIONS_ADAPTER: TypeAdapter[dict[str, Question]] = TypeAdapter(dict[str, Question])
 
-# Hosts render DeepSeek V4.1 with differing templates: DeepSeek's encoding takes low, high and
-# max, the Hub's chat template adds medium, and some servers add xhigh. Only the first three
-# reach every host, so the rest map as DeepSeek's own API maps them, medium and xhigh to high.
-# https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/encoding/encoding.py
-_DEEPSEEK_V41_MODEL = re.compile(r"\bdeepseek-v4[.p-]1(?!\d)", re.IGNORECASE)
-_DEEPSEEK_V41_EFFORTS: dict[str, ReasoningEffort] = {"minimal": "low", "medium": "high", "xhigh": "high"}
+# Hosts render DeepSeek V4 and V4.1 with templates that lack some levels: V4's encoding takes
+# high and max, V4.1's low, high and max, and some servers add medium or xhigh. The levels they
+# lack map as DeepSeek's own API maps them, minimal to low and medium and xhigh to high; low is
+# kept, as DeepSeek keeps it, rather than raised to high for V4's encoding.
+# https://api-docs.deepseek.com/guides/thinking_mode/
+_DEEPSEEK_V4_MODEL = re.compile(r"\bdeepseek-v4(?!\d)", re.IGNORECASE)
+_DEEPSEEK_V4_EFFORTS: dict[str, ReasoningEffort] = {"minimal": "low", "medium": "high", "xhigh": "high"}
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
@@ -961,11 +962,11 @@ class AnyLLM(FilesMixin, ABC):
     ) -> ReasoningEffort | None:
         """The level ``model`` accepts in place of ``reasoning_effort``.
 
-        Any host serving DeepSeek V4.1 renders it with a chat template that lacks some levels,
-        so they are mapped by model name rather than per provider.
+        Any host serving DeepSeek V4 or V4.1 renders it with a chat template that lacks some
+        levels, so they are mapped by model name rather than per provider.
         """
-        if reasoning_effort is not None and _DEEPSEEK_V41_MODEL.search(model):
-            return _DEEPSEEK_V41_EFFORTS.get(reasoning_effort, reasoning_effort)
+        if reasoning_effort is not None and _DEEPSEEK_V4_MODEL.search(model):
+            return _DEEPSEEK_V4_EFFORTS.get(reasoning_effort, reasoning_effort)
         return reasoning_effort
 
     def _validate_prompt_cache_key(self, prompt_cache_key: str | None) -> None:
