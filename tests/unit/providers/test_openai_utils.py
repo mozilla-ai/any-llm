@@ -265,3 +265,39 @@ def test_convert_chunk_response_keeps_partial_audio_delta(audio_piece: dict[str,
     audio = result.choices[0].delta.audio
     assert audio is not None
     assert audio.model_dump(exclude_none=True) == audio_piece
+
+
+def test_convert_chat_completion_keeps_only_string_metadata() -> None:
+    """A non-string metadata value, as Nebius sends for DeepSeek V4.1, is dropped rather than failing the response."""
+    openai_response = OpenAIChatCompletion.construct(
+        id="chatcmpl-nebius",
+        object="chat.completion",
+        created=0,
+        model="deepseek-ai/DeepSeek-V4.1-Flash",
+        choices=[{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "Hello"}}],
+        metadata={"weight_versions": [{"version": "default", "start": 0, "end": 57}], "region": "eu-north1"},
+    )
+
+    result = _convert_chat_completion(openai_response)
+
+    assert result.metadata == {"region": "eu-north1"}
+    assert result.choices[0].message.content == "Hello"
+
+
+def test_convert_parsed_chat_completion_keeps_only_string_metadata() -> None:
+    raw = OpenAIChatCompletion.construct(
+        id="chatcmpl-nebius",
+        object="chat.completion",
+        created=0,
+        model="deepseek-ai/DeepSeek-V4.1-Flash",
+        choices=[
+            {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": '{"answer":"Earth"}'}}
+        ],
+        metadata={"weight_versions": [{"version": "default", "start": 0, "end": 57}]},
+    )
+    parsed = parse_chat_completion(response_format=Answer, input_tools=[], chat_completion=raw)
+
+    converted = _convert_parsed_chat_completion(parsed)
+
+    assert converted.metadata == {}
+    assert converted.choices[0].message.parsed == Answer(answer="Earth")

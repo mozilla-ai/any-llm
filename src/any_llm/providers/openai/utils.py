@@ -89,6 +89,11 @@ def _convert_chat_completion(response: OpenAIChatCompletion) -> ChatCompletion:
         )
         response.created = int(response.created)
     normalized = _normalize_openai_dict_response(response.model_dump(warnings=False))
+    # OpenAI types metadata as string pairs, but some servers put other values there (Nebius
+    # serving DeepSeek V4.1 sends a weight_versions list), which would fail the whole response.
+    metadata = normalized.get("metadata")
+    if isinstance(metadata, dict):
+        normalized["metadata"] = {key: value for key, value in metadata.items() if isinstance(value, str)}
     return ChatCompletion.model_validate(normalized)
 
 
