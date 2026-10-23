@@ -113,6 +113,13 @@ class DeepseekProvider(BaseOpenAIProvider):
             **anthropic_client_kwargs(kwargs),
         )
 
+    @override
+    def _reasoning_effort_for_model(
+        self, reasoning_effort: ReasoningEffort | None, model: str
+    ) -> ReasoningEffort | None:
+        """Leave the level to ``_REASONING_CONTROLS``, which rejects minimal outright."""
+        return reasoning_effort
+
     @staticmethod
     @override
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:

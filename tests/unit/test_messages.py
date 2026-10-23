@@ -2246,3 +2246,30 @@ async def test_amessages_unrelated_unsupported_parameter_is_not_relabelled() -> 
     with pytest.raises(UnsupportedParameterError) as exc_info:
         await AnyLLM._amessages(provider, params)
     assert exc_info.value.parameter_name == "seed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "sent"),
+    [
+        ("deepseek-ai/DeepSeek-V4.1-Flash", "high"),
+        ("deepseek-ai/DeepSeek-V4-Pro", "high"),
+        ("Qwen/Qwen3-235B-A22B", "medium"),
+    ],
+)
+async def test_amessages_maps_effort_for_deepseek_v4_on_bridged_provider(model: str, sent: str) -> None:
+    # The bridge calls _acompletion directly, so it maps the level the way acompletion does.
+    provider = AnyLLM.create("nebius", api_key="sk-test")
+
+    with (
+        patch.object(provider, "_acompletion", new=AsyncMock(side_effect=RuntimeError("stop"))) as mock_acompletion,
+        pytest.raises(RuntimeError, match="stop"),
+    ):
+        await provider.amessages(
+            model=model,
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            output_format={"effort": "medium"},
+        )
+
+    assert mock_acompletion.call_args.args[0].reasoning_effort == sent

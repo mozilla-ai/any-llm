@@ -436,6 +436,19 @@ def test_deepseek_rejects_unsupported_minimal_reasoning_effort() -> None:
         DeepseekProvider._convert_completion_params(params)
 
 
+@pytest.mark.asyncio
+async def test_deepseek_acompletion_keeps_minimal_for_its_own_rejection() -> None:
+    """DeepSeek's own API rejects minimal, so the V4 template mapping does not soften it."""
+    provider = DeepseekProvider(api_key="sk-test")
+
+    with pytest.raises(InvalidRequestError, match="minimal"):
+        await provider.acompletion(
+            model="deepseek-v4-pro",
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort="minimal",
+        )
+
+
 def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
     """Caller-supplied DeepSeek fields take precedence over normalized controls."""
     params = CompletionParams(

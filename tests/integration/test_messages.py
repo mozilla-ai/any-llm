@@ -470,3 +470,26 @@ async def test_messages_output_config_effort(
         raise
     assert isinstance(result, MessageResponse)
     assert any(block.type == "text" for block in result.content)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deepseek_host", [LLMProvider.TOGETHER, LLMProvider.NEBIUS])
+async def test_messages_medium_effort_on_deepseek_v41(
+    deepseek_host: LLMProvider,
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """Claude Code's medium effort reaches a host's DeepSeek V4.1 template, which has no medium level."""
+    try:
+        llm = AnyLLM.create(deepseek_host, **provider_client_config.get(deepseek_host, {}))
+        result = await llm.amessages(
+            model="deepseek-ai/DeepSeek-V4.1-Flash",
+            messages=[{"role": "user", "content": "Say hello in exactly one word."}],
+            max_tokens=4096,
+            output_format={"effort": "medium"},
+        )
+    except MissingApiKeyError:
+        if deepseek_host in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{deepseek_host.value} API key not provided, skipping")
+    assert isinstance(result, MessageResponse)
+    assert any(block.type == "text" for block in result.content)

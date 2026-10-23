@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
@@ -66,6 +67,14 @@ ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 
 # Validated as one mapping, so every invalid question is reported under its name.
 _QUESTIONS_ADAPTER: TypeAdapter[dict[str, Question]] = TypeAdapter(dict[str, Question])
+
+# Hosts render DeepSeek V4 and V4.1 with templates that lack some levels: V4's encoding takes
+# high and max, V4.1's low, high and max, and some servers add medium or xhigh. The levels they
+# lack map as DeepSeek's own API maps them, minimal to low and medium and xhigh to high; low is
+# kept, as DeepSeek keeps it, rather than raised to high for V4's encoding.
+# https://api-docs.deepseek.com/guides/thinking_mode/
+_DEEPSEEK_V4_MODEL = re.compile(r"\bdeepseek-v4(?!\d)", re.IGNORECASE)
+_DEEPSEEK_V4_EFFORTS: dict[str, ReasoningEffort] = {"minimal": "low", "medium": "high", "xhigh": "high"}
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
@@ -905,7 +914,7 @@ class AnyLLM(FilesMixin, ABC):
             logit_bias=logit_bias,
             stream_options=stream_options,
             max_completion_tokens=max_completion_tokens,
-            reasoning_effort=reasoning_effort,
+            reasoning_effort=self._reasoning_effort_for_model(reasoning_effort, model),
             prompt_cache_key=prompt_cache_key,
             service_tier=service_tier,
         )
@@ -947,6 +956,18 @@ class AnyLLM(FilesMixin, ABC):
             additional_message = f"{self.PROVIDER_NAME} returns one choice per request; omit n or set it to 1."
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
         return n
+
+    def _reasoning_effort_for_model(
+        self, reasoning_effort: ReasoningEffort | None, model: str
+    ) -> ReasoningEffort | None:
+        """The level ``model`` accepts in place of ``reasoning_effort``.
+
+        Any host serving DeepSeek V4 or V4.1 renders it with a chat template that lacks some
+        levels, so they are mapped by model name rather than per provider.
+        """
+        if reasoning_effort is not None and _DEEPSEEK_V4_MODEL.search(model):
+            return _DEEPSEEK_V4_EFFORTS.get(reasoning_effort, reasoning_effort)
+        return reasoning_effort
 
     def _validate_prompt_cache_key(self, prompt_cache_key: str | None) -> None:
         if prompt_cache_key is not None and self.PROMPT_CACHE_KEY_SUPPORT == "unsupported":
@@ -1207,6 +1228,9 @@ class AnyLLM(FilesMixin, ABC):
             params, cache_breakpoints=self._READS_CACHE_CONTROL_SIDE_CHANNEL
         )
         completion_params = CompletionParams(**completion_kwargs)
+        completion_params.reasoning_effort = self._reasoning_effort_for_model(
+            completion_params.reasoning_effort, completion_params.model_id
+        )
         try:
             result = await self._acompletion(completion_params, **kwargs)
         except UnsupportedParameterError as exc:
