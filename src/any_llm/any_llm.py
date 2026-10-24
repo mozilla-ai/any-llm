@@ -1280,8 +1280,8 @@ class AnyLLM(FilesMixin, ABC):
 
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
-                for stop_event in close_open_blocks(state):
-                    yield stop_event
+                for close_event in close_open_blocks(state):
+                    yield close_event
                 yield usage_delta(state.stop_reason or "end_turn")
                 yield MessageStopEvent(type="message_stop")
 

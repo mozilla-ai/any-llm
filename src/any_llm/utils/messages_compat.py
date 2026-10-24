@@ -298,10 +298,9 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
             code_execution.append(_code_execution_tool_result_to_item(block))
 
     result: dict[str, Any] = {"role": "assistant"}
-    if text_parts:
-        result["content"] = "".join(text_parts)
-    else:
-        result["content"] = None
+    text = "".join(text_parts)
+    # Empty text beside tool calls carries nothing, and some backends reject "" with tool_calls.
+    result["content"] = text if text_parts and (text or not tool_calls) else None
     if tool_calls:
         result["tool_calls"] = tool_calls
     reasoning_content = "".join(thinking_parts)
@@ -907,6 +906,10 @@ class StreamingState:
         self.tool_call_name: str | None = None
         self.tool_block_indexes: dict[int, int] = {}
         """Content block index of each open tool_use block, keyed by OpenAI ``tool_calls[].index``."""
+        self.tool_call_blocks: dict[int, int] = {}
+        """Content block index of every tool_use block of the message, open or closed, by the same key."""
+        self.pending_text = ""
+        """Text that arrived while tool_use blocks were open, emitted as a text block once they close."""
         self.pending_code_result: tuple[dict[str, Any], list[dict[str, Any]]] | None = None
         """Held-back ``code_execution_result`` item and the inline outputs folded into it so far."""
         self.code_result_ids: set[str] = set()
@@ -935,6 +938,10 @@ def chat_completion_chunk_to_message_stream_events(
     time the signature arrives that text block has already started, so no Anthropic event can
     attach it. Google makes text-part signatures optional; the mandatory function-call
     signatures travel on the tool_use blocks.
+
+    Text that arrives while tool_use blocks are open is held back and becomes a text block after
+    them (see ``close_open_blocks``): opening it would stop the tool blocks while their arguments
+    may still be streaming, and every delta of a block has to come before its stop.
     """
     events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent] = []
     state.model = chunk.model
@@ -1030,7 +1037,10 @@ def chat_completion_chunk_to_message_stream_events(
             state.pending_code_result = (item, [])
             state.code_result_ids.add(item_id)
 
-    if delta.content is not None:
+    # Providers such as DeepSeek send content="" beside tool call fragments, which must not open a block.
+    if delta.content and state.current_block_type == "tool_use":
+        state.pending_text += delta.content
+    elif delta.content:
         if state.current_block_type != "text":
             _close_current_block(state, events)
             state.current_block_index += 1
@@ -1042,14 +1052,13 @@ def chat_completion_chunk_to_message_stream_events(
                     content_block=TextBlock(type="text", text=""),
                 )
             )
-        if delta.content:
-            events.append(
-                ContentBlockDeltaEvent(
-                    type="content_block_delta",
-                    index=state.current_block_index,
-                    delta=TextDelta(type="text_delta", text=delta.content),
-                )
+        events.append(
+            ContentBlockDeltaEvent(
+                type="content_block_delta",
+                index=state.current_block_index,
+                delta=TextDelta(type="text_delta", text=delta.content),
             )
+        )
 
     if delta.refusal:
         state.stop_reason = "refusal"
@@ -1077,7 +1086,7 @@ def chat_completion_chunk_to_message_stream_events(
     if delta.tool_calls:
         for tc in delta.tool_calls:
             # An id repeated on later fragments of the same tool call must not open a second block.
-            if tc.id and tc.index not in state.tool_block_indexes:
+            if tc.id and tc.index not in state.tool_call_blocks:
                 # Parallel tool calls share one tool_use section: only a text or thinking block
                 # is closed here, so a block stays open for every call still receiving arguments.
                 if state.current_block_type != "tool_use":
@@ -1087,6 +1096,7 @@ def chat_completion_chunk_to_message_stream_events(
                 state.tool_call_id = tc.id
                 state.tool_call_name = tc.function.name if tc.function else ""
                 state.tool_block_indexes[tc.index] = state.current_block_index
+                state.tool_call_blocks[tc.index] = state.current_block_index
                 events.append(
                     ContentBlockStartEvent(
                         type="content_block_start",
@@ -1099,13 +1109,17 @@ def chat_completion_chunk_to_message_stream_events(
             if tc.function and tc.function.arguments:
                 # Providers may interleave the fragments of parallel calls, so the destination
                 # block comes from the tool call's own index rather than from the newest block.
-                events.append(
-                    ContentBlockDeltaEvent(
-                        type="content_block_delta",
-                        index=state.tool_block_indexes.get(tc.index, state.current_block_index),
-                        delta=InputJSONDelta(type="input_json_delta", partial_json=tc.function.arguments),
+                # A fragment for a call that was never announced has no block of its own, and
+                # filing it under another call's block would corrupt that call's input.
+                block_index = state.tool_call_blocks.get(tc.index)
+                if block_index is not None:
+                    events.append(
+                        ContentBlockDeltaEvent(
+                            type="content_block_delta",
+                            index=block_index,
+                            delta=InputJSONDelta(type="input_json_delta", partial_json=tc.function.arguments),
+                        )
                     )
-                )
 
     if choice.finish_reason:
         _close_current_block(state, events)
@@ -1116,19 +1130,41 @@ def chat_completion_chunk_to_message_stream_events(
     return events
 
 
-def close_open_blocks(state: StreamingState) -> list[ContentBlockStartEvent | ContentBlockStopEvent]:
+def close_open_blocks(
+    state: StreamingState,
+) -> list[ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent]:
     """Build a content_block_stop event for every block still open, in block order.
 
     A tool_use section can hold more than one open block, because each parallel tool call gets
-    its own block and stays open until the section ends. A held-back code execution result is
-    emitted after them, as a start and a stop, since nothing can be added to it any more.
+    its own block and stays open until the section ends. Text held back while the section was
+    open follows as a complete text block, and a held-back code execution result after that, as
+    a start and a stop, since nothing can be added to either any more.
     """
-    events: list[ContentBlockStartEvent | ContentBlockStopEvent] = []
+    events: list[ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent] = []
     if state.current_block_type is not None:
         open_indexes = sorted(state.tool_block_indexes.values()) or [state.current_block_index]
         state.tool_block_indexes.clear()
         state.current_block_type = None
         events.extend(ContentBlockStopEvent(type="content_block_stop", index=index) for index in open_indexes)
+    if state.pending_text:
+        text = state.pending_text
+        state.pending_text = ""
+        state.current_block_index += 1
+        events.append(
+            ContentBlockStartEvent(
+                type="content_block_start",
+                index=state.current_block_index,
+                content_block=TextBlock(type="text", text=""),
+            )
+        )
+        events.append(
+            ContentBlockDeltaEvent(
+                type="content_block_delta",
+                index=state.current_block_index,
+                delta=TextDelta(type="text_delta", text=text),
+            )
+        )
+        events.append(ContentBlockStopEvent(type="content_block_stop", index=state.current_block_index))
     if state.pending_code_result is not None:
         item, outputs = state.pending_code_result
         state.pending_code_result = None
