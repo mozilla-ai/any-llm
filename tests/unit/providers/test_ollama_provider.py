@@ -11,6 +11,7 @@ import pytest
 from ollama import ChatResponse as OllamaChatResponse
 from ollama import Message as OllamaMessage
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.ollama.ollama import OllamaProvider
 from any_llm.providers.ollama.utils import (
     _create_chat_completion_from_ollama_response,
@@ -869,6 +870,47 @@ async def test_tool_message_content_parts_are_flattened_to_text() -> None:
     )
 
     assert sent[1] == {"role": "tool", "content": "12:30", "tool_name": "get_time"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_data_url_image_is_sent_as_base64(stream: bool) -> None:
+    sent = await _sent_messages(
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe the image."},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}},
+                ],
+            }
+        ],
+        stream,
+    )
+
+    assert sent[0] == {"role": "user", "content": "Describe the image.", "images": ["iVBORw0KGgo="]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("role", ["user", "tool"])
+@pytest.mark.parametrize(
+    "part",
+    [
+        {"type": "file", "file": {"filename": "cv.pdf", "file_data": "data:application/pdf;base64,JVBERi0="}},
+        {"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}},
+        {"type": "input_audio", "input_audio": {"data": "UklGRg==", "format": "wav"}},
+    ],
+    ids=["pdf-file", "url-image", "audio"],
+)
+async def test_content_ollama_cannot_send_is_refused(part: dict[str, Any], role: str, stream: bool) -> None:
+    """Ollama takes text and base64 images only, so dropping anything else answers as if nothing was attached."""
+    message: dict[str, Any] = {"role": role, "content": [{"type": "text", "text": "What is in the attachment?"}, part]}
+    if role == "tool":
+        message["tool_call_id"] = "call_1"
+
+    with pytest.raises(InvalidRequestError):
+        await _sent_messages([message], stream)
 
 
 @pytest.mark.asyncio
