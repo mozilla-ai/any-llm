@@ -893,6 +893,34 @@ async def test_data_url_image_is_sent_as_base64(stream: bool) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stream", [False, True])
+async def test_tool_result_image_is_sent_with_the_tool_message(stream: bool) -> None:
+    """Ollama reads `images` on tool messages too, so a screenshot a tool returns must reach the model."""
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "Take a screenshot."},
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "name": "screenshot",
+                "content": [
+                    {"type": "text", "text": "screenshot attached"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}},
+                ],
+            },
+        ],
+        stream,
+    )
+
+    assert sent[1] == {
+        "role": "tool",
+        "content": "screenshot attached",
+        "tool_name": "screenshot",
+        "images": ["iVBORw0KGgo="],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("role", ["user", "tool"])
 @pytest.mark.parametrize(
     "part",

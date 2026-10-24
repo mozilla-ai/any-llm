@@ -283,12 +283,14 @@ class OllamaProvider(AnyLLM):
         for input_message in params.messages:
             if input_message["role"] == "tool":
                 # OpenAI also allows a tool result as a list of content parts, while Ollama
-                # takes a plain string, so flatten it to its text the same way user turns are.
-                tool_content, _ = self._extract_images_from_message(input_message)
+                # takes a plain string, so flatten it the same way user turns are.
+                tool_content, tool_images = self._extract_images_from_message(input_message)
                 cleaned_message: dict[str, Any] = {
                     "role": "tool",
                     "content": tool_content or "",
                 }
+                if tool_images:
+                    cleaned_message["images"] = tool_images
                 # OpenAI identifies a tool result by call id, Ollama by tool name.
                 tool_name = input_message.get("name") or tool_names_by_call_id.get(
                     input_message.get("tool_call_id", "")
