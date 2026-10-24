@@ -200,7 +200,7 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     if params.top_p is not None:
         inference_config["topP"] = params.top_p
     if params.stop:
-        inference_config["stopSequences"] = params.stop
+        inference_config["stopSequences"] = [params.stop] if isinstance(params.stop, str) else params.stop
 
     if inference_config:
         result_kwargs["inferenceConfig"] = inference_config
