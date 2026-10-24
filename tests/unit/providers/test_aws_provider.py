@@ -6,6 +6,7 @@ import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, get_args
 from unittest.mock import Mock, patch
@@ -16,6 +17,7 @@ import pytest
 from botocore.exceptions import ClientError, ProfileNotFound
 from botocore.stub import Stubber
 from botocore.tokens import ScopedEnvTokenProvider
+from botocore.validate import validate_parameters
 from pydantic import BaseModel
 
 from any_llm.exceptions import (
@@ -981,6 +983,99 @@ def test_convert_messages_with_string_content() -> None:
     assert system_message == []
     assert len(formatted_messages) == 1
     assert formatted_messages[0] == {"role": "user", "content": [{"text": "Hello world"}]}
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("contents", "expected"),
+    [
+        ([], None),
+        (["First instruction."], [{"text": "First instruction."}]),
+        (
+            ["First instruction.", "Second instruction."],
+            [{"text": "First instruction."}, {"text": "Second instruction."}],
+        ),
+        ([[{"type": "text", "text": "日本語で答えてください。"}]], [{"text": "日本語で答えてください。"}]),
+        (
+            ["First", [{"type": "text", "text": "Second"}, {"type": "text", "text": "Third"}]],
+            [{"text": "First"}, {"text": "Second"}, {"text": "Third"}],
+        ),
+        ([[{"type": "text", "text": "  Keep whitespace.\n"}]], [{"text": "  Keep whitespace.\n"}]),
+    ],
+)
+def test_convert_params_preserves_system_content(
+    contents: list[Any], expected: list[dict[str, Any]] | None, stream: bool
+) -> None:
+    messages = [{"role": "system", "content": content} for content in contents]
+    messages.append({"role": "user", "content": "Hello"})
+    original_messages = deepcopy(messages)
+    params = CompletionParams(model_id="anthropic.claude-sonnet-4", messages=messages, stream=stream)
+
+    result = _convert_params(params, {})
+
+    assert result.get("system") == expected
+    assert result["messages"] == [{"role": "user", "content": [{"text": "Hello"}]}]
+    assert messages == original_messages
+    assert params.messages == original_messages
+    service_model = botocore.session.get_session().get_service_model("bedrock-runtime")  # type: ignore[no-untyped-call]
+    operation_model = service_model.operation_model("ConverseStream" if stream else "Converse")
+    validate_parameters(result, operation_model.input_shape)  # type: ignore[no-untyped-call]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [None, 123, "", [], ["text"], [{"type": "text", "text": ""}], [{"type": "text", "text": 123}]],
+)
+def test_convert_params_rejects_invalid_system_content(content: Any) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "system", "content": content}, {"role": "user", "content": "Hello"}],
+    )
+
+    with pytest.raises(InvalidRequestError, match="System message content"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+        {"type": "text", "text": "Keep this", "cache_control": {"type": "ephemeral"}},
+    ],
+)
+def test_convert_params_rejects_unsupported_system_blocks(block: dict[str, Any]) -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "system", "content": [block]}, {"role": "user", "content": "Hello"}],
+    )
+
+    with pytest.raises(UnsupportedParameterError, match="system content"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize("leading_system", [False, True])
+def test_convert_params_rejects_late_system_messages(leading_system: bool) -> None:
+    messages = [{"role": "system", "content": "First"}] if leading_system else []
+    messages.extend([{"role": "user", "content": "Hello"}, {"role": "system", "content": "Do not lose this"}])
+    params = CompletionParams(model_id="anthropic.claude-sonnet-4", messages=messages)
+
+    with pytest.raises(InvalidRequestError, match="System messages must precede"):
+        _convert_params(params, {})
+
+
+@pytest.mark.parametrize("content", [None, "Message instruction", [{"type": "text", "text": "Message instruction"}]])
+def test_convert_params_preserves_native_system_precedence(content: Any) -> None:
+    messages = [{"role": "system", "content": content}] if content is not None else []
+    messages.append({"role": "user", "content": "Hello"})
+    params = CompletionParams(model_id="anthropic.claude-sonnet-4", messages=messages)
+    kwargs = {"system": [{"text": "Native instruction"}]}
+    original_kwargs = deepcopy(kwargs)
+
+    result = _convert_params(params, kwargs)
+
+    expected = "Native instruction" if content is None else "Message instruction"
+    assert result["system"] == [{"text": expected}]
+    assert kwargs == original_kwargs
 
 
 def test_completion_with_images() -> None:

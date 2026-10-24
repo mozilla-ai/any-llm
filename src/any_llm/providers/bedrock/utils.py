@@ -313,6 +313,32 @@ def _convert_images_for_bedrock(content: list[dict[str, Any]]) -> list[dict[str,
     return converted_content
 
 
+def _convert_system_content(content: Any) -> list[dict[str, Any]]:
+    """Normalize plain system text without discarding unsupported content or annotations."""
+    if isinstance(content, str):
+        content = [{"type": "text", "text": content}]
+    if not isinstance(content, list) or not content:
+        msg = "System message content must be a nonempty string or a nonempty list of text parts."
+        raise InvalidRequestError(msg, provider_name="bedrock")
+
+    result = []
+    for block in content:
+        if not isinstance(block, dict):
+            msg = "System message content parts must be text objects."
+            raise InvalidRequestError(msg, provider_name="bedrock")
+        if block.get("type") != "text" or set(block) - {"type", "text"}:
+            msg = "system content"
+            raise UnsupportedParameterError(
+                msg, "bedrock", "Converse system messages support plain text parts without additional annotations."
+            )
+        text = block.get("text")
+        if not isinstance(text, str) or not text:
+            msg = "System message content text must be a nonempty string."
+            raise InvalidRequestError(msg, provider_name="bedrock")
+        result.append({"text": text})
+    return result
+
+
 def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Convert messages to AWS Bedrock format.
 
@@ -320,11 +346,17 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
     This is necessary because Bedrock expects all toolResult blocks that correspond to
     tool calls from a single assistant message to be grouped together. Consecutive user
     messages are merged for the same reason: Bedrock rejects two user turns in a row.
+
+    Leading system strings and plain text parts become ordered system blocks. System
+    messages after conversation turns are rejected rather than dropped or reordered.
     """
     system_message = []
-    if messages and messages[0]["role"] == "system":
-        system_message = [{"text": messages[0]["content"]}]
-        messages = messages[1:]
+    system_count = 0
+    for message in messages:
+        if message["role"] != "system":
+            break
+        system_message.extend(_convert_system_content(message.get("content")))
+        system_count += 1
 
     formatted_messages: list[dict[str, Any]] = []
     pending_tool_results: list[dict[str, Any]] = []
@@ -335,9 +367,10 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
             formatted_messages.append({"role": "user", "content": pending_tool_results.copy()})
             pending_tool_results.clear()
 
-    for message in messages:
+    for message in messages[system_count:]:
         if message["role"] == "system":
-            continue
+            msg = "System messages must precede all conversation turns in Bedrock Converse."
+            raise InvalidRequestError(msg, provider_name="bedrock")
 
         if message["role"] == "tool":
             tool_result_content = _convert_tool_result_content(message)
