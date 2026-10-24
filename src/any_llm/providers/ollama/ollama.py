@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import InvalidRequestError
 from any_llm.logging import logger
 from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
@@ -63,7 +64,7 @@ class OllamaProvider(AnyLLM):
     SUPPORTS_RESPONSES = False
     SUPPORTS_COMPLETION_REASONING = True
     SUPPORTS_COMPLETION_IMAGE = True
-    SUPPORTS_COMPLETION_PDF = True
+    SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
@@ -199,6 +200,10 @@ class OllamaProvider(AnyLLM):
 
         Returns:
             tuple of (text_content, list_of_base64_image_strings)
+
+        Raises:
+            InvalidRequestError: If a content part is neither text nor a base64 data URI image,
+                since Ollama has no field to send it in.
         """
         content = message.get("content", "")
         images = []
@@ -210,11 +215,16 @@ class OllamaProvider(AnyLLM):
                     text_parts.append(item.get("text", ""))
                 elif item.get("type") == "image_url":
                     image_url = item.get("image_url", {}).get("url", "")
-                    if image_url.startswith("data:image/"):
-                        base64_data = image_url.split(",", 1)[1] if "," in image_url else ""
-                        if base64_data:
-                            # Ollama expects base64 strings directly
-                            images.append(base64_data)
+                    if not image_url.startswith("data:image/"):
+                        msg = f"URL-based images are not supported by Ollama. Please provide a base64 data URI. Got: {image_url[:100]}"
+                        raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+                    base64_data = image_url.split(",", 1)[1] if "," in image_url else ""
+                    if base64_data:
+                        # Ollama expects base64 strings directly
+                        images.append(base64_data)
+                else:
+                    msg = f"Content part type '{item.get('type')}' is not supported by Ollama. Only text and base64 data URI images are."
+                    raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
             content = " ".join(text_parts)
 
         return content, images
@@ -273,12 +283,14 @@ class OllamaProvider(AnyLLM):
         for input_message in params.messages:
             if input_message["role"] == "tool":
                 # OpenAI also allows a tool result as a list of content parts, while Ollama
-                # takes a plain string, so flatten it to its text the same way user turns are.
-                tool_content, _ = self._extract_images_from_message(input_message)
+                # takes a plain string, so flatten it the same way user turns are.
+                tool_content, tool_images = self._extract_images_from_message(input_message)
                 cleaned_message: dict[str, Any] = {
                     "role": "tool",
                     "content": tool_content or "",
                 }
+                if tool_images:
+                    cleaned_message["images"] = tool_images
                 # OpenAI identifies a tool result by call id, Ollama by tool name.
                 tool_name = input_message.get("name") or tool_names_by_call_id.get(
                     input_message.get("tool_call_id", "")
