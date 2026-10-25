@@ -67,9 +67,11 @@ _BUDGET_THINKING_MODEL_PREFIXES = (
     "claude-opus-4-1",
     "claude-opus-4-5",
     "claude-opus-4-2025",
+    "claude-opus-4@",
     "claude-sonnet-4-0",
     "claude-sonnet-4-5",
     "claude-sonnet-4-2025",
+    "claude-sonnet-4@",
     "claude-haiku-4-5",
 )
 REASONING_EFFORT_TO_THINKING_BUDGETS = {
@@ -713,7 +715,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
             params.max_tokens - _MIN_THINKING_BUDGET,
         )
         if budget < _MIN_THINKING_BUDGET:
-            msg = "reasoning_effort"
+            msg = f"reasoning_effort with max_tokens below {2 * _MIN_THINKING_BUDGET}"
             raise UnsupportedParameterError(
                 msg,
                 provider_name,

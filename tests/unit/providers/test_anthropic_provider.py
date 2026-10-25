@@ -490,6 +490,8 @@ async def test_reasoning_effort_maps_to_distinct_anthropic_effort(
         "claude-sonnet-4-5",
         "claude-opus-4-5@20251101",
         "claude-opus-4-1-20250805",
+        "claude-opus-4@20250514",
+        "claude-sonnet-4@20250514",
         "claude-sonnet-4-20250514",
         "claude-3-7-sonnet-latest",
     ],
@@ -533,7 +535,7 @@ async def test_budget_thinking_stays_below_max_tokens() -> None:
 async def test_budget_thinking_with_too_small_max_tokens_raises() -> None:
     with mock_anthropic_provider():
         provider = AnthropicProvider(api_key="test-api-key")
-        with pytest.raises(UnsupportedParameterError, match="max_tokens to at least 2048"):
+        with pytest.raises(UnsupportedParameterError, match="reasoning_effort with max_tokens below 2048"):
             await provider._acompletion(
                 CompletionParams(
                     model_id="claude-haiku-4-5",
