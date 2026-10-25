@@ -526,7 +526,22 @@ async def test_budget_thinking_stays_below_max_tokens() -> None:
 
         call_kwargs = mock_anthropic.return_value.messages.create.call_args.kwargs
         assert call_kwargs["max_tokens"] == DEFAULT_MAX_TOKENS
-        assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": DEFAULT_MAX_TOKENS - 1}
+        assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": DEFAULT_MAX_TOKENS - 1024}
+
+
+@pytest.mark.asyncio
+async def test_budget_thinking_with_too_small_max_tokens_raises() -> None:
+    with mock_anthropic_provider():
+        provider = AnthropicProvider(api_key="test-api-key")
+        with pytest.raises(UnsupportedParameterError, match="max_tokens to at least 2048"):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="claude-haiku-4-5",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    reasoning_effort="low",
+                    max_tokens=2000,
+                )
+            )
 
 
 @pytest.mark.parametrize("model", ["claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-sonnet-5"])

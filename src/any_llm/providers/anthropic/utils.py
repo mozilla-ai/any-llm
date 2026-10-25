@@ -80,6 +80,8 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
     "xhigh": 32768,
     "max": 32768,
 }
+# Anthropic's minimum `budget_tokens`, also kept free below max_tokens for the answer.
+_MIN_THINKING_BUDGET = 1024
 
 _JSON_SCHEMA_MAPPING_KEYWORDS = frozenset(
     {
@@ -705,8 +707,19 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     if params.reasoning_effort is None or params.reasoning_effort == "none":
         result_kwargs["thinking"] = {"type": "disabled"}
     elif params.reasoning_effort != "auto" and _uses_budget_thinking(params.model_id):
-        # The budget must stay below max_tokens, so a small max_tokens shrinks it.
-        budget = min(REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort], params.max_tokens - 1)
+        # The budget counts toward max_tokens, so cap it to leave room for the answer.
+        budget = min(
+            REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort],
+            params.max_tokens - _MIN_THINKING_BUDGET,
+        )
+        if budget < _MIN_THINKING_BUDGET:
+            msg = "reasoning_effort"
+            raise UnsupportedParameterError(
+                msg,
+                provider_name,
+                f"{params.model_id} needs a thinking budget of at least {_MIN_THINKING_BUDGET} tokens plus room "
+                f"for the answer. Set max_tokens to at least {2 * _MIN_THINKING_BUDGET}.",
+            )
         result_kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
     elif params.reasoning_effort != "auto":
         # Explicit reasoning effort enables adaptive thinking; effort alone does
