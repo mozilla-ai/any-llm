@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import TYPE_CHECKING, Any, Literal
 
 from typing_extensions import override
@@ -191,19 +193,19 @@ class OllamaProvider(AnyLLM):
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:
         return api_key
 
-    def _extract_images_from_message(self, message: dict[str, Any]) -> tuple[str, list[str]]:
+    def _extract_images_from_message(self, message: dict[str, Any]) -> tuple[str, list[bytes]]:
         """
-        Extract images from OpenAI format message and return text content + base64 image strings.
+        Extract images from OpenAI format message and return text content + decoded image bytes.
 
         Args:
             message: OpenAI format message that may contain image_url content
 
         Returns:
-            tuple of (text_content, list_of_base64_image_strings)
+            tuple of (text_content, list_of_image_bytes)
 
         Raises:
-            InvalidRequestError: If a content part is neither text nor a base64 data URI image
-                with a payload, since Ollama has no field to send it in.
+            InvalidRequestError: If a content part is neither text nor a data URI image with a
+                valid base64 payload, since Ollama has no field to send it in.
         """
         content = message.get("content", "")
         images = []
@@ -222,8 +224,13 @@ class OllamaProvider(AnyLLM):
                     if not header.endswith(";base64") or not base64_data:
                         msg = f"Malformed data URI: expected 'data:image/<type>;base64,<data>'. Got: {image_url[:100]}"
                         raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
-                    # Ollama expects base64 strings directly
-                    images.append(base64_data)
+                    # The Ollama SDK reads any image string that names an existing file and sends
+                    # its contents, so decode here and hand it bytes it cannot take for a path.
+                    try:
+                        images.append(base64.b64decode(base64_data, validate=True))
+                    except (binascii.Error, ValueError) as exc:
+                        msg = f"Data URI image contains invalid base64 data. Got: {image_url[:100]}"
+                        raise InvalidRequestError(msg, exc, self.PROVIDER_NAME) from exc
                 else:
                     msg = f"Content part type '{item.get('type')}' is not supported by Ollama. Only text and base64 data URI images are."
                     raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
@@ -313,11 +320,11 @@ class OllamaProvider(AnyLLM):
                 cleaned_message = input_message.copy()
 
                 if input_message["role"] == "user":
-                    text_content, image_base64_list = self._extract_images_from_message(input_message)
+                    text_content, user_images = self._extract_images_from_message(input_message)
                     cleaned_message["content"] = text_content
 
-                    if image_base64_list:
-                        cleaned_message["images"] = image_base64_list
+                    if user_images:
+                        cleaned_message["images"] = user_images
 
             cleaned_messages.append(cleaned_message)
 
