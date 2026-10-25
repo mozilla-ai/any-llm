@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 from urllib.parse import urlsplit
 
 from anthropic import transform_schema
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from typing_extensions import override
 
 from any_llm.exceptions import (
@@ -44,6 +44,7 @@ from any_llm.types.messages import (
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
+from any_llm.types.responses import ResponseStreamEvent
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
@@ -61,7 +62,7 @@ if TYPE_CHECKING:
     from any_llm.types.image import ImageGenerationParams, ImagesResponse
     from any_llm.types.messages import MessagesParams, MessageStreamEvent
     from any_llm.types.moderation import ModerationResponse
-    from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+    from any_llm.types.responses import Response, ResponsesParams
 
 
 class CreateBatchParams(TypedDict, total=False):
@@ -153,6 +154,9 @@ _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[BaseModel]] = {
     "content_block_delta": ContentBlockDeltaEvent,
     "content_block_stop": ContentBlockStopEvent,
 }
+
+
+_RESPONSE_STREAM_EVENT_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 
 
 def _message_stream_event_from_dict(event: dict[str, Any], request_id: str | None = None) -> MessageStreamEvent | None:
@@ -471,7 +475,20 @@ class OtariProvider(BaseOpenAIProvider):
             response_kwargs["text"] = {"format": response_format}
         response_kwargs.update(kwargs)
         result = await self.otari_client.response(model=params.model, input=params.input, **response_kwargs)
+        if params.stream:
+            return self._stream_response_events(result)
         return cast("ResponseResource | Response | AsyncIterator[ResponseStreamEvent]", result)
+
+    @staticmethod
+    async def _stream_response_events(stream: AsyncIterator[Any]) -> AsyncIterator[ResponseStreamEvent]:
+        """Validate each raw event dict the otari client streams into a typed ResponseStreamEvent."""
+        try:
+            async for event in stream:
+                yield _RESPONSE_STREAM_EVENT_ADAPTER.validate_python(_as_plain_dict(event))
+        finally:
+            close = getattr(stream, "aclose", None)
+            if callable(close):
+                await close()
 
     @override
     async def _aembedding(

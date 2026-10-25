@@ -4,7 +4,7 @@ import io
 import json
 import tempfile
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -29,7 +29,7 @@ from any_llm.types.image import ImageGenerationParams
 from any_llm.types.model import Model
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncGenerator, AsyncIterator
 
 pytest.importorskip("otari")
 
@@ -840,6 +840,64 @@ async def test_otari_aresponses_without_response_format() -> None:
 
     # No structured response_format -> no text.format injected.
     assert "text" not in client.response.call_args.kwargs
+
+
+def _response_stream_event_dicts() -> list[dict[str, Any]]:
+    response = _make_openai_response("hi").model_dump(mode="json", exclude_none=True)
+    return [
+        {"type": "response.created", "sequence_number": 0, "response": {**response, "output": []}},
+        {
+            "type": "response.output_text.delta",
+            "sequence_number": 1,
+            "item_id": "msg-1",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": "hi",
+            "logprobs": [],
+        },
+        {"type": "response.completed", "sequence_number": 2, "response": response},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_otari_aresponses_stream_yields_typed_events() -> None:
+    from openai.types.responses import ResponseCompletedEvent, ResponseCreatedEvent, ResponseTextDeltaEvent
+
+    client = _mock_otari_client()
+    client.response = AsyncMock(return_value=_MockMetadataStream(_response_stream_event_dicts()))
+    provider = _build_provider(client)
+
+    stream = await provider.aresponses("model", "hi", stream=True)
+    events = [event async for event in stream]
+
+    assert client.response.call_args.kwargs["stream"] is True
+    assert [type(event) for event in events] == [ResponseCreatedEvent, ResponseTextDeltaEvent, ResponseCompletedEvent]
+    assert events[1].delta == "hi"  # type: ignore[union-attr]
+    assert events[2].response.output_text == "hi"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_otari_aresponses_stream_closes_the_client_stream() -> None:
+    closed = False
+
+    async def raw_events() -> AsyncIterator[dict[str, Any]]:
+        nonlocal closed
+        try:
+            for event in _response_stream_event_dicts():
+                yield event
+        finally:
+            closed = True
+
+    client = _mock_otari_client()
+    client.response = AsyncMock(return_value=raw_events())
+    provider = _build_provider(client)
+
+    stream = await provider.aresponses("model", "hi", stream=True)
+    async for _ in stream:
+        break
+    await cast("AsyncGenerator[Any, None]", stream).aclose()
+
+    assert closed
 
 
 @patch.dict(
