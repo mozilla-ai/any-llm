@@ -928,8 +928,10 @@ async def test_tool_result_image_is_sent_with_the_tool_message(stream: bool) -> 
         {"type": "file", "file": {"filename": "cv.pdf", "file_data": "data:application/pdf;base64,JVBERi0="}},
         {"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}},
         {"type": "input_audio", "input_audio": {"data": "UklGRg==", "format": "wav"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png,AAAA"}},
     ],
-    ids=["pdf-file", "url-image", "audio"],
+    ids=["pdf-file", "url-image", "audio", "empty-data-uri", "non-base64-data-uri"],
 )
 async def test_content_ollama_cannot_send_is_refused(part: dict[str, Any], role: str, stream: bool) -> None:
     """Ollama takes text and base64 images only, so dropping anything else answers as if nothing was attached."""
