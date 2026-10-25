@@ -57,6 +57,29 @@ REASONING_EFFORT_TO_ANTHROPIC_EFFORT = {
     "xhigh": "xhigh",
     "max": "max",
 }
+# Claude models released before Opus 4.6 / Sonnet 4.6 reject adaptive thinking and take
+# manual extended thinking (`budget_tokens`) instead; Sonnet 4.5 and Haiku 4.5 also reject
+# `effort`. Newer models are the default, so only this closed list needs maintaining.
+# https://platform.claude.com/docs/en/build-with-claude/extended-thinking
+_BUDGET_THINKING_MODEL_PREFIXES = (
+    "claude-3",
+    "claude-opus-4-0",
+    "claude-opus-4-1",
+    "claude-opus-4-5",
+    "claude-opus-4-2025",
+    "claude-sonnet-4-0",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-2025",
+    "claude-haiku-4-5",
+)
+REASONING_EFFORT_TO_THINKING_BUDGETS = {
+    "minimal": 1024,
+    "low": 2048,
+    "medium": 8192,
+    "high": 24576,
+    "xhigh": 32768,
+    "max": 32768,
+}
 
 _JSON_SCHEMA_MAPPING_KEYWORDS = frozenset(
     {
@@ -657,6 +680,11 @@ def _convert_response_format(response_format: dict[str, Any] | type, provider_na
     }
 
 
+def _uses_budget_thinking(model_id: str) -> bool:
+    """Return True for a Claude model that takes `budget_tokens` thinking rather than adaptive thinking."""
+    return model_id.lower().startswith(_BUDGET_THINKING_MODEL_PREFIXES)
+
+
 def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
     """Convert CompletionParams to kwargs for Anthropic API."""
     provider_name: str = kwargs.pop("provider_name")
@@ -676,6 +704,10 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
 
     if params.reasoning_effort is None or params.reasoning_effort == "none":
         result_kwargs["thinking"] = {"type": "disabled"}
+    elif params.reasoning_effort != "auto" and _uses_budget_thinking(params.model_id):
+        # The budget must stay below max_tokens, so a small max_tokens shrinks it.
+        budget = min(REASONING_EFFORT_TO_THINKING_BUDGETS[params.reasoning_effort], params.max_tokens - 1)
+        result_kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
     elif params.reasoning_effort != "auto":
         # Explicit reasoning effort enables adaptive thinking; effort alone does
         # not enable it on models whose thinking default is off.
