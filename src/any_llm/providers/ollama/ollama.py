@@ -202,8 +202,8 @@ class OllamaProvider(AnyLLM):
             tuple of (text_content, list_of_base64_image_strings)
 
         Raises:
-            InvalidRequestError: If a content part is neither text nor a base64 data URI image,
-                since Ollama has no field to send it in.
+            InvalidRequestError: If a content part is neither text nor a base64 data URI image
+                with a payload, since Ollama has no field to send it in.
         """
         content = message.get("content", "")
         images = []
@@ -218,10 +218,12 @@ class OllamaProvider(AnyLLM):
                     if not image_url.startswith("data:image/"):
                         msg = f"URL-based images are not supported by Ollama. Please provide a base64 data URI. Got: {image_url[:100]}"
                         raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
-                    base64_data = image_url.split(",", 1)[1] if "," in image_url else ""
-                    if base64_data:
-                        # Ollama expects base64 strings directly
-                        images.append(base64_data)
+                    header, _, base64_data = image_url.partition(",")
+                    if not header.endswith(";base64") or not base64_data:
+                        msg = f"Malformed data URI: expected 'data:image/<type>;base64,<data>'. Got: {image_url[:100]}"
+                        raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
+                    # Ollama expects base64 strings directly
+                    images.append(base64_data)
                 else:
                     msg = f"Content part type '{item.get('type')}' is not supported by Ollama. Only text and base64 data URI images are."
                     raise InvalidRequestError(msg, provider_name=self.PROVIDER_NAME)
