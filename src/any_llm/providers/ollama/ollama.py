@@ -243,6 +243,8 @@ class OllamaProvider(AnyLLM):
         # deltas by index then concatenates the arguments of distinct tool calls
         # into a single, invalid JSON string. Assign a stream-global,
         # monotonically increasing index so each tool call stays in its own slot.
+        # Ollama also ends a stream that called a tool with done_reason "stop", usually in a later
+        # chunk with no tool calls, so report "tool_calls" as the non-streaming conversion does.
         tool_call_index = 0
         async for chunk in response:
             converted = self._convert_completion_chunk_response(chunk)
@@ -252,6 +254,8 @@ class OllamaProvider(AnyLLM):
                     for tool_call in delta.tool_calls:
                         tool_call.index = tool_call_index
                         tool_call_index += 1
+                if choice.finish_reason == "stop" and tool_call_index > 0:
+                    choice.finish_reason = "tool_calls"
             yield converted
 
     @override

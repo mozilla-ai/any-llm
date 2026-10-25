@@ -635,6 +635,99 @@ async def test_streaming_assigns_distinct_tool_call_indices() -> None:
     assert indices == [0, 1, 2], f"expected distinct per-call indices, got {indices}"
 
 
+def _make_stream_chunk(
+    *,
+    tool_name: str | None = None,
+    done: bool = False,
+    done_reason: str | None = None,
+) -> Mock:
+    message = Mock(spec=OllamaMessage)
+    message.content = ""
+    message.role = "assistant"
+    message.thinking = None
+    message.tool_calls = None
+    if tool_name is not None:
+        func = Mock()
+        func.name = tool_name
+        func.arguments = {"city": "Paris"}
+        tool_call = Mock()
+        tool_call.function = func
+        message.tool_calls = [tool_call]
+
+    chunk = Mock(spec=OllamaChatResponse)
+    chunk.message = message
+    chunk.created_at = None
+    chunk.model = "llama3.1"
+    chunk.done = done
+    chunk.done_reason = done_reason
+    chunk.prompt_eval_count = None
+    chunk.eval_count = None
+    chunk.total_duration = None
+    chunk.load_duration = None
+    chunk.prompt_eval_duration = None
+    chunk.eval_duration = None
+    return chunk
+
+
+async def _stream_finish_reasons(chunks: list[Mock]) -> list[str | None]:
+    async def chunk_iter() -> AsyncIterator[Mock]:
+        for chunk in chunks:
+            yield chunk
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=chunk_iter())
+
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="llama3.1",
+                messages=[{"role": "user", "content": "weather in Paris?"}],
+                stream=True,
+            ),
+        )
+        return [choice.finish_reason async for chunk in result for choice in chunk.choices]  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_streaming_reports_tool_calls_finish_reason_after_a_tool_call() -> None:
+    """Ollama ends a stream that called a tool with done_reason "stop" in a later chunk with no tool calls."""
+    finish_reasons = await _stream_finish_reasons(
+        [
+            _make_stream_chunk(tool_name="get_weather"),
+            _make_stream_chunk(done=True, done_reason="stop"),
+        ]
+    )
+
+    assert finish_reasons == [None, "tool_calls"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_reports_tool_calls_finish_reason_on_the_tool_call_chunk() -> None:
+    finish_reasons = await _stream_finish_reasons(
+        [_make_stream_chunk(tool_name="get_weather", done=True, done_reason="stop")]
+    )
+
+    assert finish_reasons == ["tool_calls"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("chunks", "expected"),
+    [
+        ([_make_stream_chunk(done=True, done_reason="stop")], ["stop"]),
+        (
+            [_make_stream_chunk(tool_name="get_weather"), _make_stream_chunk(done=True, done_reason="length")],
+            [None, "length"],
+        ),
+    ],
+)
+async def test_streaming_keeps_finish_reason_without_a_finished_tool_call(
+    chunks: list[Mock], expected: list[str | None]
+) -> None:
+    assert await _stream_finish_reasons(chunks) == expected
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("reasoning_effort", "expected_think"),
