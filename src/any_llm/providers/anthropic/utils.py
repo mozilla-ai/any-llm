@@ -196,7 +196,28 @@ def _convert_content_for_anthropic(content: list[dict[str, Any]]) -> list[dict[s
     return converted_content
 
 
-def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
+def _append_system_content(
+    system: str | list[dict[str, Any]] | None, content: str | list[dict[str, Any]]
+) -> str | list[dict[str, Any]]:
+    """Add one system message's content to the system prompt built so far.
+
+    Strings are joined with a newline. Once either side is a list of text blocks, the prompt becomes a
+    list of blocks so that each block, and any field it carries such as ``cache_control``, is kept.
+    """
+    if system is None:
+        return content
+    if isinstance(system, str) and isinstance(content, str):
+        return f"{system}\n{content}"
+
+    def as_blocks(value: str | list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{"type": "text", "text": value}] if isinstance(value, str) else list(value)
+
+    return as_blocks(system) + as_blocks(content)
+
+
+def _convert_messages_for_anthropic(
+    messages: list[dict[str, Any]],
+) -> tuple[str | list[dict[str, Any]] | None, list[dict[str, Any]]]:
     """Convert messages to Anthropic format.
 
     - Extract messages with `role=system`.
@@ -204,15 +225,13 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
     - Handle multiple tool calls in a single assistant message.
     - Merge consecutive tool results into a single user message.
     """
-    system_message = None
+    system_message: str | list[dict[str, Any]] | None = None
     filtered_messages: list[dict[str, Any]] = []
 
     for message in messages:
-        if message["role"] == "system":
-            if system_message is None:
-                system_message = message["content"]
-            else:
-                system_message += "\n" + message["content"]
+        if message["role"] in ("system", "developer"):
+            # OpenAI's developer role is the same instruction channel as system.
+            system_message = _append_system_content(system_message, message["content"])
         else:
             # Handle messages inside agent loop.
             # See https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview#tool-use-examples
