@@ -1387,11 +1387,19 @@ def test_convert_params_reasoning_effort_on_non_claude_model_raises(model_id: st
         )
 
 
-def test_convert_params_reasoning_effort_on_application_inference_profile_keeps_claude_shape() -> None:
-    """An application inference profile ARN does not name its model, and may front Claude."""
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6",
+        "arn:aws:bedrock:us-east-1:123456789012:provisioned-model/a1b2c3d4e5f6",
+        "arn:aws:bedrock:us-east-1:123456789012:imported-model/a1b2c3d4e5f6",
+    ],
+)
+def test_convert_params_reasoning_effort_on_opaque_arn_keeps_claude_shape(model_id: str) -> None:
+    """An ARN that does not name its model may front Claude, so it is not refused."""
     result = _convert_params(
         CompletionParams(
-            model_id="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6",
+            model_id=model_id,
             messages=[{"role": "user", "content": "hi"}],
             reasoning_effort="low",
         ),
