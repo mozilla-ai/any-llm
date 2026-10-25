@@ -1387,6 +1387,23 @@ def test_convert_params_reasoning_effort_on_non_claude_model_raises(model_id: st
         )
 
 
+def test_convert_params_reasoning_effort_on_application_inference_profile_keeps_claude_shape() -> None:
+    """An application inference profile ARN does not name its model, and may front Claude."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6",
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort="low",
+        ),
+        {},
+    )
+
+    assert result["additionalModelRequestFields"]["reasoning_config"] == {
+        "type": "enabled",
+        "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS["low"],
+    }
+
+
 @pytest.mark.parametrize("reasoning_effort", [None, "none", "auto"])
 def test_convert_params_without_reasoning_on_non_claude_model_sends_no_reasoning_config(
     reasoning_effort: ReasoningEffort | None,
