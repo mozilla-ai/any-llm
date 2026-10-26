@@ -16,6 +16,7 @@ import pytest
 from botocore.exceptions import ClientError, ProfileNotFound
 from botocore.stub import Stubber
 from botocore.tokens import ScopedEnvTokenProvider
+from botocore.validate import validate_parameters
 from pydantic import BaseModel
 
 from any_llm.exceptions import (
@@ -1569,6 +1570,46 @@ def test_convert_params_rejects_reserved_tool_name_without_response_format() -> 
             ),
             {},
         )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("stop", "expected"),
+    [
+        ("END", ["END"]),
+        ("終わり", ["終わり"]),
+        (["END"], ["END"]),
+        (["END", "STOP"], ["END", "STOP"]),
+        (None, None),
+        ("", None),
+        ([], None),
+    ],
+)
+def test_convert_params_normalizes_stop_sequences(
+    stop: str | list[str] | None, expected: list[str] | None, stream: bool
+) -> None:
+    original_stop = stop.copy() if isinstance(stop, list) else stop
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[{"role": "user", "content": "Hello"}],
+        stop=stop,
+        stream=stream,
+        max_tokens=128,
+        temperature=0.0,
+        top_p=0.5,
+    )
+
+    result = _convert_params(params, {})
+
+    expected_inference: dict[str, Any] = {"maxTokens": 128, "temperature": 0.0, "topP": 0.5}
+    if expected is not None:
+        expected_inference["stopSequences"] = expected
+    assert result["inferenceConfig"] == expected_inference
+    assert stop == original_stop
+    assert params.stop == original_stop
+    service_model = botocore.session.get_session().get_service_model("bedrock-runtime")  # type: ignore[no-untyped-call]
+    operation_model = service_model.operation_model("ConverseStream" if stream else "Converse")
+    validate_parameters(result, operation_model.input_shape)  # type: ignore[no-untyped-call]
 
 
 def test_convert_params_forwards_zero_temperature() -> None:
