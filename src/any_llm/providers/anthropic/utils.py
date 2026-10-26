@@ -84,6 +84,9 @@ REASONING_EFFORT_TO_THINKING_BUDGETS = {
 }
 # Anthropic's minimum `budget_tokens`, also kept free below max_tokens for the answer.
 _MIN_THINKING_BUDGET = 1024
+# Of the budget-thinking models, only Opus 4.5 also takes `effort`, and only up to `high`.
+_BUDGET_THINKING_EFFORT_MODEL_PREFIX = "claude-opus-4-5"
+_BUDGET_THINKING_EFFORTS = ("low", "medium", "high")
 
 _JSON_SCHEMA_MAPPING_KEYWORDS = frozenset(
     {
@@ -723,6 +726,11 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
                 f"for the answer. Set max_tokens to at least {2 * _MIN_THINKING_BUDGET}.",
             )
         result_kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        if params.model_id.lower().startswith(_BUDGET_THINKING_EFFORT_MODEL_PREFIX):
+            effort = REASONING_EFFORT_TO_ANTHROPIC_EFFORT[params.reasoning_effort]
+            output_config = result_kwargs.get("output_config", {}).copy()
+            output_config["effort"] = effort if effort in _BUDGET_THINKING_EFFORTS else "high"
+            result_kwargs["output_config"] = output_config
     elif params.reasoning_effort != "auto":
         # Explicit reasoning effort enables adaptive thinking; effort alone does
         # not enable it on models whose thinking default is off.
