@@ -482,6 +482,112 @@ async def test_reasoning_effort_maps_to_distinct_anthropic_effort(
         assert call_kwargs["output_config"] == {"effort": expected_effort}
 
 
+@pytest.mark.parametrize(
+    "model",
+    [
+        "claude-haiku-4-5",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-5",
+        "claude-opus-4-1-20250805",
+        "claude-opus-4@20250514",
+        "claude-sonnet-4@20250514",
+        "claude-sonnet-4-20250514",
+        "claude-3-7-sonnet-latest",
+    ],
+)
+@pytest.mark.asyncio
+async def test_reasoning_effort_uses_budget_thinking_on_models_without_adaptive_thinking(model: str) -> None:
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="low",
+                max_tokens=16000,
+            )
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args.kwargs
+        assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 2048}
+        assert "output_config" not in call_kwargs
+
+
+@pytest.mark.parametrize(
+    ("model", "reasoning_effort", "expected_effort"),
+    [
+        ("claude-opus-4-5", "low", "low"),
+        ("claude-opus-4-5-20251101", "medium", "medium"),
+        ("claude-opus-4-5@20251101", "high", "high"),
+        ("claude-opus-4-5", "max", "high"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_opus_4_5_sends_effort_beside_the_thinking_budget(
+    model: str, reasoning_effort: ReasoningEffort, expected_effort: str
+) -> None:
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id=model,
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,
+                max_tokens=64000,
+            )
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args.kwargs
+        assert call_kwargs["thinking"]["type"] == "enabled"
+        assert call_kwargs["output_config"] == {"effort": expected_effort}
+
+
+@pytest.mark.asyncio
+async def test_budget_thinking_stays_below_max_tokens() -> None:
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="claude-haiku-4-5",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="high",
+            )
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args.kwargs
+        assert call_kwargs["max_tokens"] == DEFAULT_MAX_TOKENS
+        assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": DEFAULT_MAX_TOKENS - 1024}
+
+
+@pytest.mark.asyncio
+async def test_budget_thinking_with_too_small_max_tokens_raises() -> None:
+    with mock_anthropic_provider():
+        provider = AnthropicProvider(api_key="test-api-key")
+        with pytest.raises(UnsupportedParameterError, match="reasoning_effort with max_tokens below 2048"):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="claude-haiku-4-5",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    reasoning_effort="low",
+                    max_tokens=2000,
+                )
+            )
+
+
+@pytest.mark.parametrize("model", ["claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7", "claude-sonnet-5"])
+@pytest.mark.asyncio
+async def test_reasoning_effort_uses_adaptive_thinking_on_newer_models(model: str) -> None:
+    with mock_anthropic_provider() as mock_anthropic:
+        provider = AnthropicProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id=model, messages=[{"role": "user", "content": "Hello"}], reasoning_effort="low")
+        )
+
+        call_kwargs = mock_anthropic.return_value.messages.create.call_args.kwargs
+        assert call_kwargs["thinking"] == {"type": "adaptive"}
+        assert call_kwargs["output_config"] == {"effort": "low"}
+
+
 @pytest.mark.asyncio
 async def test_completion_with_images() -> None:
     api_key = "test-api-key"
