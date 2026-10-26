@@ -1984,6 +1984,25 @@ def test_convert_messages_tool_call_turn_without_text_emits_only_tool_use(conten
     assert [block["type"] for block in converted[0]["content"]] == ["tool_use"]
 
 
+def test_convert_messages_tool_call_with_empty_arguments_sends_empty_input() -> None:
+    """A streamed call to a tool with no parameters accumulates arguments == "", which replays as input {}."""
+    from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
+
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "toolu_1", "type": "function", "function": {"name": "get_time", "arguments": ""}},
+            ],
+        },
+    ]
+
+    _, converted = _convert_messages_for_anthropic(messages)
+
+    assert converted[0]["content"] == [{"type": "tool_use", "id": "toolu_1", "name": "get_time", "input": {}}]
+
+
 def test_convert_messages_keeps_text_when_tool_calls_is_empty() -> None:
     """An assistant turn with text and an empty tool_calls list keeps its text instead of sending content: []."""
     from any_llm.providers.anthropic.utils import _convert_messages_for_anthropic
