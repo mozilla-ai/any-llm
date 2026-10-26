@@ -298,7 +298,7 @@ def test_convert_openai_request_sends_tool_result_images_as_parts_for_the_model(
     assert contents[1].parts is not None
     function_response = contents[1].parts[0].function_response
     assert function_response is not None
-    assert function_response.response == {"result": [{"$ref": "attachment-1"}]}
+    assert function_response.response == {"result": []}
     assert function_response.parts is not None
 
 
