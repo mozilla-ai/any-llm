@@ -524,7 +524,7 @@ async def test_reasoning_effort_uses_budget_thinking_on_models_without_adaptive_
 )
 @pytest.mark.asyncio
 async def test_opus_4_5_sends_effort_beside_the_thinking_budget(
-    model: str, reasoning_effort: str, expected_effort: str
+    model: str, reasoning_effort: ReasoningEffort, expected_effort: str
 ) -> None:
     with mock_anthropic_provider() as mock_anthropic:
         provider = AnthropicProvider(api_key="test-api-key")
