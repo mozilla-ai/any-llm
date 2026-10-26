@@ -191,6 +191,19 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
         result_kwargs["toolConfig"] = tool_config
 
     reasoning_enabled = params.reasoning_effort is not None and params.reasoning_effort not in ("auto", "none")
+    # An ARN (application inference profile, provisioned throughput, custom or imported model)
+    # may front a Claude model without naming it, so it keeps the Claude shape rather than being refused.
+    opaque_arn = params.model_id.startswith("arn:")
+    if reasoning_enabled and not _is_anthropic_model(params.model_id) and not opaque_arn:
+        # `reasoning_config` with `budget_tokens` is Claude's extended thinking; other model
+        # families on Bedrock each take their own reasoning field, and reject this object.
+        msg = "reasoning_effort"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "reasoning_effort is only translated for Anthropic Claude models on Bedrock. For other models, "
+            "pass the model's own reasoning field in additionalModelRequestFields.",
+        )
 
     inference_config: dict[str, Any] = {}
     if params.max_tokens:

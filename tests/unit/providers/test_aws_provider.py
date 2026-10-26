@@ -519,7 +519,7 @@ def test_completion_streaming_uses_converse_stream_on_resolved_client() -> None:
 @pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
     """Test that reasoning_effort is correctly passed to Bedrock API."""
-    model_id = "model-id"
+    model_id = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_aws_provider() as mock_boto3_client:
@@ -1375,6 +1375,57 @@ def test_convert_params_response_format_json_schema_non_dict_schema_raises() -> 
             ),
             {},
         )
+
+
+@pytest.mark.parametrize("model_id", ["xai.grok-4-fast", "deepseek.v3-v1:0", "openai.gpt-oss-120b-1:0"])
+def test_convert_params_reasoning_effort_on_non_claude_model_raises(model_id: str) -> None:
+    """Non-Claude models reject Claude's `reasoning_config` object, so it is never sent to them."""
+    with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
+        _convert_params(
+            CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "hi"}], reasoning_effort="low"),
+            {},
+        )
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6",
+        "arn:aws:bedrock:us-east-1:123456789012:provisioned-model/a1b2c3d4e5f6",
+        "arn:aws:bedrock:us-east-1:123456789012:imported-model/a1b2c3d4e5f6",
+    ],
+)
+def test_convert_params_reasoning_effort_on_opaque_arn_keeps_claude_shape(model_id: str) -> None:
+    """An ARN that does not name its model may front Claude, so it is not refused."""
+    result = _convert_params(
+        CompletionParams(
+            model_id=model_id,
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort="low",
+        ),
+        {},
+    )
+
+    assert result["additionalModelRequestFields"]["reasoning_config"] == {
+        "type": "enabled",
+        "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS["low"],
+    }
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "none", "auto"])
+def test_convert_params_without_reasoning_on_non_claude_model_sends_no_reasoning_config(
+    reasoning_effort: ReasoningEffort | None,
+) -> None:
+    result = _convert_params(
+        CompletionParams(
+            model_id="xai.grok-4-fast",
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort=reasoning_effort,
+        ),
+        {},
+    )
+
+    assert "additionalModelRequestFields" not in result
 
 
 def test_convert_params_response_format_with_reasoning_effort_raises() -> None:
