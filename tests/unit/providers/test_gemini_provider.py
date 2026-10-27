@@ -1,5 +1,7 @@
 import base64
+import io
 import json
+import wave
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from typing import Any, cast
@@ -32,6 +34,7 @@ from any_llm.providers.gemini.utils import (
     _supports_multimodal_function_responses,
 )
 from any_llm.providers.vertexai import VertexaiProvider
+from any_llm.types.audio import AudioSpeechParams
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -4454,3 +4457,155 @@ def test_convert_models_list_strips_resource_prefix(name: str | None, expected_i
 
     assert [model.id for model in models] == [expected_id]
     assert models[0].owned_by == "google"
+
+
+PCM_FRAMES = b"\x00\x01\x02\x03\x04\x05\x06\x07"
+
+
+def _audio_response(data: bytes | None = PCM_FRAMES, mime_type: str = "audio/L16;codec=pcm;rate=24000") -> Any:
+    part = (
+        types.Part(inline_data=types.Blob(data=data, mime_type=mime_type)) if data is not None else types.Part(text="")
+    )
+    return types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(content=types.Content(role="model", parts=[part]), finish_reason=types.FinishReason.STOP)
+        ]
+    )
+
+
+@contextmanager
+def _mock_speech_client(response: Any) -> Any:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_genai:
+        generate = AsyncMock(return_value=response)
+        mock_genai.return_value.aio.models.generate_content = generate
+        yield generate
+
+
+@pytest.mark.asyncio
+async def test_speech_asks_generate_content_for_audio_with_the_prebuilt_voice() -> None:
+    with _mock_speech_client(_audio_response()) as generate:
+        provider = GeminiProvider(api_key="test-key")
+        await provider._aspeech(
+            AudioSpeechParams(model_id="gemini-2.5-flash-preview-tts", input="Say cheerfully: hi", voice="Kore")
+        )
+
+    generate.assert_awaited_once()
+    call = generate.call_args.kwargs
+    assert call["model"] == "gemini-2.5-flash-preview-tts"
+    assert call["contents"] == "Say cheerfully: hi"
+    config = call["config"]
+    assert isinstance(config, types.GenerateContentConfig)
+    assert config.response_modalities == ["AUDIO"]
+    assert config.speech_config == types.SpeechConfig(
+        voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore"))
+    )
+
+
+@pytest.mark.asyncio
+async def test_speech_wraps_pcm_in_a_wav_container_at_the_reported_rate_by_default() -> None:
+    with _mock_speech_client(_audio_response(mime_type="audio/L16;codec=pcm;rate=16000")):
+        provider = GeminiProvider(api_key="test-key")
+        result = await provider._aspeech(
+            AudioSpeechParams(model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore")
+        )
+
+    with wave.open(io.BytesIO(result), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert handle.getsampwidth() == 2
+        assert handle.getframerate() == 16000
+        assert handle.readframes(handle.getnframes()) == PCM_FRAMES
+
+
+@pytest.mark.asyncio
+async def test_speech_wav_falls_back_to_24khz_when_the_mime_type_has_no_rate() -> None:
+    with _mock_speech_client(_audio_response(mime_type="audio/pcm")):
+        provider = GeminiProvider(api_key="test-key")
+        result = await provider._aspeech(
+            AudioSpeechParams(
+                model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore", response_format="wav"
+            )
+        )
+
+    with wave.open(io.BytesIO(result), "rb") as handle:
+        assert handle.getframerate() == 24000
+
+
+@pytest.mark.asyncio
+async def test_speech_pcm_returns_the_raw_samples() -> None:
+    with _mock_speech_client(_audio_response()):
+        provider = GeminiProvider(api_key="test-key")
+        result = await provider._aspeech(
+            AudioSpeechParams(
+                model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore", response_format="pcm"
+            )
+        )
+
+    assert result == PCM_FRAMES
+
+
+@pytest.mark.asyncio
+async def test_speech_forwards_extra_kwargs_into_the_generation_config() -> None:
+    with _mock_speech_client(_audio_response()) as generate:
+        provider = GeminiProvider(api_key="test-key")
+        await provider._aspeech(
+            AudioSpeechParams(model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore"),
+            temperature=0.2,
+        )
+
+    assert generate.call_args.kwargs["config"].temperature == 0.2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["mp3", "opus", "aac", "flac"])
+async def test_speech_rejects_formats_gemini_does_not_encode(response_format: str) -> None:
+    with _mock_speech_client(_audio_response()) as generate:
+        provider = GeminiProvider(api_key="test-key")
+        with pytest.raises(UnsupportedParameterError, match="response_format") as excinfo:
+            await provider._aspeech(
+                AudioSpeechParams(
+                    model_id="gemini-2.5-flash-preview-tts",
+                    input="hello",
+                    voice="Kore",
+                    response_format=response_format,  # type: ignore[arg-type]
+                )
+            )
+
+    assert response_format in str(excinfo.value)
+    generate.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("field", "value"), [("instructions", "Speak slowly"), ("speed", 1.5)])
+async def test_speech_rejects_instructions_and_speed(field: str, value: Any) -> None:
+    with _mock_speech_client(_audio_response()) as generate:
+        provider = GeminiProvider(api_key="test-key")
+        with pytest.raises(UnsupportedParameterError, match=field):
+            await provider._aspeech(
+                AudioSpeechParams(
+                    model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore", **{field: value}
+                )
+            )
+
+    generate.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        _audio_response(data=None),
+        types.GenerateContentResponse(candidates=[]),
+        types.GenerateContentResponse(
+            candidates=[types.Candidate(content=None, finish_reason=types.FinishReason.SAFETY)],
+            prompt_feedback=types.GenerateContentResponsePromptFeedback(block_reason=types.BlockedReason.SAFETY),
+        ),
+    ],
+    ids=["text-part-only", "no-candidates", "blocked"],
+)
+async def test_speech_raises_when_the_reply_carries_no_audio(response: Any) -> None:
+    with _mock_speech_client(response):
+        provider = GeminiProvider(api_key="test-key")
+        with pytest.raises(ProviderError, match="returned no audio"):
+            await provider._aspeech(
+                AudioSpeechParams(model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore")
+            )

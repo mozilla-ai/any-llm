@@ -1,4 +1,7 @@
+import io
 import os
+import re
+import wave
 from collections.abc import AsyncIterator
 from typing import Any, ClassVar
 
@@ -6,13 +9,45 @@ from google import genai
 from google.genai import types
 from typing_extensions import override
 
-from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
+from any_llm.exceptions import MissingApiKeyError, ProviderError, UnsupportedParameterError
+from any_llm.types.audio import AudioSpeechParams
 from any_llm.types.files import FileOperation
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
 from .files import GeminiFileMethods
+
+# A Gemini TTS model answers with one inline blob of headerless 16-bit mono PCM whose MIME type
+# carries the rate, such as ``audio/L16;codec=pcm;rate=24000``.
+_PCM_RATE_PATTERN = re.compile(r"rate=(\d+)")
+_PCM_DEFAULT_RATE = 24000
+_PCM_SAMPLE_WIDTH = 2
+_PCM_CHANNELS = 1
+_SPEECH_RESPONSE_FORMATS = frozenset({"pcm", "wav"})
+
+
+def _pcm_to_wav(pcm: bytes, mime_type: str | None) -> bytes:
+    """Wrap raw 16-bit mono PCM in a RIFF/WAVE container at the rate the MIME type reports."""
+    match = _PCM_RATE_PATTERN.search(mime_type or "")
+    rate = int(match.group(1)) if match else _PCM_DEFAULT_RATE
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(_PCM_CHANNELS)
+        handle.setsampwidth(_PCM_SAMPLE_WIDTH)
+        handle.setframerate(rate)
+        handle.writeframes(pcm)
+    return buffer.getvalue()
+
+
+def _inline_audio(response: types.GenerateContentResponse) -> types.Blob | None:
+    """Return the first inline audio blob in the response, or ``None`` when it carries no audio."""
+    for candidate in response.candidates or []:
+        parts = candidate.content.parts if candidate.content is not None else None
+        for part in parts or []:
+            if part.inline_data is not None and part.inline_data.data:
+                return part.inline_data
+    return None
 
 
 class GeminiProvider(GeminiFileMethods, GoogleProvider):
@@ -23,6 +58,7 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
     SUPPORTS_RESPONSES = True
+    SUPPORTS_AUDIO_SPEECH = True
     SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset({"upload", "list", "retrieve", "delete"})
 
     _interactions_api_version: str | None
@@ -111,3 +147,61 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
                 yield event
         finally:
             await aclose_quietly(converted_stream)
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        """Generate speech with a Gemini TTS model through ``generateContent``.
+
+        Gemini has no speech endpoint. Its TTS models (``gemini-2.5-flash-preview-tts``,
+        ``gemini-2.5-pro-preview-tts``, ``gemini-3.1-flash-tts-preview``) answer a
+        ``generateContent`` call whose config asks for the audio modality and names one of the
+        prebuilt voices such as ``Kore``; further ``GenerateContentConfig`` fields pass through
+        ``kwargs``. The reply is headerless 16-bit mono PCM, returned as-is for ``pcm`` and
+        wrapped in a WAV container for ``wav``, the default. Gemini encodes nothing else, so mp3,
+        opus, aac and flac raise ``UnsupportedParameterError``. Delivery is steered by the text
+        itself (``Say cheerfully: ...``) and there is no rate control, so ``instructions`` and
+        ``speed`` raise too. See https://ai.google.dev/gemini-api/docs/speech-generation.
+        """
+        if params.instructions is not None:
+            parameter_name = "instructions"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                "Gemini takes style direction as part of the text itself, for example `Say cheerfully: ...`.",
+            )
+        if params.speed is not None:
+            parameter_name = "speed"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        response_format = params.response_format or "wav"
+        if response_format not in _SPEECH_RESPONSE_FORMATS:
+            parameter_name = "response_format"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                f"Gemini speech returns {', '.join(sorted(_SPEECH_RESPONSE_FORMATS))}, not {response_format!r}.",
+            )
+
+        config: dict[str, Any] = {
+            "response_modalities": ["AUDIO"],
+            "speech_config": types.SpeechConfig(
+                voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=params.voice))
+            ),
+        }
+        config.update(kwargs)
+        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
+            model=params.model_id,
+            contents=params.input,
+            config=types.GenerateContentConfig(**config),
+        )
+        audio = _inline_audio(response)
+        if audio is None or audio.data is None:
+            finish_reason = response.candidates[0].finish_reason if response.candidates else None
+            block_reason = response.prompt_feedback.block_reason if response.prompt_feedback else None
+            msg = (
+                f"Gemini returned no audio for model {params.model_id!r} "
+                f"(finish_reason={finish_reason}, block_reason={block_reason})."
+            )
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
+        if response_format == "pcm":
+            return audio.data
+        return _pcm_to_wav(audio.data, audio.mime_type)
