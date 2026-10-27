@@ -31,6 +31,7 @@ def speech_provider_model_map() -> dict[LLMProvider, tuple[str, str]]:
         LLMProvider.GROQ: ("canopylabs/orpheus-v1-english", "troy"),
         LLMProvider.TOGETHER: ("hexgrad/Kokoro-82M", "af_bella"),
         LLMProvider.MISTRAL: ("voxtral-mini-tts-2603", "en_paul_neutral"),
+        LLMProvider.GEMINI: ("gemini-2.5-flash-preview-tts", "Kore"),
     }
 
 
