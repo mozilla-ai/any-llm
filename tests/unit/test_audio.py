@@ -439,13 +439,22 @@ def test_speech_params_rejects_extra_fields() -> None:
         AudioSpeechParams(model_id="tts-1", input="hi", voice="alloy", bogus="value")  # type: ignore[call-arg]
 
 
-def test_supports_audio_only_on_expected_providers() -> None:
-    expected_supported = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.OTARI}
+TRANSCRIPTION_PROVIDERS = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.OTARI}
+SPEECH_PROVIDERS = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.OTARI, LLMProvider.GROQ}
 
+
+@pytest.mark.parametrize(
+    ("flag", "expected_supported"),
+    [
+        ("SUPPORTS_AUDIO_TRANSCRIPTION", TRANSCRIPTION_PROVIDERS),
+        ("SUPPORTS_AUDIO_SPEECH", SPEECH_PROVIDERS),
+    ],
+    ids=["transcription", "speech"],
+)
+def test_supports_audio_only_on_expected_providers(flag: str, expected_supported: set[LLMProvider]) -> None:
     for provider_enum in expected_supported:
         cls = AnyLLM.get_provider_class(provider_enum)
-        assert cls.SUPPORTS_AUDIO_TRANSCRIPTION is True, f"{provider_enum.value} should support audio transcription"
-        assert cls.SUPPORTS_AUDIO_SPEECH is True, f"{provider_enum.value} should support audio speech"
+        assert getattr(cls, flag) is True, f"{provider_enum.value} should set {flag}"
 
     for provider_enum in LLMProvider:
         if provider_enum in expected_supported:
@@ -454,10 +463,7 @@ def test_supports_audio_only_on_expected_providers() -> None:
             cls = AnyLLM.get_provider_class(provider_enum)
         except ImportError:
             continue
-        assert cls.SUPPORTS_AUDIO_TRANSCRIPTION is False, (
-            f"{provider_enum.value} should not support audio transcription"
-        )
-        assert cls.SUPPORTS_AUDIO_SPEECH is False, f"{provider_enum.value} should not support audio speech"
+        assert getattr(cls, flag) is False, f"{provider_enum.value} should not set {flag}"
 
 
 M4A_HEADER = b"\x00\x00\x00\x1cftypM4A \x00\x00\x00\x00M4A mp42isom" + b"\x00" * 16
