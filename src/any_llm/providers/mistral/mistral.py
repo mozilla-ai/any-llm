@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -39,6 +41,7 @@ if TYPE_CHECKING:
     from mistralai.client.models import APIEndpoint
     from mistralai.client.models.embeddingresponse import EmbeddingResponse
 
+    from any_llm.types.audio import AudioSpeechParams
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.model import Model
@@ -52,6 +55,10 @@ if TYPE_CHECKING:
 # every explicit level other than "auto"/"none" collapses onto "high" rather than surfacing a
 # 400 for an effort any_llm advertises.
 _MISTRAL_REASONING_EFFORT = "high"
+
+# Mistral's speech endpoint encodes pcm, wav, mp3, flac and opus
+# (https://docs.mistral.ai/api/endpoint/audio/speech); aac is the one any-llm format it lacks.
+_SPEECH_RESPONSE_FORMATS = frozenset({"pcm", "wav", "mp3", "flac", "opus"})
 
 
 class MistralProvider(AnyLLM):
@@ -75,6 +82,7 @@ class MistralProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
+    SUPPORTS_AUDIO_SPEECH = True
 
     # The Mistral SDK names its per-request timeout `timeout_ms`, so the seconds-based value is
     # translated in _convert_completion_params.
@@ -238,6 +246,44 @@ class MistralProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list_async(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        """Generate speech with Mistral's Voxtral TTS (``/v1/audio/speech``).
+
+        The endpoint takes ``model`` (``voxtral-mini-tts-2603``), ``input``, a ``voice_id`` that
+        names a preset such as ``en_paul_neutral`` or a saved custom voice, and
+        ``response_format``; any-llm's ``voice`` is sent as ``voice_id``. Mistral-only fields
+        such as ``ref_audio`` pass through ``kwargs``. There is no ``instructions`` or ``speed``
+        field, so both raise ``UnsupportedParameterError``, as does ``aac``, the one any-llm
+        format Mistral does not encode. Mistral's ``pcm`` is float32 little-endian samples rather
+        than the 16-bit samples OpenAI serves, and is returned as the provider encodes it. The
+        audio arrives base64-encoded in ``audio_data`` and is decoded here.
+        """
+        if params.instructions is not None:
+            parameter_name = "instructions"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if params.speed is not None:
+            parameter_name = "speed"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if params.response_format is not None and params.response_format not in _SPEECH_RESPONSE_FORMATS:
+            parameter_name = "response_format"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                f"Mistral speech returns {', '.join(sorted(_SPEECH_RESPONSE_FORMATS))}, "
+                f"not {params.response_format!r}.",
+            )
+
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+        response = await self.client.audio.speech.complete_async(
+            model=params.model_id,
+            input=params.input,
+            voice_id=params.voice,
+            **api_kwargs,
+        )
+        return base64.b64decode(response.audio_data)
 
     @override
     async def _acreate_batch(
