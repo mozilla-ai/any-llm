@@ -25,6 +25,7 @@ from any_llm.types.completion import (
 from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.utils.token_limit import resolve_output_token_limit
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -275,7 +276,7 @@ class GoogleProvider(AnyLLM):
                 option_name: option_value
                 for option_name, option_value in (
                     ("frequency_penalty", params.frequency_penalty),
-                    ("max_output_tokens", params.max_tokens),
+                    ("max_output_tokens", resolve_output_token_limit(params)),
                     ("presence_penalty", params.presence_penalty),
                     ("seed", params.seed),
                     ("service_tier", params.service_tier),

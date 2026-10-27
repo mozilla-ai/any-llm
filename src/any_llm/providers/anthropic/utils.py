@@ -34,6 +34,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.utils.token_limit import resolve_output_token_limit
 
 DEFAULT_MAX_TOKENS = 8192
 _ANTHROPIC_CONTENT_FILTER_REFUSAL = "Response blocked by Anthropic content filtering."
@@ -699,6 +700,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
 
     if params.response_format:
         result_kwargs["output_config"] = _convert_response_format(params.response_format, provider_name)
+    params.max_tokens = resolve_output_token_limit(params)
     if params.max_tokens is None:
         logger.warning(f"max_tokens is required for Anthropic, setting to {DEFAULT_MAX_TOKENS}")
         params.max_tokens = DEFAULT_MAX_TOKENS
