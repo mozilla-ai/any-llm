@@ -7,6 +7,7 @@ import pytest
 from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
 from together.types.chat.chat_completion_usage import ChatCompletionUsage as TogetherChatCompletionUsage
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.together.utils import (
     _convert_together_response_to_chat_completion,
     _create_openai_chunk_from_together_chunk,
@@ -792,3 +793,111 @@ async def test_acompletion_accepts_prompt_cache_key() -> None:
         call_kwargs = mock_together.return_value.chat.completions.create.call_args[1]
         assert "prompt_cache_key" not in call_kwargs
         assert call_kwargs["extra_body"] == {"prompt_cache_key": "tenant-1"}
+
+
+def _mock_speech_client(mock_together: Mock, audio: bytes = b"RIFF-fake-wav") -> AsyncMock:
+    response = Mock()
+    response.read = AsyncMock(return_value=audio)
+    create = AsyncMock(return_value=response)
+    mock_together.return_value.audio.speech.create = create
+    return create
+
+
+@pytest.mark.asyncio
+async def test_speech_sends_model_input_voice_and_reads_bytes() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.together.together.together.AsyncTogether") as mock_together:
+        create = _mock_speech_client(mock_together, audio=b"audio-bytes")
+        provider = TogetherProvider(api_key="test-api-key")
+
+        result = await provider._aspeech(
+            AudioSpeechParams(model_id="hexgrad/Kokoro-82M", input="Hello", voice="af_bella")
+        )
+
+    assert result == b"audio-bytes"
+    create.assert_awaited_once_with(model="hexgrad/Kokoro-82M", input="Hello", voice="af_bella")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["mp3", "wav"])
+async def test_speech_forwards_supported_response_format(response_format: str) -> None:
+    from any_llm.providers.together.together import TogetherProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.together.together.together.AsyncTogether") as mock_together:
+        create = _mock_speech_client(mock_together)
+        provider = TogetherProvider(api_key="test-api-key")
+
+        await provider._aspeech(
+            AudioSpeechParams(
+                model_id="hexgrad/Kokoro-82M",
+                input="Hello",
+                voice="af_bella",
+                response_format=response_format,  # type: ignore[arg-type]
+            )
+        )
+
+    assert create.call_args.kwargs["response_format"] == response_format
+
+
+@pytest.mark.asyncio
+async def test_speech_forwards_extra_kwargs_to_sdk() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.together.together.together.AsyncTogether") as mock_together:
+        create = _mock_speech_client(mock_together)
+        provider = TogetherProvider(api_key="test-api-key")
+
+        await provider._aspeech(
+            AudioSpeechParams(model_id="cartesia/sonic", input="Bonjour", voice="friendly sidekick"),
+            language="fr",
+            sample_rate=24000,
+        )
+
+    assert create.call_args.kwargs["language"] == "fr"
+    assert create.call_args.kwargs["sample_rate"] == 24000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["opus", "aac", "flac", "pcm"])
+async def test_speech_rejects_formats_together_does_not_serve(response_format: str) -> None:
+    from any_llm.providers.together.together import TogetherProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.together.together.together.AsyncTogether") as mock_together:
+        create = _mock_speech_client(mock_together)
+        provider = TogetherProvider(api_key="test-api-key")
+
+        with pytest.raises(UnsupportedParameterError, match="response_format") as excinfo:
+            await provider._aspeech(
+                AudioSpeechParams(
+                    model_id="hexgrad/Kokoro-82M",
+                    input="Hello",
+                    voice="af_bella",
+                    response_format=response_format,  # type: ignore[arg-type]
+                )
+            )
+
+    assert response_format in str(excinfo.value)
+    create.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("field", "value"), [("instructions", "Speak slowly"), ("speed", 1.5)])
+async def test_speech_rejects_instructions_and_speed(field: str, value: Any) -> None:
+    from any_llm.providers.together.together import TogetherProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.together.together.together.AsyncTogether") as mock_together:
+        create = _mock_speech_client(mock_together)
+        provider = TogetherProvider(api_key="test-api-key")
+
+        with pytest.raises(UnsupportedParameterError, match=field):
+            await provider._aspeech(
+                AudioSpeechParams(model_id="hexgrad/Kokoro-82M", input="Hello", voice="af_bella", **{field: value})
+            )
+
+    create.assert_not_called()

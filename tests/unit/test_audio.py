@@ -440,7 +440,13 @@ def test_speech_params_rejects_extra_fields() -> None:
 
 
 TRANSCRIPTION_PROVIDERS = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.OTARI}
-SPEECH_PROVIDERS = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.OTARI, LLMProvider.GROQ}
+SPEECH_PROVIDERS = {
+    LLMProvider.OPENAI,
+    LLMProvider.AZUREOPENAI,
+    LLMProvider.OTARI,
+    LLMProvider.GROQ,
+    LLMProvider.TOGETHER,
+}
 
 
 @pytest.mark.parametrize(
