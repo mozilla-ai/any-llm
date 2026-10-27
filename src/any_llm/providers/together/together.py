@@ -37,6 +37,7 @@ if TYPE_CHECKING:
         ChatCompletionResponse as TogetherChatCompletion,
     )
 
+    from any_llm.types.audio import AudioSpeechParams
     from any_llm.types.batch import Batch
     from any_llm.types.completion import (
         ChatCompletion,
@@ -49,6 +50,10 @@ if TYPE_CHECKING:
 
 DEFAULT_SCHEMA_NAME = "response_schema"
 _SCHEMA_METADATA_KEYS = ("name", "description", "strict")
+# Together's speech endpoint encodes mp3, wav and raw, and serves raw only on a streaming request
+# (https://docs.together.ai/reference/audio-speech). So any-llm's pcm has no equivalent on the
+# unary call made here, and opus, aac and flac have none at all.
+_SPEECH_RESPONSE_FORMATS = frozenset({"mp3", "wav"})
 
 
 def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
@@ -92,6 +97,7 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = True
+    SUPPORTS_AUDIO_SPEECH = True
 
     # The Together SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
@@ -285,6 +291,42 @@ class TogetherProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        """Generate speech through Together's ``/audio/speech`` endpoint.
+
+        Together's TTS models (``hexgrad/Kokoro-82M``, ``canopylabs/orpheus-3b-0.1-ft``,
+        ``cartesia/sonic``) take ``model``, ``input``, ``voice`` and ``response_format``; the
+        Together-only knobs such as ``language`` and ``sample_rate`` pass through ``kwargs``.
+        There is no ``instructions`` or ``speed`` field, so both raise
+        ``UnsupportedParameterError``, as do the formats Together does not serve on a unary
+        request (opus, aac, flac and pcm).
+        """
+        if params.instructions is not None:
+            parameter_name = "instructions"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if params.speed is not None:
+            parameter_name = "speed"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if params.response_format is not None and params.response_format not in _SPEECH_RESPONSE_FORMATS:
+            parameter_name = "response_format"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                f"Together speech returns {', '.join(sorted(_SPEECH_RESPONSE_FORMATS))}, "
+                f"not {params.response_format!r}.",
+            )
+
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+        response = await self.client.audio.speech.create(
+            model=params.model_id,
+            input=params.input,
+            voice=params.voice,
+            **api_kwargs,
+        )
+        return cast("bytes", await response.read())
 
     @override
     async def _arerank(
