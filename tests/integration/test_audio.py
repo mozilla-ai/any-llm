@@ -10,7 +10,7 @@ import pytest
 from openai import APIConnectionError, OpenAIError
 
 from any_llm import AnyLLM, LLMProvider
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import MissingApiKeyError, ModelNotFoundError
 from any_llm.types.audio import Transcription
 
 
@@ -173,10 +173,8 @@ async def _speak(llm: AnyLLM, provider: LLMProvider, model_id: str, voice: str, 
         pytest.skip(f"{provider.value} API key not provided, skipping")
     except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
         pytest.skip(f"{provider.value} connection failed, skipping")
-    except Exception as exc:
-        if "model" in str(exc).lower() or "deployment" in str(exc).lower():
-            pytest.skip(f"{provider.value} speech model not available: {exc}")
-        raise
+    except ModelNotFoundError as exc:
+        pytest.skip(f"{provider.value} speech model not available: {exc}")
 
 
 @pytest.mark.asyncio
