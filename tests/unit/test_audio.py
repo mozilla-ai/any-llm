@@ -447,6 +447,7 @@ SPEECH_PROVIDERS = {
     LLMProvider.GROQ,
     LLMProvider.TOGETHER,
     LLMProvider.MISTRAL,
+    LLMProvider.GEMINI,
 }
 
 
