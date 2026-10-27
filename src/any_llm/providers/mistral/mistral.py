@@ -10,6 +10,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.utils.token_limit import resolve_output_token_limit
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -93,6 +94,12 @@ class MistralProvider(AnyLLM):
             exclude={"model_id", "messages", "response_format", "stream", "stream_options", "user"},
         )
         converted_params["messages"] = _patch_messages(params.messages)
+
+        # Mistral names the output limit max_tokens and does not accept max_completion_tokens.
+        converted_params.pop("max_completion_tokens", None)
+        max_tokens = resolve_output_token_limit(params)
+        if max_tokens is not None:
+            converted_params["max_tokens"] = max_tokens
 
         if params.response_format is not None:
             if isinstance(params.response_format, type) and issubclass(params.response_format, BaseModel):
