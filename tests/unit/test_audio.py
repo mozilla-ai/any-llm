@@ -446,6 +446,7 @@ SPEECH_PROVIDERS = {
     LLMProvider.OTARI,
     LLMProvider.GROQ,
     LLMProvider.TOGETHER,
+    LLMProvider.MISTRAL,
 }
 
 
