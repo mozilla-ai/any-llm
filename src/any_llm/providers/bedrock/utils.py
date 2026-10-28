@@ -26,6 +26,7 @@ from any_llm.types.completion import (
     Usage,
 )
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
+from any_llm.utils.token_limit import resolve_output_token_limit
 
 INFERENCE_PARAMETERS = ["maxTokens", "temperature", "topP", "stopSequences"]
 
@@ -206,8 +207,9 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
         )
 
     inference_config: dict[str, Any] = {}
-    if params.max_tokens:
-        inference_config["maxTokens"] = params.max_tokens
+    max_tokens = resolve_output_token_limit(params)
+    if max_tokens:
+        inference_config["maxTokens"] = max_tokens
     if params.temperature is not None:
         inference_config["temperature"] = params.temperature
     if params.top_p is not None:
