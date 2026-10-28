@@ -749,6 +749,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
             exclude={
                 "model_id",
                 "messages",
+                "max_completion_tokens",
                 "reasoning_effort",
                 "response_format",
                 "parallel_tool_calls",

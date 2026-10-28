@@ -23,7 +23,9 @@ def _params(**limits: int | None) -> CompletionParams:
 
 
 def _anthropic(params: CompletionParams) -> Any:
-    return anthropic_convert(params, provider_name="anthropic")["max_tokens"]
+    converted = anthropic_convert(params, provider_name="anthropic")
+    assert "max_completion_tokens" not in converted
+    return converted["max_tokens"]
 
 
 def _gemini(params: CompletionParams) -> Any:
