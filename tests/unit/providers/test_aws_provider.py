@@ -1741,6 +1741,31 @@ def test_convert_messages_merges_consecutive_user_messages() -> None:
     ]
 
 
+def test_convert_messages_sends_tool_result_text_parts_as_text_blocks() -> None:
+    """OpenAI lets a tool message carry a list of text parts instead of a string."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "weather in Paris?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "weather", "arguments": "{}"}}],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "t1",
+            "content": [{"type": "text", "text": "18 degrees"}, {"type": "text", "text": "sunny"}],
+        },
+    ]
+    _, formatted_messages = _convert_messages(messages)
+
+    assert formatted_messages[-1] == {
+        "role": "user",
+        "content": [
+            {"toolResult": {"toolUseId": "t1", "content": [{"text": "18 degrees"}, {"text": "sunny"}]}},
+        ],
+    }
+
+
 def _bedrock_stop_reasons() -> tuple[str, ...]:
     """Every stopReason the Converse API can return, read from the installed botocore service model.
 

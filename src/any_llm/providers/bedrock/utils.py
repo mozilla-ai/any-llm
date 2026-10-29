@@ -404,11 +404,14 @@ def _convert_tool_result_content(message: dict[str, Any]) -> dict[str, Any] | No
         msg = "Tool result message must include tool_call_id"
         raise RuntimeError(msg)
 
-    try:
-        content_json = json.loads(message["content"])
-        content = [{"json": content_json}]
-    except json.JSONDecodeError:
-        content = [{"text": message["content"]}]
+    if isinstance(message["content"], list):
+        content = _convert_images_for_bedrock(message["content"])
+    else:
+        try:
+            content_json = json.loads(message["content"])
+            content = [{"json": content_json}]
+        except json.JSONDecodeError:
+            content = [{"text": message["content"]}]
 
     return {"toolResult": {"toolUseId": tool_call_id, "content": content}}
 
