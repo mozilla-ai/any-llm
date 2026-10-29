@@ -132,6 +132,57 @@ async def test_completion_with_multiple_system_messages() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("system_messages", "expected_system"),
+    [
+        (
+            [
+                {"role": "system", "content": "First part."},
+                {"role": "system", "content": [{"type": "text", "text": "Second part."}]},
+            ],
+            [{"type": "text", "text": "First part."}, {"type": "text", "text": "Second part."}],
+        ),
+        (
+            [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": "First part.", "cache_control": {"type": "ephemeral"}}],
+                },
+                {"role": "system", "content": "Second part."},
+            ],
+            [
+                {"type": "text", "text": "First part.", "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": "Second part."},
+            ],
+        ),
+        (
+            [{"role": "system", "content": [{"type": "text", "text": "Only part."}]}],
+            [{"type": "text", "text": "Only part."}],
+        ),
+    ],
+)
+def test_convert_messages_combines_system_messages_given_as_text_blocks(
+    system_messages: list[dict[str, Any]], expected_system: list[dict[str, Any]]
+) -> None:
+    system, converted = _convert_messages_for_anthropic([*system_messages, {"role": "user", "content": "Hello"}])
+
+    assert system == expected_system
+    assert converted == [{"role": "user", "content": "Hello"}]
+
+
+def test_convert_messages_sends_developer_messages_as_system() -> None:
+    system, converted = _convert_messages_for_anthropic(
+        [
+            {"role": "system", "content": "First part."},
+            {"role": "developer", "content": "Second part."},
+            {"role": "user", "content": "Hello"},
+        ]
+    )
+
+    assert system == "First part.\nSecond part."
+    assert converted == [{"role": "user", "content": "Hello"}]
+
+
 @pytest.mark.asyncio
 async def test_completion_with_kwargs() -> None:
     api_key = "test-api-key"
