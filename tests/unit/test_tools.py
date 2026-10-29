@@ -1,4 +1,5 @@
 import enum
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
@@ -271,3 +272,28 @@ def test_prepare_tools_with_built_in() -> None:
     assert len(tools) == 2
     assert isinstance(tools[0], BuiltInTool)
     assert tools[1]["function"]["name"] == "custom_tool"
+
+
+def test_callable_to_tool_literal_of_enum_members_uses_values() -> None:
+    """Enum members inside a Literal are listed by value, so the schema is JSON serializable."""
+
+    class Unit(enum.Enum):
+        C = "celsius"
+        F = "fahrenheit"
+
+    class Level(enum.IntEnum):
+        LOW = 1
+        HIGH = 2
+
+    def get_weather(unit: Literal[Unit.C, Unit.F], level: Literal[Level.LOW] = Level.LOW) -> str:
+        """Get the weather."""
+        return ""
+
+    tool = callable_to_tool(get_weather)
+    props = tool["function"]["parameters"]["properties"]
+
+    assert props["unit"]["enum"] == ["celsius", "fahrenheit"]
+    assert props["unit"]["type"] == "string"
+    assert props["level"]["enum"] == [1]
+    assert props["level"]["type"] == "integer"
+    json.dumps(tool)

@@ -120,7 +120,8 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     - tuple[T, ...] -> array with items=schema(T)
     - Union[X, Y] and X | Y -> anyOf=[schema(X), schema(Y)] (without top-level type)
     - Optional[T] (Union[T, None]) -> schema(T) (nullability not encoded)
-    - Literal[...]/Enum -> enum with appropriate type inference when uniform
+    - Literal[...]/Enum -> enum with appropriate type inference when uniform; Enum members in a
+      Literal are listed by value
     - TypedDict -> object with properties/required per annotations; Required/NotRequired/ReadOnly
       qualifiers are unwrapped, and a self-reference becomes a bare object
     - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields;
@@ -156,7 +157,8 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
         return {"type": "object", "additionalProperties": {"type": "string"}}
 
     if origin is _Literal:
-        literal_values = list(args)
+        # Literal[Color.RED] holds the Enum member; the model sends (and the schema must list) its value.
+        literal_values = [v.value if isinstance(v, enum.Enum) else v for v in args]
         schema_lit: dict[str, Any] = {"enum": literal_values}
         if all(isinstance(v, bool) for v in literal_values):
             schema_lit["type"] = "boolean"
