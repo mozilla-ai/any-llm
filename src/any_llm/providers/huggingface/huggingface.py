@@ -140,19 +140,30 @@ class HuggingfaceProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        """Create the inference and OpenResponses clients.
+
+        ``bill_to`` names the Hugging Face organization that pays for Inference
+        Providers usage; without it, Hugging Face bills the token's own account.
+        """
         self.api_key = api_key
         self.api_base = api_base
+        bill_to: str | None = kwargs.pop("bill_to", None)
         self.kwargs = kwargs
+        inference_kwargs: dict[str, Any] = dict(kwargs)
+        responses_kwargs: dict[str, Any] = dict(kwargs)
+        if bill_to:
+            inference_kwargs["bill_to"] = bill_to
+            # AsyncOpenAI takes no bill_to, so it carries the header the inference client sends.
+            responses_kwargs["default_headers"] = {"X-HF-Bill-To": bill_to}
         self.client = AsyncInferenceClient(
             base_url=api_base,
             token=api_key,
-            **kwargs,
+            **inference_kwargs,
         )
-        # Initialize OpenAI-compatible client for OpenResponses API
         self.responses_client = AsyncOpenAI(
             base_url=self.OPENRESPONSES_ROUTER_URL,
             api_key=api_key,
-            **kwargs,
+            **responses_kwargs,
         )
 
     async def _stream_completion_async(
