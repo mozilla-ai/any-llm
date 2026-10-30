@@ -2250,8 +2250,8 @@ from any_llm import download_video, poll_video, video_generation
 job = video_generation("together:ByteDance/Seedance-2.0", prompt="penguins building a snowman", seconds=5)
 job = poll_video("together", job.id, poll_interval=10, timeout=900)
 if job.status == "completed":
-    with open("penguins.mp4", "wb") as file:
-        file.write(download_video("together", job.outputs[0]))
+    video = download_video("together", job.outputs[0])
+    print(f"{len(video)} bytes of {job.outputs[0].mime_type}")
 ```""",
             "",
             '{% hint style="info" %}',
