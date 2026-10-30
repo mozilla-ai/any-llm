@@ -40,8 +40,14 @@ if TYPE_CHECKING:
     from groq.types.chat import ChatCompletion as GroqChatCompletion
     from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
 
+    from any_llm.types.audio import AudioSpeechParams
     from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
     from any_llm.types.model import Model
+
+# Groq's speech endpoint documents flac, mp3, mulaw, ogg and wav. Of any-llm's formats only these
+# three name the same container; opus and aac have no Groq equivalent (ogg does not promise an
+# opus stream) and pcm is not offered, so those are rejected rather than mapped.
+_SPEECH_RESPONSE_FORMATS = frozenset({"flac", "mp3", "wav"})
 
 
 class GroqProvider(AnyLLM):
@@ -64,6 +70,7 @@ class GroqProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = False
     SUPPORTS_RERANK = False
+    SUPPORTS_AUDIO_SPEECH = True
 
     # The Groq SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
@@ -219,3 +226,42 @@ class GroqProvider(AnyLLM):
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
         models_list = await self.client.models.list(**kwargs)
         return self._convert_list_models_response(models_list)
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        """Generate speech through Groq's OpenAI-compatible ``/audio/speech`` endpoint.
+
+        Groq's TTS models (``canopylabs/orpheus-v1-english`` and ``canopylabs/orpheus-arabic-saudi``)
+        take ``model``, ``input``, ``voice`` and ``response_format``. Delivery is steered with
+        bracketed direction tags inside ``input`` such as ``[cheerful]``, so there is no
+        ``instructions`` field, and the endpoint has no working ``speed``; both raise
+        ``UnsupportedParameterError`` instead of being dropped. See
+        https://console.groq.com/docs/text-to-speech.
+        """
+        if params.instructions is not None:
+            parameter_name = "instructions"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                "Groq steers delivery with bracketed direction tags inside `input`, such as `[cheerful]`.",
+            )
+        if params.speed is not None:
+            parameter_name = "speed"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if params.response_format is not None and params.response_format not in _SPEECH_RESPONSE_FORMATS:
+            parameter_name = "response_format"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                f"Groq speech returns {', '.join(sorted(_SPEECH_RESPONSE_FORMATS))}, not {params.response_format!r}.",
+            )
+
+        api_kwargs = params.to_api_kwargs()
+        api_kwargs.update(kwargs)
+        response = await self.client.audio.speech.create(
+            model=params.model_id,
+            input=params.input,
+            voice=params.voice,
+            **api_kwargs,
+        )
+        return await response.read()
