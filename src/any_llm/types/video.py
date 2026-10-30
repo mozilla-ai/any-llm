@@ -16,15 +16,20 @@ class VideoError(BaseModel):
     """Why a video job failed."""
 
     message: str
+    """What went wrong, in the provider's words."""
     code: str | None = None
+    """The provider's error code, when it gives one."""
 
 
 class VideoOutput(BaseModel):
     """One generated video, as a URL, inline base64 data, or both."""
 
     url: str | None = None
+    """Where the video can be fetched. Some providers' URLs need their credentials; `download_video` adds them."""
     b64_data: str | None = None
+    """The video, base64-encoded, when the provider returns it inline."""
     mime_type: str = "video/mp4"
+    """Media type of the video."""
 
 
 class VideoJob(BaseModel):
@@ -35,17 +40,25 @@ class VideoJob(BaseModel):
     """
 
     id: str
+    """Provider-assigned job ID; pass it to `retrieve_video`."""
     model: str
+    """Model that renders the video."""
     status: VideoStatus
+    """Where the job is. Providers' own words map onto these four."""
     created_at: int | None = None
+    """Unix timestamp of the request, when the provider reports it."""
     completed_at: int | None = None
+    """Unix timestamp of completion, when the provider reports it."""
     progress: int | None = None
     """Percent complete, when the provider reports it."""
     seconds: int | None = None
+    """Length of the video in seconds, when the provider reports it."""
     size: str | None = None
     """``WIDTHxHEIGHT`` of the output, when the provider reports it."""
     error: VideoError | None = None
+    """Why a `failed` job failed."""
     outputs: list[VideoOutput] = Field(default_factory=list)
+    """The rendered videos; empty until `completed`."""
 
     @property
     def done(self) -> bool:
@@ -58,14 +71,23 @@ class VideoGenerationParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_id: str
+    """The provider's own model ID, without a ``provider:`` prefix."""
     prompt: str
+    """What the video shows."""
     seconds: int | None = None
+    """Length of the video in seconds."""
     size: str | None = None
+    """``WIDTHxHEIGHT``, such as ``1280x720``."""
     seed: int | None = None
+    """Seed for reproducible generation."""
     negative_prompt: str | None = None
+    """What the video should not contain."""
     reference_images: list[str] | None = None
+    """Image URLs, provider file URIs or ``data:`` URLs the video takes its subjects or style from."""
     first_frame: str | None = None
+    """Image the video starts from, in the same forms as `reference_images`."""
     last_frame: str | None = None
+    """Image the video ends on, in the same forms as `reference_images`."""
 
     def to_api_kwargs(self) -> dict[str, Any]:
         """Convert to kwargs for the provider API call, excluding None values."""
