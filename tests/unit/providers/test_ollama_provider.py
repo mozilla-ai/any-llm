@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -11,6 +12,7 @@ import pytest
 from ollama import ChatResponse as OllamaChatResponse
 from ollama import Message as OllamaMessage
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.ollama.ollama import OllamaProvider
 from any_llm.providers.ollama.utils import (
     _create_chat_completion_from_ollama_response,
@@ -869,6 +871,119 @@ async def test_tool_message_content_parts_are_flattened_to_text() -> None:
     )
 
     assert sent[1] == {"role": "tool", "content": "12:30", "tool_name": "get_time"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_data_url_image_is_sent_as_base64(stream: bool) -> None:
+    sent = await _sent_messages(
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe the image."},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}},
+                ],
+            }
+        ],
+        stream,
+    )
+
+    assert sent[0] == {"role": "user", "content": "Describe the image.", "images": [b"\x89PNG\r\n\x1a\n"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_tool_result_image_is_sent_with_the_tool_message(stream: bool) -> None:
+    """Ollama reads `images` on tool messages too, so a screenshot a tool returns must reach the model."""
+    sent = await _sent_messages(
+        [
+            {"role": "user", "content": "Take a screenshot."},
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "name": "screenshot",
+                "content": [
+                    {"type": "text", "text": "screenshot attached"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}},
+                ],
+            },
+        ],
+        stream,
+    )
+
+    assert sent[1] == {
+        "role": "tool",
+        "content": "screenshot attached",
+        "tool_name": "screenshot",
+        "images": [b"\x89PNG\r\n\x1a\n"],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["user", "tool"])
+async def test_image_payload_naming_a_local_file_is_sent_as_given(
+    role: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Ollama SDK sends the contents of any image string that names an existing file, so a request could leak it."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "AAAA").write_bytes(b"local file contents")
+    sent_images: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        sent_images.extend(image for m in json.loads(request.content)["messages"] for image in m.get("images") or [])
+        return httpx.Response(
+            200,
+            json={
+                "model": "llama3.2",
+                "created_at": "2024-09-12T21:17:29.110811Z",
+                "message": {"role": "assistant", "content": ""},
+                "done": True,
+            },
+        )
+
+    message: dict[str, Any] = {
+        "role": role,
+        "content": [
+            {"type": "text", "text": "Describe the image."},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+        ],
+    }
+    if role == "tool":
+        message["tool_call_id"] = "call_1"
+
+    provider = OllamaProvider(api_base="http://ollama.test", transport=httpx.MockTransport(handle))
+    try:
+        await provider.acompletion(model="llama3.2", messages=[message])
+    finally:
+        await provider.client._client.aclose()
+
+    assert sent_images == ["AAAA"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("role", ["user", "tool"])
+@pytest.mark.parametrize(
+    "part",
+    [
+        {"type": "file", "file": {"filename": "cv.pdf", "file_data": "data:application/pdf;base64,JVBERi0="}},
+        {"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}},
+        {"type": "input_audio", "input_audio": {"data": "UklGRg==", "format": "wav"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png,AAAA"}},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,/etc/hosts"}},
+    ],
+    ids=["pdf-file", "url-image", "audio", "empty-data-uri", "non-base64-data-uri", "invalid-base64-payload"],
+)
+async def test_content_ollama_cannot_send_is_refused(part: dict[str, Any], role: str, stream: bool) -> None:
+    """Ollama takes text and base64 images only, so dropping anything else answers as if nothing was attached."""
+    message: dict[str, Any] = {"role": role, "content": [{"type": "text", "text": "What is in the attachment?"}, part]}
+    if role == "tool":
+        message["tool_call_id"] = "call_1"
+
+    with pytest.raises(InvalidRequestError):
+        await _sent_messages([message], stream)
 
 
 @pytest.mark.asyncio
