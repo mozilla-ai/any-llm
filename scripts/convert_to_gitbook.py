@@ -60,6 +60,7 @@ def build_summary() -> str:
 * [Providers](providers.md)
 * [Files](files.md)
 * [Decide](decide.md)
+* [Video Generation](video.md)
 * [TypeSafe](typesafe.md)
 * [Prompt Caching](caching.md)
 
@@ -74,6 +75,7 @@ def build_summary() -> str:
 * [Completion](api/completion.md)
 * [Embedding](api/embedding.md)
 * [Decide](api/decide.md)
+* [Video](api/video.md)
 * [Messages](api/messages.md)
 * [Exceptions](api/exceptions.md)
 * [List Models](api/list-models.md)
@@ -86,6 +88,7 @@ def build_summary() -> str:
   * [Provider](api/types/provider.md)
   * [Batch](api/types/batch.md)
   * [Decide](api/types/decide.md)
+  * [Video](api/types/video.md)
 
 """
 
