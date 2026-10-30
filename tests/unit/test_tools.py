@@ -295,5 +295,6 @@ def test_callable_to_tool_literal_of_enum_members_uses_values() -> None:
     assert props["unit"]["enum"] == ["celsius", "fahrenheit"]
     assert props["unit"]["type"] == "string"
     assert props["level"]["enum"] == [1]
+    assert type(props["level"]["enum"][0]) is int
     assert props["level"]["type"] == "integer"
     json.dumps(tool)
