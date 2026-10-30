@@ -449,9 +449,17 @@ async def test_messages_output_config_effort(
     try:
         if provider not in provider_reasoning_model_map:
             pytest.skip(f"{provider.value} has no reasoning model to test, skipping")
+        if provider == LLMProvider.AZUREOPENAI:
+            pytest.skip(
+                "The CI Azure OpenAI resource deploys only gpt-4.1-nano, which is not a reasoning model "
+                "and answers reasoning_effort with 400 'Unrecognized request argument'"
+            )
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
         result = await llm.amessages(
-            model=provider_reasoning_model_map[provider],
+            # Claude Haiku 4.5 answers `effort` with a 400 ValidationException on Bedrock.
+            model=_BEDROCK_ADAPTIVE_CLAUDE_MODEL
+            if provider == LLMProvider.BEDROCK
+            else provider_reasoning_model_map[provider],
             messages=[{"role": "user", "content": "Say hello in exactly one word."}],
             max_tokens=4096,
             output_format={"effort": "low"},
