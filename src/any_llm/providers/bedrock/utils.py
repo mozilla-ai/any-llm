@@ -228,12 +228,32 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     system_message, formatted_messages = _convert_messages(params.messages)
     result_kwargs["messages"] = formatted_messages
+    if "toolConfig" not in result_kwargs:
+        replayed_tool_config = _replayed_tool_config(formatted_messages)
+        if replayed_tool_config is not None:
+            result_kwargs["toolConfig"] = replayed_tool_config
     if system_message:
         result_kwargs["system"] = system_message
 
     result_kwargs["modelId"] = params.model_id
 
     return result_kwargs
+
+
+def _replayed_tool_config(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Declare the tools a conversation already called, for a request that declares none.
+
+    Converse refuses a request whose messages hold toolUse or toolResult blocks without a
+    `toolConfig` ("The toolConfig field must be defined when using toolUse and toolResult
+    content blocks"), which is what an agent loop sends when it withholds its tools to make
+    the model answer. Other providers accept that conversation as it is.
+    """
+    names = dict.fromkeys(
+        block["toolUse"]["name"] for message in messages for block in message["content"] if "toolUse" in block
+    )
+    if not names:
+        return None
+    return _convert_tool_spec([{"type": "function", "function": {"name": name}} for name in names], tool_choice=None)
 
 
 def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str, Any] | None) -> dict[str, Any]:
