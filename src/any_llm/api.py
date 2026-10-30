@@ -21,6 +21,7 @@ from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.rerank import RerankResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponseInput, ResponseStreamEvent
+from any_llm.types.video import VideoJob, VideoOutput
 
 
 def completion(
@@ -1897,3 +1898,307 @@ async def aretrieve_batch_results(
     """
     llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.aretrieve_batch_results(batch_id, **kwargs)
+
+
+def video_generation(
+    model: str,
+    prompt: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    seconds: int | None = None,
+    size: str | None = None,
+    seed: int | None = None,
+    negative_prompt: str | None = None,
+    reference_images: list[str] | None = None,
+    first_frame: str | None = None,
+    last_frame: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> VideoJob:
+    """Start a video generation job.
+
+    Video generation is slow, so the provider returns a job rather than a video. Poll it with
+    `retrieve_video`, or wait with `poll_video`, until `VideoJob.done`.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='ByteDance/Seedance-2.0', provider='together').
+            **Alternative**: Combined format 'provider:model' (e.g., 'together:ByteDance/Seedance-2.0').
+        provider: Provider name to use for the request (e.g., 'together').
+        prompt: A text description of the desired video.
+        seconds: Length of the video in seconds.
+        size: Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720').
+        seed: Seed for reproducible generation.
+        negative_prompt: What the video should not contain.
+        reference_images: Image URLs the video should take its subjects or style from.
+        first_frame: Image URL to start the video from.
+        last_frame: Image URL to end the video on.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The video job, usually still `queued` or `in_progress`.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = AnyLLM.resolve_provider_key(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.video_generation(
+        model_name,
+        prompt,
+        seconds=seconds,
+        size=size,
+        seed=seed,
+        negative_prompt=negative_prompt,
+        reference_images=reference_images,
+        first_frame=first_frame,
+        last_frame=last_frame,
+        **kwargs,
+    )
+
+
+async def avideo_generation(
+    model: str,
+    prompt: str,
+    *,
+    provider: str | LLMProvider | None = None,
+    seconds: int | None = None,
+    size: str | None = None,
+    seed: int | None = None,
+    negative_prompt: str | None = None,
+    reference_images: list[str] | None = None,
+    first_frame: str | None = None,
+    last_frame: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> VideoJob:
+    """Start a video generation job asynchronously.
+
+    Video generation is slow, so the provider returns a job rather than a video. Poll it with
+    `aretrieve_video`, or wait with `apoll_video`, until `VideoJob.done`.
+
+    Args:
+        model: Model identifier. **Recommended**: Use with separate `provider` parameter (e.g., model='ByteDance/Seedance-2.0', provider='together').
+            **Alternative**: Combined format 'provider:model' (e.g., 'together:ByteDance/Seedance-2.0').
+        provider: Provider name to use for the request (e.g., 'together').
+        prompt: A text description of the desired video.
+        seconds: Length of the video in seconds.
+        size: Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720').
+        seed: Seed for reproducible generation.
+        negative_prompt: What the video should not contain.
+        reference_images: Image URLs the video should take its subjects or style from.
+        first_frame: Image URL to start the video from.
+        last_frame: Image URL to end the video on.
+        api_key: API key for the provider.
+        api_base: Base URL for the provider API.
+        client_args: Additional provider-specific arguments for client instantiation.
+        **kwargs: Additional provider-specific arguments.
+
+    Returns:
+        The video job, usually still `queued` or `in_progress`.
+
+    """
+    if provider is None:
+        provider_key, model_name = AnyLLM.split_model_provider(model)
+    else:
+        provider_key = AnyLLM.resolve_provider_key(provider)
+        model_name = model
+
+    llm = AnyLLM.create(provider_key, api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.avideo_generation(
+        model_name,
+        prompt,
+        seconds=seconds,
+        size=size,
+        seed=seed,
+        negative_prompt=negative_prompt,
+        reference_images=reference_images,
+        first_frame=first_frame,
+        last_frame=last_frame,
+        **kwargs,
+    )
+
+
+def retrieve_video(
+    provider: str | LLMProvider,
+    video_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> VideoJob:
+    """Retrieve a video job.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'together')
+        video_id: The ID of the video job to retrieve
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The video job with its current status, and its outputs once completed.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.retrieve_video(video_id, **kwargs)
+
+
+async def aretrieve_video(
+    provider: str | LLMProvider,
+    video_id: str,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> VideoJob:
+    """Retrieve a video job asynchronously.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'together')
+        video_id: The ID of the video job to retrieve
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The video job with its current status, and its outputs once completed.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.aretrieve_video(video_id, **kwargs)
+
+
+def poll_video(
+    provider: str | LLMProvider,
+    video_id: str,
+    *,
+    poll_interval: float = 5.0,
+    timeout: float | None = 600.0,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> VideoJob:
+    """Wait for a video job to finish.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'together')
+        video_id: The ID of the video job to wait for
+        poll_interval: Seconds to wait between retrievals
+        timeout: Seconds to wait in total before giving up, or `None` to wait forever
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments passed to each retrieval
+
+    Returns:
+        The finished video job. A `failed` job is returned, not raised, so its `error` can be read.
+
+    Raises:
+        TimeoutError: If the job is still running after `timeout` seconds.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.poll_video(video_id, poll_interval=poll_interval, timeout=timeout, **kwargs)
+
+
+async def apoll_video(
+    provider: str | LLMProvider,
+    video_id: str,
+    *,
+    poll_interval: float = 5.0,
+    timeout: float | None = 600.0,  # noqa: ASYNC109  # total wait across polls, enforced by AnyLLM.apoll_video
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> VideoJob:
+    """Wait for a video job to finish asynchronously.
+
+    Args:
+        provider: Provider name to use for the request (e.g., 'together')
+        video_id: The ID of the video job to wait for
+        poll_interval: Seconds to wait between retrievals
+        timeout: Seconds to wait in total before giving up, or `None` to wait forever
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments passed to each retrieval
+
+    Returns:
+        The finished video job. A `failed` job is returned, not raised, so its `error` can be read.
+
+    Raises:
+        TimeoutError: If the job is still running after `timeout` seconds.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.apoll_video(video_id, poll_interval=poll_interval, timeout=timeout, **kwargs)
+
+
+def download_video(
+    provider: str | LLMProvider,
+    output: VideoOutput,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> bytes:
+    """Download a generated video.
+
+    Args:
+        provider: Provider that generated the video (e.g., 'together')
+        output: One entry of `VideoJob.outputs`
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The video file, usually MP4.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.download_video(output, **kwargs)
+
+
+async def adownload_video(
+    provider: str | LLMProvider,
+    output: VideoOutput,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> bytes:
+    """Download a generated video asynchronously.
+
+    Args:
+        provider: Provider that generated the video (e.g., 'together')
+        output: One entry of `VideoJob.outputs`
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+        **kwargs: Additional provider-specific arguments
+
+    Returns:
+        The video file, usually MP4.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return await llm.adownload_video(output, **kwargs)
