@@ -48,9 +48,11 @@ job = poll_video("together", job.id, poll_interval=10, timeout=900)
 if job.status == "failed":
     raise RuntimeError(job.error.message if job.error else "video generation failed")
 
-with open("boat.mp4", "wb") as file:
-    file.write(download_video("together", job.outputs[0]))
+video = download_video("together", job.outputs[0])
+print(f"{len(video)} bytes of {job.outputs[0].mime_type}")
 ```
+
+Write `video` to a file with the extension its `mime_type` implies, `.mp4` for `video/mp4`.
 
 The same call works against Gemini by changing the model string and dropping `seconds`, which Omni Flash does not take:
 
