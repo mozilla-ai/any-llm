@@ -1571,6 +1571,64 @@ def test_convert_params_rejects_reserved_tool_name_without_response_format() -> 
         )
 
 
+def _replayed_search(*, repeat: bool = False) -> list[dict[str, Any]]:
+    """A conversation that called `web_search`, as an agent loop replays it."""
+    turns: list[dict[str, Any]] = [{"role": "user", "content": "find it"}]
+    for index in range(2 if repeat else 1):
+        call_id = f"call_{index}"
+        turns.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": call_id, "type": "function", "function": {"name": "web_search", "arguments": "{}"}}
+                ],
+            }
+        )
+        turns.append({"role": "tool", "tool_call_id": call_id, "content": "results"})
+    turns.append({"role": "user", "content": "Answer now."})
+    return turns
+
+
+def test_convert_params_declares_replayed_tools_when_none_are_passed() -> None:
+    """Converse refuses toolUse/toolResult blocks in a request with no toolConfig."""
+    result = _convert_params(
+        CompletionParams(model_id="nvidia.nemotron-super-3-120b", messages=_replayed_search(repeat=True)),
+        {},
+    )
+
+    assert result["toolConfig"] == {
+        "tools": [
+            {
+                "toolSpec": {
+                    "name": "web_search",
+                    "description": " ",
+                    "inputSchema": {"json": {"type": "object", "properties": {}}},
+                }
+            }
+        ]
+    }
+
+
+def test_convert_params_keeps_the_passed_tools_over_replayed_ones() -> None:
+    tools = [{"type": "function", "function": {"name": "get_weather", "parameters": None}}]
+    result = _convert_params(
+        CompletionParams(model_id="nvidia.nemotron-super-3-120b", messages=_replayed_search(), tools=tools),
+        {},
+    )
+
+    assert [tool["toolSpec"]["name"] for tool in result["toolConfig"]["tools"]] == ["get_weather"]
+
+
+def test_convert_params_sends_no_tool_config_without_tools_or_tool_calls() -> None:
+    result = _convert_params(
+        CompletionParams(model_id="nvidia.nemotron-super-3-120b", messages=[{"role": "user", "content": "hi"}]),
+        {},
+    )
+
+    assert "toolConfig" not in result
+
+
 def test_convert_params_forwards_zero_temperature() -> None:
     """temperature=0.0 asks for greedy decoding and must not be dropped as a falsy value."""
     result = _convert_params(
