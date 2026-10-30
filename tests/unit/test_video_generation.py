@@ -345,7 +345,7 @@ def test_provider_metadata_reports_video_generation() -> None:
 
 
 def test_supports_video_generation_only_on_expected_providers() -> None:
-    expected_supported: set[LLMProvider] = set()
+    expected_supported = {LLMProvider.TOGETHER}
 
     for provider_enum in expected_supported:
         cls = AnyLLM.get_provider_class(provider_enum)

@@ -21,6 +21,7 @@ try:
         _convert_models_list,
         _convert_together_rerank_response,
         _convert_together_response_to_chat_completion,
+        _convert_video_job,
         _create_openai_chunk_from_together_chunk,
         _create_openai_embedding_response_from_together,
     )
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     )
     from any_llm.types.model import Model
     from any_llm.types.rerank import RerankResponse
+    from any_llm.types.video import VideoGenerationParams, VideoJob
 
 DEFAULT_SCHEMA_NAME = "response_schema"
 _SCHEMA_METADATA_KEYS = ("name", "description", "strict")
@@ -88,6 +90,7 @@ class TogetherProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = True
+    SUPPORTS_VIDEO_GENERATION = True
 
     # The Together SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
@@ -296,6 +299,44 @@ class TogetherProvider(AnyLLM):
             **rerank_kwargs,
         )
         return self._convert_rerank_response(response)
+
+    @staticmethod
+    def _convert_video_params(params: VideoGenerationParams, **kwargs: Any) -> dict[str, Any]:
+        """Convert VideoGenerationParams to kwargs for ``client.videos.create``.
+
+        Together takes the size as ``width``/``height``, the length as a string, and the first
+        and last frames as ``frame_images`` entries, which merge with any the caller passes.
+        """
+        create_kwargs: dict[str, Any] = {"model": params.model_id, "prompt": params.prompt}
+        if params.seconds is not None:
+            create_kwargs["seconds"] = str(params.seconds)
+        if (dimensions := params.parse_size()) is not None:
+            create_kwargs["width"], create_kwargs["height"] = dimensions
+        if params.seed is not None:
+            create_kwargs["seed"] = params.seed
+        if params.negative_prompt is not None:
+            create_kwargs["negative_prompt"] = params.negative_prompt
+        if params.reference_images is not None:
+            create_kwargs["reference_images"] = params.reference_images
+        frame_images = list(kwargs.pop("frame_images", None) or [])
+        if params.first_frame is not None:
+            frame_images.append({"input_image": params.first_frame, "frame": "first"})
+        if params.last_frame is not None:
+            frame_images.append({"input_image": params.last_frame, "frame": "last"})
+        if frame_images:
+            create_kwargs["frame_images"] = frame_images
+        create_kwargs.update(kwargs)
+        return create_kwargs
+
+    @override
+    async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:
+        job = await self.client.videos.create(**self._convert_video_params(params, **kwargs))
+        return _convert_video_job(job)
+
+    @override
+    async def _aretrieve_video(self, video_id: str, **kwargs: Any) -> VideoJob:
+        job = await self.client.videos.retrieve(video_id, **kwargs)
+        return _convert_video_job(job)
 
     @override
     async def _acreate_batch(
