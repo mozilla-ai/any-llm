@@ -14,7 +14,7 @@ from tests.constants import EXPECTED_PROVIDERS
 _PROMPT = "A paper boat drifting across a puddle, overcast light, static camera."
 _GENERATION_KWARGS: dict[LLMProvider, dict[str, Any]] = {
     LLMProvider.GEMINI: {"size": "640x360"},
-    LLMProvider.TOGETHER: {"seconds": 4, "size": "864x480"},
+    LLMProvider.TOGETHER: {"seconds": 4, "size": "864x496"},
 }
 
 
