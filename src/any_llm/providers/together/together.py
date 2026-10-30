@@ -30,12 +30,8 @@ except ImportError as e:
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
-    from together.types import (
-        ChatCompletionChunk as TogetherChatCompletionChunk,
-    )
-    from together.types import (
-        ChatCompletionResponse as TogetherChatCompletion,
-    )
+    from together.types.chat import ChatCompletion as TogetherChatCompletion
+    from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 
     from any_llm.types.batch import Batch
     from any_llm.types.completion import (

@@ -4,7 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 from together.types.chat.chat_completion_usage import ChatCompletionUsage as TogetherChatCompletionUsage
 
 from any_llm.providers.together.utils import (
