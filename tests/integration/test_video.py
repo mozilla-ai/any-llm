@@ -9,8 +9,13 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.video import VideoJob
 from tests.constants import EXPECTED_PROVIDERS
 
-# Together bills about $0.16 per Seedance clip, so one short, low-resolution clip per run.
+# Every provider bills per clip, so one short, low-resolution clip per run. Gemini takes no
+# length and renders 360p as its smallest size; Together takes both.
 _PROMPT = "A paper boat drifting across a puddle, overcast light, static camera."
+_GENERATION_KWARGS: dict[LLMProvider, dict[str, Any]] = {
+    LLMProvider.GEMINI: {"size": "640x360"},
+    LLMProvider.TOGETHER: {"seconds": 4, "size": "864x480"},
+}
 
 
 @pytest.mark.asyncio
@@ -26,7 +31,7 @@ async def test_video_generation_providers_async(
             pytest.skip(f"{provider.value} does not support video generation, skipping")
 
         model_id = video_provider_model_map[provider]
-        job = await llm.avideo_generation(model_id, _PROMPT, seconds=4, size="864x480")
+        job = await llm.avideo_generation(model_id, _PROMPT, **_GENERATION_KWARGS.get(provider, {}))
     except MissingApiKeyError:
         if provider in EXPECTED_PROVIDERS:
             raise

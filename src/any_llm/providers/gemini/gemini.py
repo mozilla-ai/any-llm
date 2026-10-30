@@ -1,6 +1,7 @@
 import os
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
+from urllib.parse import urlparse
 
 from google import genai
 from google.genai import types
@@ -9,10 +10,13 @@ from typing_extensions import override
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.files import FileOperation
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
+from any_llm.types.video import VideoGenerationParams, VideoJob
 from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
 from .files import GeminiFileMethods
+
+_FILES_API_HOST = "generativelanguage.googleapis.com"
 
 
 class GeminiProvider(GeminiFileMethods, GoogleProvider):
@@ -23,6 +27,7 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
     ENV_API_KEY_NAME = "GEMINI_API_KEY/GOOGLE_API_KEY"
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
     SUPPORTS_RESPONSES = True
+    SUPPORTS_VIDEO_GENERATION = True
     SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset({"upload", "list", "retrieve", "delete"})
 
     _interactions_api_version: str | None
@@ -111,3 +116,30 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
                 yield event
         finally:
             await aclose_quietly(converted_stream)
+
+    @override
+    async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:
+        # Vertex shares this package without requiring the Interactions SDK.
+        from .video import convert_interaction_to_video_job, convert_video_params
+
+        create_kwargs = (
+            convert_video_params(params, self.PROVIDER_NAME, api_version=self._interactions_api_version) | kwargs
+        )
+        interaction = await self.client.aio.interactions.create(**create_kwargs)
+        return convert_interaction_to_video_job(interaction, fallback_model=params.model_id)
+
+    @override
+    async def _aretrieve_video(self, video_id: str, **kwargs: Any) -> VideoJob:
+        from .video import convert_interaction_to_video_job
+
+        if self._interactions_api_version is not None:
+            kwargs.setdefault("api_version", self._interactions_api_version)
+        interaction = await self.client.aio.interactions.get(video_id, **kwargs)
+        return convert_interaction_to_video_job(interaction, fallback_model="")
+
+    @override
+    async def _adownload_video(self, url: str, **kwargs: Any) -> bytes:
+        # A Files API URI needs the API key, which the SDK's download adds; other URLs are public.
+        if urlparse(url).hostname == _FILES_API_HOST:
+            return cast("bytes", await self.client.aio.files.download(file=url, **kwargs))
+        return await super()._adownload_video(url, **kwargs)
