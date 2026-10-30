@@ -64,7 +64,8 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.CASCADIA: "N/A",
         LLMProvider.ATLASCLOUD: "deepseek-ai/deepseek-v4-flash",
         LLMProvider.KENARI: "deepseek-v4-flash",
-        LLMProvider.LMSTUDIO: "qwen3-0.6b",
+        # CI downloads and loads only the LMSTUDIO_MODEL in tests-integration.yaml.
+        LLMProvider.LMSTUDIO: "qwen/qwen3-1.7b",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
