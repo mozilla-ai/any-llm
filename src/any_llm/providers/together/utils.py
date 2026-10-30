@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 
+from any_llm.exceptions import ProviderError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch
 from any_llm.types.completion import (
@@ -22,6 +23,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse, RerankResult, RerankUsage
+from any_llm.types.video import VideoError, VideoJob, VideoOutput, VideoStatus
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
 from any_llm.utils.usage import completion_usage_from_dict
 
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from together.types import BatchJob as TogetherBatchJob
     from together.types import Embedding as TogetherEmbedding
     from together.types import RerankCreateResponse as TogetherRerankResponse
+    from together.types import VideoJob as TogetherVideoJob
 
 DEFAULT_COMPLETION_WINDOW = "24h"
 
@@ -270,4 +273,38 @@ def _convert_batch_job_to_openai(batch_job: "TogetherBatchJob") -> Batch:
         output_file_id=batch_job.output_file_id,
         error_file_id=batch_job.error_file_id,
         model=batch_job.x_model_id,
+    )
+
+
+# Together's SDK types only the statuses it has seen; the API may still add a queued state.
+_VIDEO_STATUSES: dict[str, VideoStatus] = {
+    "queued": "queued",
+    "pending": "queued",
+    "in_progress": "in_progress",
+    "processing": "in_progress",
+    "completed": "completed",
+    "failed": "failed",
+}
+
+
+def _convert_video_job(job: "TogetherVideoJob") -> VideoJob:
+    """Convert a Together video job to a normalized VideoJob."""
+    status = _VIDEO_STATUSES.get(job.status)
+    if status is None:
+        msg = f"Together returned an unknown video status {job.status!r} for job {job.id}"
+        raise ProviderError(msg)
+    try:
+        seconds: int | None = int(float(job.seconds))
+    except (TypeError, ValueError):
+        seconds = None
+    return VideoJob(
+        id=job.id,
+        model=job.model,
+        status=status,
+        created_at=int(job.created_at),
+        completed_at=None if job.completed_at is None else int(job.completed_at),
+        seconds=seconds,
+        size=job.size or None,
+        error=None if job.error is None else VideoError(message=job.error.message, code=job.error.code),
+        outputs=[] if job.outputs is None else [VideoOutput(url=job.outputs.video_url)],
     )
