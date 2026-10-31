@@ -194,7 +194,7 @@ async def test_default_model_reaches_chat_transport(request: pytest.FixtureReque
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model", ["MiniMax-M3.1-Flash", "MiniMax-M3", "MiniMax-M2", "custom-model"])
-@pytest.mark.parametrize("api_base", [None, "https://api.minimax.cn/v1", "https://custom.example/v1"])
+@pytest.mark.parametrize("api_base", [None, "https://api.minimaxi.com/v1", "https://custom.example/v1"])
 async def test_explicit_model_reaches_chat_transport(model: str, api_base: str | None) -> None:
     await _assert_chat_request(model, api_base, "auto")
 
