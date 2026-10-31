@@ -261,7 +261,7 @@ def _convert_messages_for_anthropic(messages: list[dict[str, Any]]) -> tuple[str
                             "type": "tool_use",
                             "id": tool_call["id"],
                             "name": tool_call["function"]["name"],
-                            "input": json.loads(tool_call["function"]["arguments"]),
+                            "input": json.loads(tool_call["function"]["arguments"] or "{}"),
                         }
                     )
                 message = {
