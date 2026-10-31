@@ -38,7 +38,7 @@ from any_llm import download_video, poll_video, video_generation
 
 job = video_generation(
     "together:ByteDance/Seedance-2.0",
-    prompt="A paper boat drifting across a puddle, overcast light, static camera.",
+    prompt="A yellow rubber duck sits on a wooden table while sunlight slowly moves across it.",
     seconds=5,
     size="1280x720",
 )

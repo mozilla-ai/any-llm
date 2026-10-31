@@ -12,8 +12,9 @@ from any_llm.types.video import VideoJob
 from tests.constants import EXPECTED_PROVIDERS
 
 # Every provider bills per clip, so one short, low-resolution clip per run. Gemini takes no
-# length and renders 360p as its smallest size; Together takes both.
-_PROMPT = "A paper boat drifting across a puddle, overcast light, static camera."
+# length and renders 360p as its smallest size; Together takes both. Seedance's output
+# moderation rejected a paper boat on a puddle in four of seven renders, so keep the scene dull.
+_PROMPT = "A yellow rubber duck sits on a wooden table while sunlight slowly moves across it."
 _FIRST_FRAME_PROMPT = "The logo slowly rotates in place while soft light sweeps across it."
 _GENERATION_KWARGS: dict[LLMProvider, dict[str, Any]] = {
     LLMProvider.GEMINI: {"size": "640x360"},
