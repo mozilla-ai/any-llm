@@ -19,6 +19,9 @@ _GENERATION_KWARGS: dict[LLMProvider, dict[str, Any]] = {
     LLMProvider.GEMINI: {"size": "640x360"},
     LLMProvider.TOGETHER: {"seconds": 4, "size": "864x496"},
 }
+# A Seedance render takes two to three minutes, past the 120-second default in pyproject.toml,
+# and apoll_video gives up on its own after 900 seconds.
+_TEST_TIMEOUT_SECONDS = 1000
 _ASSETS_DIR = Path(__file__).parent.parent / "assets"
 _HOSTED_LOGO_URL = "https://raw.githubusercontent.com/mozilla-ai/any-llm/main/tests/assets/any-llm-logo.png"
 
@@ -66,6 +69,8 @@ async def _start_video_job(
 
 async def _finish_video_job(llm: AnyLLM, job: VideoJob) -> None:
     finished = await llm.apoll_video(job.id, poll_interval=10, timeout=900)
+    # Seedance's output moderation now and then rejects a harmless clip with code
+    # content_policy_violation; the integration retry in conftest.py covers that.
     assert finished.status == "completed", finished.error
     assert finished.outputs
 
@@ -74,6 +79,7 @@ async def _finish_video_job(llm: AnyLLM, job: VideoJob) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(_TEST_TIMEOUT_SECONDS)
 async def test_video_generation_providers_async(
     provider: LLMProvider,
     video_provider_model_map: dict[LLMProvider, str],
@@ -89,6 +95,7 @@ async def test_video_generation_providers_async(
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(_TEST_TIMEOUT_SECONDS)
 async def test_video_generation_from_a_first_frame_async(
     provider: LLMProvider,
     video_provider_model_map: dict[LLMProvider, str],
