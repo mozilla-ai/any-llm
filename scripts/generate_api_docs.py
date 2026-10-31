@@ -27,6 +27,7 @@ from any_llm.types import decide as decide_types
 from any_llm.types import messages as messages_types
 from any_llm.types import provider as provider_types
 from any_llm.types import responses as responses_types
+from any_llm.types import video as video_types
 from any_llm.utils.exception_handler import _REJECTED_REQUEST_STATUSES, _STATUS_ERROR_CLASSES
 
 DOCS_API_DIR = Path(__file__).parent.parent / "docs" / "api"
@@ -563,6 +564,63 @@ async def alist_models(self, **kwargs) -> Sequence[Model]
         """```
 def decide(self, model, state, questions, *, images=None, **kwargs) -> DecideResponse
 async def adecide(self, model, state, questions, *, images=None, timeout=None, **kwargs) -> DecideResponse
+```"""
+    )
+
+    # video_generation / avideo_generation
+    parts.append("")
+    parts.append("### `video_generation()` / `avideo_generation()`")
+    parts.append("")
+    parts.append(
+        "Start a video generation job. The provider returns a `VideoJob` to poll rather than a video. "
+        "See the [Video](video.md) reference."
+    )
+    parts.append("")
+    parts.append(
+        """```
+def video_generation(self, model, prompt, **kwargs) -> VideoJob
+async def avideo_generation(self, model, prompt, *, seconds=None, size=None, seed=None, negative_prompt=None, reference_images=None, first_frame=None, last_frame=None, **kwargs) -> VideoJob
+```"""
+    )
+
+    # retrieve_video / aretrieve_video
+    parts.append("")
+    parts.append("### `retrieve_video()` / `aretrieve_video()`")
+    parts.append("")
+    parts.append("Read a video job's status, and its outputs once it is completed.")
+    parts.append("")
+    parts.append(
+        """```
+def retrieve_video(self, video_id, **kwargs) -> VideoJob
+async def aretrieve_video(self, video_id, **kwargs) -> VideoJob
+```"""
+    )
+
+    # poll_video / apoll_video
+    parts.append("")
+    parts.append("### `poll_video()` / `apoll_video()`")
+    parts.append("")
+    parts.append(
+        "Retrieve a video job until it is `completed` or `failed`, or raise `TimeoutError` after `timeout` seconds."
+    )
+    parts.append("")
+    parts.append(
+        """```
+def poll_video(self, video_id, *, poll_interval=5.0, timeout=600.0, **kwargs) -> VideoJob
+async def apoll_video(self, video_id, *, poll_interval=5.0, timeout=600.0, **kwargs) -> VideoJob
+```"""
+    )
+
+    # download_video / adownload_video
+    parts.append("")
+    parts.append("### `download_video()` / `adownload_video()`")
+    parts.append("")
+    parts.append("Return one entry of `VideoJob.outputs` as bytes, decoding inline data or fetching its URL.")
+    parts.append("")
+    parts.append(
+        """```
+def download_video(self, output, **kwargs) -> bytes
+async def adownload_video(self, output, **kwargs) -> bytes
 ```"""
     )
 
@@ -2142,6 +2200,95 @@ def generate_types_decide_page() -> str:
     return "\n".join(parts) + "\n"
 
 
+def generate_video_page() -> str:
+    """Generate api/video.md."""
+    parts = [
+        "---",
+        "title: Video",
+        "description: Start, poll and download video generation jobs",
+        "---",
+        "",
+        "Video generation is slow, so `video_generation` returns a `VideoJob` rather than a video. "
+        "`retrieve_video` reads the job again, `poll_video` waits for it, and `download_video` fetches the result. "
+        "See [Video Generation](../video.md) for the providers and what each one takes.",
+    ]
+    for sync_fn, async_fn, heading in (
+        (api_module.video_generation, api_module.avideo_generation, "Start a job"),
+        (api_module.retrieve_video, api_module.aretrieve_video, "Read a job"),
+        (api_module.poll_video, api_module.apoll_video, "Wait for a job"),
+        (api_module.download_video, api_module.adownload_video, "Download a video"),
+    ):
+        parsed = _parse_docstring(sync_fn.__doc__)
+        parts.extend(
+            [
+                "",
+                f"## {heading}",
+                "",
+                f"### `any_llm.{sync_fn.__name__}()`",
+                "",
+                _get_signature_block(sync_fn),
+                "",
+                f"### `any_llm.{async_fn.__name__}()`",
+                "",
+                "Async variant with the same parameters.",
+                "",
+                _get_signature_block(async_fn),
+                "",
+                "### Parameters",
+                "",
+                _param_table(sync_fn, parsed),
+            ]
+        )
+    parts.extend(
+        [
+            "",
+            "## Usage",
+            "",
+            """```python
+from any_llm import download_video, poll_video, video_generation
+
+job = video_generation("together:ByteDance/Seedance-2.0", prompt="penguins building a snowman", seconds=5)
+job = poll_video("together", job.id, poll_interval=10, timeout=900)
+if job.status == "completed":
+    video = download_video("together", job.outputs[0])
+    print(f"{len(video)} bytes of {job.outputs[0].mime_type}")
+```""",
+            "",
+            '{% hint style="info" %}',
+            "Not all providers support video generation. Check the [providers page](../providers.md) for support details, or query `ProviderMetadata.video_generation` programmatically. A provider that does not support it raises `NotImplementedError`.",
+            "{% endhint %}",
+        ]
+    )
+    return "\n".join(parts) + "\n"
+
+
+def generate_types_video_page() -> str:
+    """Generate api/types/video.md."""
+    parts = [
+        "---",
+        "title: Video Types",
+        "description: Job, output and parameter models for the video API",
+        "---",
+        "",
+        "The job returned by `any_llm.video_generation()`, `any_llm.retrieve_video()` and `any_llm.poll_video()`, "
+        "and the parameters a provider receives.",
+        "",
+        "**Import:** `from any_llm.types.video import VideoJob, VideoOutput, VideoError`",
+        "",
+        "## Job",
+        "",
+        "`VideoJob.status` is one of `queued`, `in_progress`, `completed` or `failed`; `done` is `True` for the last two.",
+        "",
+    ]
+    for cls in (video_types.VideoJob, video_types.VideoOutput, video_types.VideoError):
+        parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
+
+    parts.extend(["## Parameters", ""])
+    for cls in (video_types.VideoGenerationParams,):
+        parts.extend([f"### `{cls.__name__}`", "", inspect.getdoc(cls) or "", "", _pydantic_field_table(cls), ""])
+    return "\n".join(parts)
+
+
 # Map of output file paths to generator functions
 PAGES: dict[str, Any] = {
     "any-llm.md": generate_any_llm_page,
@@ -2149,6 +2296,7 @@ PAGES: dict[str, Any] = {
     "responses.md": generate_responses_page,
     "embedding.md": generate_embedding_page,
     "decide.md": generate_decide_page,
+    "video.md": generate_video_page,
     "list-models.md": generate_list_models_page,
     "batch.md": generate_batch_page,
     "exceptions.md": generate_exceptions_page,
@@ -2160,6 +2308,7 @@ PAGES: dict[str, Any] = {
     "types/provider.md": generate_types_provider_page,
     "types/batch.md": generate_types_batch_page,
     "types/decide.md": generate_types_decide_page,
+    "types/video.md": generate_types_video_page,
 }
 
 

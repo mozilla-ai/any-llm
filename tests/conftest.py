@@ -223,6 +223,14 @@ def decide_provider_model_map() -> dict[LLMProvider, str]:
 
 
 @pytest.fixture
+def video_provider_model_map() -> dict[LLMProvider, str]:
+    return {
+        LLMProvider.GEMINI: "gemini-omni-1.1-flash",
+        LLMProvider.TOGETHER: "ByteDance/Seedance-2.0",
+    }
+
+
+@pytest.fixture
 def provider_client_config() -> dict[LLMProvider, dict[str, Any]]:
     return {
         LLMProvider.ANTHROPIC: {"timeout": 10},
