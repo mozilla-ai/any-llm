@@ -388,6 +388,32 @@ it must not blindly forward `Content-Encoding` or a compressed `Content-Length`
 for decoded bytes. Header values can include sensitive metadata such as filenames
 and should not be logged indiscriminately.
 
+## OpenAI and Azure container files
+
+For a file produced by a Code Interpreter container, pass its `container_id`
+together with its file ID to the existing retrieve and download methods:
+
+```python
+metadata = openai_provider.retrieve_file(file_id, container_id=container_id)
+with open("output.csv", "wb") as destination, openai_provider.download_file(
+    file_id, container_id=container_id
+) as download:
+    for chunk in download:
+        destination.write(chunk)
+```
+
+The same option works with `aretrieve_file` and `adownload_file`, and with an
+Azure OpenAI provider using its v1 endpoint. Metadata preserves the native
+`container_id`, `path`, and `source` fields in `model_extra`; `size_bytes` and
+`created_at` use the shared fields. A container path is not a Files `filename`,
+so unavailable shared fields stay `None`.
+
+Omit `container_id` (or pass `None`) for ordinary Files requests. Container IDs
+must be nonempty IDs without path separators, URL delimiters, or whitespace.
+Only retrieval and download accept this option; it does not change upload,
+listing, deletion, or Anthropic Files behavior. These calls read an existing
+file; they do not create a container or run code.
+
 ## Provider options and errors
 
 All OpenAI and Azure OpenAI Files methods accept `timeout`, `max_retries`, and
