@@ -150,7 +150,7 @@ VERIFIED_LOCAL_PROVIDERS: frozenset[LLMProvider] = frozenset(
 )
 """Local servers CI stands up rather than authenticates against."""
 
-VERIFIED_PROVIDERS: frozenset[LLMProvider] = VERIFIED_LOCAL_PROVIDERS | frozenset(
+VERIFIED_PROVIDERS: frozenset[str] = VERIFIED_LOCAL_PROVIDERS | frozenset(
     {
         LLMProvider.ANTHROPIC,
         LLMProvider.AZUREOPENAI,
@@ -167,6 +167,8 @@ VERIFIED_PROVIDERS: frozenset[LLMProvider] = VERIFIED_LOCAL_PROVIDERS | frozense
         LLMProvider.OPENAI,
         LLMProvider.OPENROUTER,
         LLMProvider.OTARI,
+        # Registry-only, so named by value: resolving it through LLMProvider would import the registry from here.
+        "ovhcloud",
         LLMProvider.PORTKEY,
         LLMProvider.TOGETHER,
         LLMProvider.SAMBANOVA,

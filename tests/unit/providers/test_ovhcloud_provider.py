@@ -61,14 +61,14 @@ def test_explicit_api_base_takes_precedence_over_env(monkeypatch: pytest.MonkeyP
 
 
 def test_capability_flags() -> None:
-    # Conservative baseline only: no live key was available to verify anything beyond it.
+    # Conservative baseline, plus embeddings, which /v1/embeddings serves (bge-m3, bge-multilingual-gemma2).
     assert OvhcloudProvider.SUPPORTS_COMPLETION
     assert OvhcloudProvider.SUPPORTS_COMPLETION_STREAMING
     assert OvhcloudProvider.SUPPORTS_LIST_MODELS
+    assert OvhcloudProvider.SUPPORTS_EMBEDDING
     assert not OvhcloudProvider.SUPPORTS_COMPLETION_REASONING
     assert not OvhcloudProvider.SUPPORTS_COMPLETION_IMAGE
     assert not OvhcloudProvider.SUPPORTS_COMPLETION_PDF
-    assert not OvhcloudProvider.SUPPORTS_EMBEDDING
     assert not OvhcloudProvider.SUPPORTS_MODERATION
     assert not OvhcloudProvider.SUPPORTS_BATCH
     assert not OvhcloudProvider.SUPPORTS_IMAGE_GENERATION
