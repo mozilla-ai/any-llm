@@ -47,7 +47,9 @@ async def test_ovhcloud_embedding(ovhcloud: AnyLLM, model: str) -> None:
 
     assert isinstance(result, CreateEmbeddingResponse)
     assert len(result.data) == 2
-    assert all(isinstance(v, float) for v in result.data[0].embedding)
+    for entry in result.data:
+        assert entry.embedding
+        assert all(isinstance(v, float) for v in entry.embedding)
     assert result.usage.prompt_tokens > 0
 
 
