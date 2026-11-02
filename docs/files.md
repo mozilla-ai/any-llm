@@ -394,12 +394,12 @@ For a file produced by a Code Interpreter container, pass its `container_id`
 together with its file ID to the existing retrieve and download methods:
 
 ```python
+container_id = "cntr_abc123"  # From the container_file_citation annotation
+file_id = "cfile_abc123"
+
 metadata = openai_provider.retrieve_file(file_id, container_id=container_id)
-with open("output.csv", "wb") as destination, openai_provider.download_file(
-    file_id, container_id=container_id
-) as download:
-    for chunk in download:
-        destination.write(chunk)
+with openai_provider.download_file(file_id, container_id=container_id) as download:
+    content = b"".join(download)
 ```
 
 The same option works with `aretrieve_file` and `adownload_file`, and with an
