@@ -37,6 +37,7 @@ A Pydantic `BaseModel` containing provider information and feature flags.
 | `audio_speech` | `bool` |  |
 | `rerank` | `bool` |  |
 | `decide` | `bool` | Whether the provider implements the decide API (`decide`/`adecide`). |
+| `video_generation` | `bool` | Whether the provider implements the video API (`video_generation`/`retrieve_video`). |
 | `files` | `bool` |  |
 | `file_operations` | `tuple[Literal['upload', 'list', 'retrieve', 'download', 'delete'], ...]` |  |
 

@@ -157,6 +157,42 @@ def decide(self, model, state, questions, *, images=None, **kwargs) -> DecideRes
 async def adecide(self, model, state, questions, *, images=None, timeout=None, **kwargs) -> DecideResponse
 ```
 
+### `video_generation()` / `avideo_generation()`
+
+Start a video generation job. The provider returns a `VideoJob` to poll rather than a video. See the [Video](video.md) reference.
+
+```
+def video_generation(self, model, prompt, **kwargs) -> VideoJob
+async def avideo_generation(self, model, prompt, *, seconds=None, size=None, seed=None, negative_prompt=None, reference_images=None, first_frame=None, last_frame=None, **kwargs) -> VideoJob
+```
+
+### `retrieve_video()` / `aretrieve_video()`
+
+Read a video job's status, and its outputs once it is completed.
+
+```
+def retrieve_video(self, video_id, **kwargs) -> VideoJob
+async def aretrieve_video(self, video_id, **kwargs) -> VideoJob
+```
+
+### `poll_video()` / `apoll_video()`
+
+Retrieve a video job until it is `completed` or `failed`, or raise `TimeoutError` after `timeout` seconds.
+
+```
+def poll_video(self, video_id, *, poll_interval=5.0, timeout=600.0, **kwargs) -> VideoJob
+async def apoll_video(self, video_id, *, poll_interval=5.0, timeout=600.0, **kwargs) -> VideoJob
+```
+
+### `download_video()` / `adownload_video()`
+
+Return one entry of `VideoJob.outputs` as bytes, decoding inline data or fetching its URL.
+
+```
+def download_video(self, output, **kwargs) -> bytes
+async def adownload_video(self, output, **kwargs) -> bytes
+```
+
 ### `create_batch()` / `acreate_batch()`
 
 Create a batch job. See the [Batch](batch.md) reference.
