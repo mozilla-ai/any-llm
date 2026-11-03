@@ -3,7 +3,7 @@ import sys
 from contextlib import ExitStack
 from types import ModuleType, SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from mktestdocs import check_md_file
@@ -212,6 +212,7 @@ def _build_docs_patches() -> ExitStack:
     provider_mock.list_models.return_value = fake_models
     provider_mock.decide.return_value = fake_decide
     provider_mock.get_provider_metadata.return_value = fake_metadata
+    provider_mock.download_file.return_value = MagicMock()
 
     def mock_completion_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
         if kwargs.get("stream", False):
