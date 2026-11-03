@@ -12,6 +12,7 @@ from any_llm.types.messages import MessageResponse
 from any_llm.utils.messages_compat import (
     anthropic_client_kwargs,
     prepare_blocks_for_native_messages,
+    sampling_params_in_extra_body,
     stream_native_messages,
 )
 from any_llm.utils.structured_output import is_structured_output_type
@@ -129,6 +130,7 @@ class MetaProvider(BaseOpenAIProvider):
             )
             native_kwargs["messages"] = prepare_blocks_for_native_messages(native_kwargs["messages"])
             native_kwargs.update(kwargs)
+            native_kwargs = sampling_params_in_extra_body(native_kwargs)
             if is_structured_output_type(params.output_format):
                 return await self._anthropic_client.messages.parse(output_format=params.output_format, **native_kwargs)
             message = await self._anthropic_client.messages.create(
@@ -140,6 +142,7 @@ class MetaProvider(BaseOpenAIProvider):
         api_kwargs.pop("stream", None)
         api_kwargs["messages"] = prepare_blocks_for_native_messages(api_kwargs["messages"])
         api_kwargs.update(kwargs)
+        api_kwargs = sampling_params_in_extra_body(api_kwargs)
 
         if params.stream:
             return self._stream_messages_async(**api_kwargs)

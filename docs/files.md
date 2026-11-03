@@ -292,7 +292,7 @@ download has been checked. `download_file` on an upload raises
 Anthropic marks user uploads as non-downloadable. Download files returned by
 native code execution or supported skills, using their structured `file_id`.
 `MessagesParams.container` accepts a string container ID or the documented
-Skills object (`str | ContainerParams` on Anthropic SDK 0.124+). Skills are
+Skills object (`str | ContainerParams` in the Anthropic SDK). Skills are
 GA on `messages.create`; any-llm does not infer a skills beta header.
 Tenant ownership, authorization, persistence, and cleanup remain
 application responsibilities.
@@ -428,7 +428,6 @@ which maps to Anthropic's `expires_in_seconds`. Omission leaves retention to the
 provider. The shared `purpose` parameter is available for upload and listing;
 Anthropic rejects non-`None` values. Provider-specific options remain in `**kwargs`.
 Beta values from configured headers, request headers, and `betas` are merged.
-Anthropic SDK 0.124.0 or newer is required.
 
 Gemini Files methods accept `timeout`, `max_retries`, and `extra_headers`.
 `timeout` must be a positive number of seconds; it is converted to google-genai's

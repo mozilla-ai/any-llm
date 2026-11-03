@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from anthropic import APIStatusError
 from typing_extensions import override
@@ -38,11 +38,11 @@ META = {
 }
 
 
-def provider_for(handler: Callable[[httpx.Request], httpx.Response]) -> AnthropicProvider:
+def provider_for(handler: Callable[[httpx2.Request], httpx2.Response]) -> AnthropicProvider:
     return AnthropicProvider(
         api_key="test-key",
         api_base="https://files.test",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
     )
 
 
@@ -50,11 +50,11 @@ def provider_for(handler: Callable[[httpx.Request], httpx.Response]) -> Anthropi
 async def test_upload_preserves_metadata_and_sends_multipart(tmp_path: Path) -> None:
     path = tmp_path / "input.csv"
     path.write_bytes(b"a,b\n")
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json={**META, "future_field": "preserved"})
+        return httpx2.Response(200, json={**META, "future_field": "preserved"})
 
     provider = provider_for(handle)
     try:
@@ -76,7 +76,7 @@ async def test_upload_preserves_metadata_and_sends_multipart(tmp_path: Path) -> 
 
 @pytest.mark.asyncio
 async def test_retrieve_leaves_missing_metadata_unknown() -> None:
-    provider = provider_for(lambda _: httpx.Response(200, json={"id": "file_123", "type": "file"}))
+    provider = provider_for(lambda _: httpx2.Response(200, json={"id": "file_123", "type": "file"}))
     try:
         result = await provider.aretrieve_file("file_123")
         assert result.downloadable is None
@@ -95,7 +95,7 @@ async def test_retrieve_keeps_timestamps_aware_and_preserves_extras() -> None:
         "downloadable": True,
         "future_field": {"nested": ["value"]},
     }
-    provider = provider_for(lambda _: httpx.Response(200, json=payload))
+    provider = provider_for(lambda _: httpx2.Response(200, json=payload))
     try:
         result = await provider.aretrieve_file("file_123")
         assert result.created_at == datetime(2026, 9, 14, 10, 0, 0, 123456, tzinfo=UTC)
@@ -109,11 +109,11 @@ async def test_retrieve_keeps_timestamps_aware_and_preserves_extras() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("next_cursor", [None, "page_next"])
 async def test_list_returns_one_page_without_auto_pagination(next_cursor: str | None) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json={"data": [META], "next_page": next_cursor, "future": "value"})
+        return httpx2.Response(200, json={"data": [META], "next_page": next_cursor, "future": "value"})
 
     provider = provider_for(handle)
     try:
@@ -122,18 +122,18 @@ async def test_list_returns_one_page_without_auto_pagination(next_cursor: str | 
         assert result.next_cursor == next_cursor
         assert result.model_extra == {"future": "value"}
         assert len(requests) == 1
-        assert requests[0].url.params == httpx.QueryParams(limit=1, page="page_before")
+        assert requests[0].url.params == httpx2.QueryParams(limit=1, page="page_before")
     finally:
         await provider.client.close()
 
 
 @pytest.mark.asyncio
 async def test_delete_preserves_acknowledgement_fields() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json={"id": "file_123", "type": "file_deleted", "future_field": "preserved"})
+        return httpx2.Response(200, json={"id": "file_123", "type": "file_deleted", "future_field": "preserved"})
 
     provider = provider_for(handle)
     try:
@@ -161,7 +161,7 @@ async def test_unsupported_provider_does_not_call_network() -> None:
         await provider.aupload_file(b"data")
 
 
-class CountingStream(httpx.AsyncByteStream):
+class CountingStream(httpx2.AsyncByteStream):
     def __init__(self) -> None:
         self.reads = 0
         self.closed = False
@@ -180,7 +180,7 @@ class CountingStream(httpx.AsyncByteStream):
 @pytest.mark.asyncio
 async def test_download_is_lazy_and_closes_after_early_exit() -> None:
     stream = CountingStream()
-    provider = provider_for(lambda _: httpx.Response(200, stream=stream))
+    provider = provider_for(lambda _: httpx2.Response(200, stream=stream))
     try:
         async with provider.adownload_file("file_123", chunk_size=4) as chunks:
             assert stream.reads == 0
@@ -195,9 +195,9 @@ def test_sync_calls_share_the_provider_and_download_without_prefetch() -> None:
     stream = CountingStream()
     provider = provider_for(
         lambda request: (
-            httpx.Response(200, stream=stream)
+            httpx2.Response(200, stream=stream)
             if request.url.path.endswith("/content")
-            else httpx.Response(200, json=META)
+            else httpx2.Response(200, json=META)
         )
     )
     assert provider.upload_file(b"a,b\n").id == "file_123"
@@ -215,7 +215,7 @@ def test_sync_calls_share_the_provider_and_download_without_prefetch() -> None:
     "kwargs", [{"page": "x"}, {"limit": 0}, {"limit": True}, {"limit": "1"}, {"after_id": "x"}, {"purpose": "batch"}]
 )
 async def test_invalid_list_options_fail_before_network(kwargs: dict[str, Any]) -> None:
-    def handle(_: httpx.Request) -> httpx.Response:
+    def handle(_: httpx2.Request) -> httpx2.Response:
         pytest.fail("Invalid options reached the provider")
 
     provider = provider_for(handle)
@@ -230,7 +230,7 @@ async def test_invalid_list_options_fail_before_network(kwargs: dict[str, Any]) 
 async def test_missing_file_has_file_specific_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
     provider = provider_for(
-        lambda _: httpx.Response(
+        lambda _: httpx2.Response(
             404, json={"type": "error", "error": {"type": "not_found_error", "message": "File not found"}}
         )
     )
@@ -246,11 +246,11 @@ async def test_missing_file_has_file_specific_error(monkeypatch: pytest.MonkeyPa
 @pytest.mark.asyncio
 async def test_upload_does_not_retry_and_retains_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             429, headers={"retry-after": "3"}, json={"error": {"type": "rate_limit_error", "message": "Rate limited"}}
         )
 
@@ -288,11 +288,11 @@ async def test_invalid_upload_options_are_not_silently_forwarded(kwargs: dict[st
 
 @pytest.mark.asyncio
 async def test_beta_headers_merge_with_explicit_and_default_betas() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json={"data": [], "next_page": None})
+        return httpx2.Response(200, json={"data": [], "next_page": None})
 
     provider = provider_for(handle)
     provider.client = provider.client.with_options(default_headers={"anthropic-beta": "default-beta"})
@@ -339,7 +339,7 @@ def test_sync_download_runs_in_one_context() -> None:
     """
     active = contextvars.ContextVar("download_active", default="unset")
 
-    class TracedStream(httpx.AsyncByteStream):
+    class TracedStream(httpx2.AsyncByteStream):
         @override
         async def __aiter__(self) -> AsyncIterator[bytes]:
             token = active.set("streaming")
@@ -349,7 +349,7 @@ def test_sync_download_runs_in_one_context() -> None:
             finally:
                 active.reset(token)
 
-    provider = provider_for(lambda _: httpx.Response(200, stream=TracedStream()))
+    provider = provider_for(lambda _: httpx2.Response(200, stream=TracedStream()))
     try:
         with provider.download_file("file_123", chunk_size=4) as chunks:
             assert list(chunks) == [b"data"] * 3
@@ -387,8 +387,8 @@ async def test_download_full_consumption_and_consumer_error_close_stream() -> No
     for fail in (False, True):
         stream = CountingStream()
 
-        def handle(_: httpx.Request, source: CountingStream = stream) -> httpx.Response:
-            return httpx.Response(200, stream=source)
+        def handle(_: httpx2.Request, source: CountingStream = stream) -> httpx2.Response:
+            return httpx2.Response(200, stream=source)
 
         provider = provider_for(handle)
         try:
@@ -409,7 +409,7 @@ async def test_download_full_consumption_and_consumer_error_close_stream() -> No
 @pytest.mark.asyncio
 async def test_download_cancellation_closes_upstream() -> None:
     stream = CountingStream()
-    provider = provider_for(lambda _: httpx.Response(200, stream=stream))
+    provider = provider_for(lambda _: httpx2.Response(200, stream=stream))
     try:
         with pytest.raises(asyncio.CancelledError):
             async with provider.adownload_file("file_123", chunk_size=4) as chunks:
@@ -429,10 +429,10 @@ async def test_download_network_error_during_iteration_is_unified(monkeypatch: p
         async def __aiter__(self) -> AsyncIterator[bytes]:
             yield b"data"
             message = "connection failed"
-            raise httpx.ReadError(message)
+            raise httpx2.ReadError(message)
 
     stream = BrokenStream()
-    provider = provider_for(lambda _: httpx.Response(200, stream=stream))
+    provider = provider_for(lambda _: httpx2.Response(200, stream=stream))
     try:
         with pytest.raises(ProviderError, match="connection failed"):
             async with provider.adownload_file("file_123", chunk_size=4) as chunks:
@@ -457,12 +457,12 @@ async def test_invalid_file_ids_are_rejected(file_id: str) -> None:
 @pytest.mark.asyncio
 async def test_timeout_is_forwarded_and_upload_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         message = "response lost"
-        raise httpx.ReadTimeout(message, request=request)
+        raise httpx2.ReadTimeout(message, request=request)
 
     provider = provider_for(handle)
     try:
@@ -475,12 +475,12 @@ async def test_timeout_is_forwarded_and_upload_is_not_retried(monkeypatch: pytes
 
 
 def test_sync_list_delete_and_complete_download() -> None:
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         if request.method == "DELETE":
-            return httpx.Response(200, json={"id": "file_123", "type": "file_deleted"})
+            return httpx2.Response(200, json={"id": "file_123", "type": "file_deleted"})
         if request.url.path.endswith("/content"):
-            return httpx.Response(200, content=b"abc")
-        return httpx.Response(200, json={"data": [META], "next_page": None})
+            return httpx2.Response(200, content=b"abc")
+        return httpx2.Response(200, json={"data": [META], "next_page": None})
 
     provider = provider_for(handle)
     try:
@@ -502,7 +502,7 @@ async def test_file_handle_upload_is_bounded_and_does_not_close_callers_handle()
             return super().read(size)
 
     content = BoundedFile(b"x" * 200000)
-    provider = provider_for(lambda _: httpx.Response(200, json=META))
+    provider = provider_for(lambda _: httpx2.Response(200, json=META))
     try:
         await provider.aupload_file(content, filename="data.bin")
         assert not content.closed
@@ -591,13 +591,13 @@ async def test_legacy_pagination_is_rejected(source: str) -> None:
 
 @pytest.mark.asyncio
 async def test_legacy_beta_in_default_headers_only_blocks_listing() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if request.method == "DELETE":
-            return httpx.Response(200, json={"id": "file_123", "type": "file_deleted"})
-        return httpx.Response(200, json=META)
+            return httpx2.Response(200, json={"id": "file_123", "type": "file_deleted"})
+        return httpx2.Response(200, json=META)
 
     provider = provider_for(handle)
     provider.client = provider.client.with_options(default_headers={"anthropic-beta": "files-api-2025-04-14"})
@@ -615,11 +615,11 @@ async def test_legacy_beta_in_default_headers_only_blocks_listing() -> None:
 
 @pytest.mark.asyncio
 async def test_server_limits_are_not_duplicated_in_client() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json=META if request.method == "POST" else {"data": [], "next_page": None})
+        return httpx2.Response(200, json=META if request.method == "POST" else {"data": [], "next_page": None})
 
     provider = provider_for(handle)
     try:
@@ -637,7 +637,7 @@ async def test_server_limits_are_not_duplicated_in_client() -> None:
 @pytest.mark.parametrize("operation", ["upload", "list"])
 async def test_collection_404_is_not_a_missing_file(operation: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
-    provider = provider_for(lambda _: httpx.Response(404, json={"error": {"message": "Wrong endpoint"}}))
+    provider = provider_for(lambda _: httpx2.Response(404, json={"error": {"message": "Wrong endpoint"}}))
     try:
         with pytest.raises(AnyLLMError) as error:
             if operation == "upload":
@@ -662,7 +662,7 @@ async def test_actual_task_cancellation_closes_stream() -> None:
             yield b"unreachable"
 
     stream = WaitingStream()
-    provider = provider_for(lambda _: httpx.Response(200, stream=stream))
+    provider = provider_for(lambda _: httpx2.Response(200, stream=stream))
 
     async def download() -> None:
         async with provider.adownload_file("file_123") as chunks:
@@ -683,11 +683,11 @@ async def test_actual_task_cancellation_closes_stream() -> None:
 @pytest.mark.parametrize("reads", [0, 1, 100])
 async def test_async_download_exposes_headers_on_entry_without_reading_body(reads: int) -> None:
     stream = CountingStream()
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             headers={
                 "Content-Type": "text/csv",
@@ -723,11 +723,11 @@ async def test_async_download_exposes_headers_on_entry_without_reading_body(read
 @pytest.mark.parametrize("reads", [0, 1, 100])
 def test_sync_download_exposes_headers_on_entry_without_reading_body(reads: int) -> None:
     stream = CountingStream()
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, headers={"Content-Type": "text/csv", "Content-Length": "400"}, stream=stream)
+        return httpx2.Response(200, headers={"Content-Type": "text/csv", "Content-Length": "400"}, stream=stream)
 
     provider = provider_for(handle)
     try:
@@ -757,10 +757,10 @@ async def test_download_http_errors_raise_on_context_entry(
     monkeypatch: pytest.MonkeyPatch, status_code: int, unified: bool
 ) -> None:
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1" if unified else "0")
-    responses: list[httpx.Response] = []
+    responses: list[httpx2.Response] = []
 
-    def handle(_: httpx.Request) -> httpx.Response:
-        response = httpx.Response(
+    def handle(_: httpx2.Request) -> httpx2.Response:
+        response = httpx2.Response(
             status_code,
             headers={"retry-after": "3"},
             json={"type": "error", "error": {"type": "api_error", "message": "download refused"}},
@@ -797,10 +797,10 @@ async def test_download_consumer_errors_are_not_unified(monkeypatch: pytest.Monk
     monkeypatch.setenv("ANY_LLM_UNIFIED_EXCEPTIONS", "1")
     streams: list[CountingStream] = []
 
-    def handle(_: httpx.Request) -> httpx.Response:
+    def handle(_: httpx2.Request) -> httpx2.Response:
         stream = CountingStream()
         streams.append(stream)
-        return httpx.Response(200, stream=stream)
+        return httpx2.Response(200, stream=stream)
 
     provider = provider_for(handle)
     failure = RuntimeError("consumer failed")
@@ -821,7 +821,7 @@ async def test_download_consumer_errors_are_not_unified(monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_empty_download_exposes_headers_and_closes() -> None:
-    provider = provider_for(lambda _: httpx.Response(200, headers={"content-length": "0"}, content=b""))
+    provider = provider_for(lambda _: httpx2.Response(200, headers={"content-length": "0"}, content=b""))
     try:
         async with provider.adownload_file("file_123") as download:
             assert download.status_code == 200
@@ -849,10 +849,10 @@ def test_sync_download_opens_and_closes_in_same_task(reads: int) -> None:
 
     stream = TracedStream()
 
-    def handle(_: httpx.Request) -> httpx.Response:
+    def handle(_: httpx2.Request) -> httpx2.Response:
         nonlocal token
         token = active.set(True)
-        return httpx.Response(200, stream=stream)
+        return httpx2.Response(200, stream=stream)
 
     provider = provider_for(handle)
     try:

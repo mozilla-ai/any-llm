@@ -341,6 +341,16 @@ SDK's own options in `client_args`, for example `retry_config` for Mistral or a 
 `Config` for Bedrock. For `gemini` and `vertexai`, `retry_options` that you pass in
 `http_options` take precedence over `max_retries`.
 
+## Custom HTTP Clients
+
+An `http_client` passed in `client_args` (or as a keyword to `AnyLLM.create`) goes to the
+provider's SDK client unchanged, so it must be one that SDK accepts. The Anthropic SDK is built on
+[`httpx2`](https://github.com/pydantic/httpx2), so `anthropic`, `azureanthropic`,
+`vertexaianthropic`, and `deepseek` and `meta` (which also build an Anthropic client for their
+Messages API) need an `httpx2.AsyncClient`, such as `anthropic.DefaultAsyncHttpxClient(...)`. An
+`httpx.AsyncClient` is rejected with a `TypeError` when the provider is created. The OpenAI SDK
+3.x is built on `httpx2` too, so one `httpx2.AsyncClient` serves both SDKs.
+
 ## Exception Handling
 
 The `any-llm` package provides a unified exception hierarchy that works consistently across all LLM providers.

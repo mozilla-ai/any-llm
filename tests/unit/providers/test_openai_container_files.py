@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+import httpx2
 import pytest
 from openai import APIStatusError
 
@@ -214,7 +215,7 @@ def test_sync_container_reads_use_same_routes_and_stream_cleanup(name: str, oper
 async def test_anthropic_does_not_accept_container_id(operation: str) -> None:
     provider = AnthropicProvider(
         api_key="test-key",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: pytest.fail("HTTP called"))),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _: pytest.fail("HTTP called"))),
     )
     async with provider.client:
         with pytest.raises(UnsupportedParameterError, match="container_id"):

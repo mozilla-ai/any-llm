@@ -533,7 +533,7 @@ def test_malformed_response_value_error_is_still_a_provider_error() -> None:
     ("sdk_module", "http_module"),
     [
         ("openai", "httpx2"),
-        ("anthropic", "httpx"),
+        ("anthropic", "httpx2"),
         ("groq", "httpx"),
         ("together", "httpx"),
         ("cerebras.cloud.sdk", "httpx"),

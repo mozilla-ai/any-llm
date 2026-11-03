@@ -145,7 +145,7 @@ async def test_amessages_non_streaming_uses_native_anthropic_client() -> None:
     assert result.content[0].text == "Hi!"  # type: ignore[union-attr]
     call_kwargs = provider._anthropic_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "deepseek-flash"
-    assert call_kwargs["top_k"] == 5
+    assert call_kwargs["extra_body"] == {"top_k": 5}
     assert call_kwargs["metadata"] == {"user_id": "u1"}
     assert "stream" not in call_kwargs
     assert "extra_headers" not in call_kwargs

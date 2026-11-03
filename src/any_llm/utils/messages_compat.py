@@ -1295,6 +1295,24 @@ def anthropic_client_kwargs(client_args: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in client_args.items() if key in accepted}
 
 
+_ANTHROPIC_SAMPLING_PARAMS = frozenset({"temperature", "top_p", "top_k"})
+
+
+def sampling_params_in_extra_body(api_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return Anthropic SDK message-method kwargs with the sampling parameters moved into ``extra_body``.
+
+    Anthropic SDK 1.x removed ``temperature``, ``top_p`` and ``top_k`` from its message methods,
+    so passing them raises ``TypeError``, while the API still honours them on models that predate
+    the change. Keys the caller already set in ``extra_body`` win, as they would over typed arguments.
+    """
+    sampling = {key: value for key, value in api_kwargs.items() if key in _ANTHROPIC_SAMPLING_PARAMS}
+    if not sampling:
+        return api_kwargs
+    converted = {key: value for key, value in api_kwargs.items() if key not in _ANTHROPIC_SAMPLING_PARAMS}
+    converted["extra_body"] = {**sampling, **(api_kwargs.get("extra_body") or {})}
+    return converted
+
+
 async def stream_native_messages(client: AsyncAnthropic, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:
     """Stream an Anthropic-compatible ``/v1/messages`` endpoint as any-llm's typed events.
 
