@@ -650,6 +650,38 @@ def test_rejected_request_falls_back_to_invalid_request(status_code: int) -> Non
     assert type(convert_exception(error, "openai")) is InvalidRequestError
 
 
+@pytest.mark.parametrize(
+    ("provider", "message"),
+    [
+        (
+            "anthropic",
+            "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+            "'message': 'prompt is too long: 208310 tokens > 200000 maximum'}}",
+        ),
+        (
+            "gemini",
+            "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'The input token count (1200000) "
+            "exceeds the maximum number of tokens allowed (1048576).', 'status': 'INVALID_ARGUMENT'}}",
+        ),
+    ],
+)
+def test_provider_context_window_overflow_is_context_length_exceeded(provider: str, message: str) -> None:
+    """Anthropic and Gemini word a context-window overflow without "context length",
+    and their 400 bodies also mention "invalid", which the broader pattern would claim."""
+    assert type(convert_exception(_StatusError(400, message), provider)) is ContextLengthExceededError
+
+
+def test_output_token_limit_is_not_context_length_exceeded() -> None:
+    """Anthropic's max_tokens rejection also names a token maximum, but it is a bad
+    parameter, not an oversized prompt."""
+    message = (
+        "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+        "'message': 'max_tokens: 100000 > 64000, which is the maximum allowed number of output tokens "
+        "for claude-sonnet-4-5-20250929'}}"
+    )
+    assert type(convert_exception(_StatusError(400, message), "anthropic")) is InvalidRequestError
+
+
 @pytest.mark.parametrize("status_code", [409, 413, 418, 302])
 def test_unmapped_status_defers_to_the_message_patterns(status_code: int) -> None:
     """A status with no agreed meaning here leaves the patterns in charge."""
