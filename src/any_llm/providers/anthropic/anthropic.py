@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from typing_extensions import override
 
 from any_llm.types.files import AsyncFileDownload, FileDeleted, FileInput, FileMetadata, FileOperation, FilePage
+from any_llm.utils.messages_compat import anthropic_sdk_timeout
 
 from .base import BaseAnthropicProvider
 from .files import convert_metadata, list_files, reject_unsupported, request_options, upload_file, validate_file_id
@@ -46,6 +47,7 @@ class AnthropicProvider(BaseAnthropicProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        kwargs = anthropic_sdk_timeout(kwargs)
         self.client = AsyncAnthropic(
             api_key=api_key,
             base_url=api_base,

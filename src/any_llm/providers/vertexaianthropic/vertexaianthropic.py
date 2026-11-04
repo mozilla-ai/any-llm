@@ -7,6 +7,7 @@ from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
+from any_llm.utils.messages_compat import anthropic_sdk_timeout
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -46,6 +47,7 @@ class VertexaianthropicProvider(BaseAnthropicProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        kwargs = anthropic_sdk_timeout(kwargs)
         project_id = kwargs.pop("project_id", None) or os.getenv("GOOGLE_CLOUD_PROJECT")
         region = kwargs.pop("region", None) or os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 

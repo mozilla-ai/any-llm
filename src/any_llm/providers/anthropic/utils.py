@@ -33,7 +33,7 @@ from any_llm.types.completion import (
     Reasoning,
 )
 from any_llm.types.model import Model
-from any_llm.utils.messages_compat import sampling_params_in_extra_body
+from any_llm.utils.messages_compat import anthropic_request_kwargs
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 DEFAULT_MAX_TOKENS = 8192
@@ -766,7 +766,7 @@ def _convert_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         result_kwargs["system"] = system_message
     result_kwargs["messages"] = filtered_messages
 
-    return sampling_params_in_extra_body(result_kwargs)
+    return anthropic_request_kwargs(result_kwargs)
 
 
 def _convert_models_list(models_list: list[AnthropicModelInfo]) -> list[Model]:

@@ -6,6 +6,8 @@ import inspect
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+import httpx
+import httpx2
 from anthropic import AsyncAnthropic
 from anthropic.types import CacheCreation, CodeExecutionToolResultBlock, ServerToolUseBlock
 
@@ -1292,19 +1294,36 @@ def anthropic_client_kwargs(client_args: dict[str, Any]) -> dict[str, Any]:
     the Anthropic constructor raise ``TypeError`` and break the whole provider.
     """
     accepted = inspect.signature(AsyncAnthropic.__init__).parameters
-    return {key: value for key, value in client_args.items() if key in accepted}
+    return anthropic_sdk_timeout({key: value for key, value in client_args.items() if key in accepted})
+
+
+def anthropic_sdk_timeout(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return Anthropic SDK kwargs with an ``httpx.Timeout`` under ``timeout`` rebuilt as an ``httpx2.Timeout``.
+
+    Anthropic SDK 1.x is built on ``httpx2`` and raises ``TypeError`` for an ``httpx.Timeout``, on its
+    clients and on each request. A caller holding one from an ``httpx``-based SDK keeps working.
+    """
+    timeout = kwargs.get("timeout")
+    if not isinstance(timeout, httpx.Timeout):
+        return kwargs
+    return {
+        **kwargs,
+        "timeout": httpx2.Timeout(connect=timeout.connect, read=timeout.read, write=timeout.write, pool=timeout.pool),
+    }
 
 
 _ANTHROPIC_SAMPLING_PARAMS = frozenset({"temperature", "top_p", "top_k"})
 
 
-def sampling_params_in_extra_body(api_kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Return Anthropic SDK message-method kwargs with the sampling parameters moved into ``extra_body``.
+def anthropic_request_kwargs(api_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return Anthropic SDK message-method kwargs in the form SDK 1.x accepts.
 
     Anthropic SDK 1.x removed ``temperature``, ``top_p`` and ``top_k`` from its message methods,
     so passing them raises ``TypeError``, while the API still honours them on models that predate
-    the change. Keys the caller already set in ``extra_body`` win, as they would over typed arguments.
+    the change. They move into ``extra_body``, where keys the caller already set win, as they would
+    over typed arguments. The ``timeout`` goes through :func:`anthropic_sdk_timeout`.
     """
+    api_kwargs = anthropic_sdk_timeout(api_kwargs)
     sampling = {key: value for key, value in api_kwargs.items() if key in _ANTHROPIC_SAMPLING_PARAMS}
     if not sampling:
         return api_kwargs

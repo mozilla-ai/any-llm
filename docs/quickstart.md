@@ -351,6 +351,10 @@ Messages API) need an `httpx2.AsyncClient`, such as `anthropic.DefaultAsyncHttpx
 `httpx.AsyncClient` is rejected with a `TypeError` when the provider is created. The OpenAI SDK
 3.x is built on `httpx2` too, so one `httpx2.AsyncClient` serves both SDKs.
 
+A `timeout` for these providers may be a number of seconds, an `httpx2.Timeout`, or an
+`httpx.Timeout`, which any-llm converts to the equivalent `httpx2.Timeout` before it reaches the
+Anthropic SDK.
+
 ## Exception Handling
 
 The `any-llm` package provides a unified exception hierarchy that works consistently across all LLM providers.

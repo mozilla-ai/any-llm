@@ -6,6 +6,7 @@ from typing import Any
 from typing_extensions import override
 
 from any_llm.providers.anthropic.base import BaseAnthropicProvider
+from any_llm.utils.messages_compat import anthropic_sdk_timeout
 
 MISSING_PACKAGES_ERROR = None
 try:
@@ -39,6 +40,7 @@ class AzureanthropicProvider(BaseAnthropicProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        kwargs = anthropic_sdk_timeout(kwargs)
         resource = kwargs.pop("resource", None) or os.getenv("AZURE_ANTHROPIC_RESOURCE")
 
         if api_base is not None:

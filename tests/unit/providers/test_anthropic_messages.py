@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import httpx
 import httpx2
 import pytest
 from anthropic import transform_schema
@@ -19,6 +20,8 @@ from pydantic import BaseModel
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas, _pop_anthropic_beta_header
+from any_llm.providers.azureanthropic.azureanthropic import AzureanthropicProvider
+from any_llm.providers.vertexaianthropic.vertexaianthropic import VertexaianthropicProvider
 from any_llm.types.completion import CompletionParams, ReasoningEffort
 from any_llm.types.messages import (
     CompactionDelta,
@@ -34,6 +37,7 @@ from any_llm.types.messages import (
 from any_llm.types.messages import (
     ThinkingBlock as AnyLLMThinkingBlock,
 )
+from any_llm.utils.messages_compat import anthropic_client_kwargs, anthropic_sdk_timeout
 
 
 class _ContextEditModel(BaseModel):
@@ -537,6 +541,67 @@ async def test_anthropic_sdk_caller_extra_body_overrides_sampling_parameters() -
     assert request_body["temperature"] == 0.2
     assert request_body["top_p"] == 0.9
     assert request_body["custom_field"] == "kept"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_sdk_accepts_httpx_timeout_on_client_and_requests() -> None:
+    requests: list[httpx2.Request] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json=_sdk_message_response())
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(
+            api_key="test-key", http_client=http_client, timeout=httpx.Timeout(30.0, connect=5.0)
+        )
+        await provider._acompletion(
+            CompletionParams(
+                model_id="claude-3-5-sonnet", messages=[{"role": "user", "content": "Hello"}], max_tokens=1024
+            ),
+            timeout=httpx.Timeout(20.0, connect=2.0),
+        )
+        await provider._amessages(
+            MessagesParams(model="claude-3-5-sonnet", messages=[{"role": "user", "content": "Hello"}], max_tokens=1024),
+            timeout=httpx.Timeout(20.0, connect=2.0),
+        )
+
+    assert provider.client.timeout == httpx2.Timeout(30.0, connect=5.0)
+    assert len(requests) == 2
+    assert requests[0].extensions["timeout"] == {"connect": 2.0, "read": 20.0, "write": 20.0, "pool": 20.0}
+
+
+@pytest.mark.parametrize(
+    "make_provider",
+    [
+        lambda timeout: AzureanthropicProvider(api_key="test-key", resource="test-resource", timeout=timeout),
+        lambda timeout: VertexaianthropicProvider(project_id="test-project", timeout=timeout),
+    ],
+    ids=["azureanthropic", "vertexaianthropic"],
+)
+def test_anthropic_platform_clients_accept_httpx_timeout(make_provider: Any) -> None:
+    provider = make_provider(httpx.Timeout(30.0, connect=5.0))
+
+    assert provider.client.timeout == httpx2.Timeout(30.0, connect=5.0)
+
+
+def test_anthropic_client_kwargs_converts_httpx_timeout() -> None:
+    kwargs = anthropic_client_kwargs({"timeout": httpx.Timeout(None, connect=5.0), "organization": "org"})
+
+    assert kwargs == {"timeout": httpx2.Timeout(None, connect=5.0)}
+
+
+@pytest.mark.parametrize("timeout", [30.0, None, httpx2.Timeout(30.0)])
+def test_anthropic_sdk_timeout_keeps_other_values(timeout: float | httpx2.Timeout | None) -> None:
+    kwargs = {"timeout": timeout, "model": "claude-3-5-sonnet"}
+
+    assert anthropic_sdk_timeout(kwargs) is kwargs
+
+
+def test_anthropic_sdk_timeout_without_timeout_returns_kwargs() -> None:
+    kwargs = {"model": "claude-3-5-sonnet"}
+
+    assert anthropic_sdk_timeout(kwargs) is kwargs
 
 
 @pytest.mark.asyncio

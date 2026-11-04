@@ -25,7 +25,7 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
-from any_llm.utils.messages_compat import prepare_blocks_for_native_messages, sampling_params_in_extra_body
+from any_llm.utils.messages_compat import anthropic_request_kwargs, prepare_blocks_for_native_messages
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type, normalize_output_config
 
 MISSING_PACKAGES_ERROR = None
@@ -343,7 +343,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         if betas:
             api_kwargs["betas"] = betas
         api_kwargs.update(kwargs)
-        api_kwargs = sampling_params_in_extra_body(api_kwargs)
+        api_kwargs = anthropic_request_kwargs(api_kwargs)
 
         # GA, beta, and Vertex resources have incompatible SDK method overloads.
         # Keep the dynamic boundary here rather than duplicating request handling.

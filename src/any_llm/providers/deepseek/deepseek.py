@@ -21,8 +21,8 @@ from any_llm.types.completion import ChatCompletion
 from any_llm.types.messages import MessageResponse
 from any_llm.utils.messages_compat import (
     anthropic_client_kwargs,
+    anthropic_request_kwargs,
     prepare_blocks_for_native_messages,
-    sampling_params_in_extra_body,
     stream_native_messages,
 )
 from any_llm.utils.structured_output import normalize_output_config
@@ -252,7 +252,7 @@ class DeepseekProvider(BaseOpenAIProvider):
         if output_config is not None:
             api_kwargs["output_config"] = output_config
         api_kwargs.update(kwargs)
-        api_kwargs = sampling_params_in_extra_body(api_kwargs)
+        api_kwargs = anthropic_request_kwargs(api_kwargs)
         if params.betas:
             headers = dict(api_kwargs.get("extra_headers") or {})
             headers["anthropic-beta"] = ",".join(params.betas)

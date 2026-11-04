@@ -15,6 +15,7 @@ dependencies = [
   "anthropic>=1.2.0,<2",
   "rich",
   "httpx",
+  "httpx2",
   "typing_extensions>=4.5.0",
 ]
 
