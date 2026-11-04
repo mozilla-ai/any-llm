@@ -1849,6 +1849,33 @@ def test_convert_messages_sends_tool_result_text_parts_as_text_blocks() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ('{"temp": 18}', [{"json": {"temp": 18}}]),
+        ("18 degrees", [{"text": "18 degrees"}]),
+    ],
+)
+def test_convert_messages_sends_string_tool_result_as_json_or_text(
+    content: str, expected: list[dict[str, Any]]
+) -> None:
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "weather in Paris?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "weather", "arguments": "{}"}}],
+        },
+        {"role": "tool", "tool_call_id": "t1", "content": content},
+    ]
+    _, formatted_messages = _convert_messages(messages)
+
+    assert formatted_messages[-1] == {
+        "role": "user",
+        "content": [{"toolResult": {"toolUseId": "t1", "content": expected}}],
+    }
+
+
 def test_convert_params_sends_tool_result_image_part_as_image_block() -> None:
     image_bytes = b"chart bytes"
     data_uri = f"data:image/png;base64,{base64.b64encode(image_bytes).decode()}"
