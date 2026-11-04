@@ -31,6 +31,7 @@ def test_deepinfra_supports_flags() -> None:
     assert provider.SUPPORTS_EMBEDDING is True
     assert provider.SUPPORTS_MODERATION is True
     assert provider.SUPPORTS_LIST_MODELS is True
+    assert provider.SUPPORTS_VIDEO_GENERATION is True
 
 
 def test_factory_integration() -> None:

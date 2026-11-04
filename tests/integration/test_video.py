@@ -12,11 +12,12 @@ from any_llm.types.video import VideoJob
 from tests.constants import EXPECTED_PROVIDERS
 
 # Every provider bills per clip, so one short, low-resolution clip per run. Gemini takes no
-# length and renders 360p as its smallest size; Together takes both. Seedance's output
+# length and renders 360p as its smallest size; Together and DeepInfra take both. Seedance's output
 # moderation rejected a paper boat on a puddle in four of seven renders, so keep the scene dull.
 _PROMPT = "A yellow rubber duck sits on a wooden table while sunlight slowly moves across it."
 _FIRST_FRAME_PROMPT = "The logo slowly rotates in place while soft light sweeps across it."
 _GENERATION_KWARGS: dict[LLMProvider, dict[str, Any]] = {
+    LLMProvider.DEEPINFRA: {"seconds": 4, "size": "854x480"},
     LLMProvider.GEMINI: {"size": "640x360"},
     LLMProvider.TOGETHER: {"seconds": 4, "size": "864x496"},
 }
@@ -30,8 +31,9 @@ _HOSTED_LOGO_URL = "https://raw.githubusercontent.com/mozilla-ai/any-llm/main/te
 def _first_frame(provider: LLMProvider) -> str:
     """The logo as the frame image each provider can take.
 
-    Together's ``frame_images`` take only a hosted URL, while Gemini's Interactions API takes
-    inline image data, so the same picture goes in through two doors.
+    Together's ``frame_images`` take only a hosted URL, while Gemini's Interactions API and
+    DeepInfra's binary frame fields take inline image data, so the same picture goes in through
+    two doors.
     """
     if provider is LLMProvider.TOGETHER:
         return _HOSTED_LOGO_URL
