@@ -11,16 +11,18 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from anthropic.types.beta import (
+    BetaCacheMissToolsChanged,
     BetaCompactionIterationUsage,
     BetaContainer,
+    BetaContainerSkill,
     BetaMessage,
     BetaMessageDeltaUsage,
     BetaMessageIterationUsage,
-    BetaSkill,
     BetaStopReason,
     BetaUsage,
 )
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
+from anthropic.types.beta.beta_diagnostics import BetaDiagnostics as AnthropicBetaDiagnostics
 from anthropic.types.beta.parsed_beta_message import ParsedBetaTextBlock
 from pydantic import BaseModel, ValidationError
 from typing_extensions import override
@@ -585,17 +587,11 @@ def test_message_response_preserves_beta_usage_speed_and_container_skills() -> N
     assert response.usage.speed == "fast"
     assert isinstance(response.container, BetaContainer)
     assert response.container.skills is not None
-    assert isinstance(response.container.skills[0], BetaSkill)
+    assert isinstance(response.container.skills[0], BetaContainerSkill)
     assert response.container.skills[0].skill_id == "pdf"
 
 
 def test_message_response_preserves_typed_beta_telemetry() -> None:
-    try:
-        from anthropic.types.beta import BetaCacheMissToolsChanged
-        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics as AnthropicBetaDiagnostics
-    except ImportError:
-        pytest.skip("BetaDiagnostics requires anthropic 0.102.0 or newer")
-
     beta_message = BetaMessage.model_validate(
         {
             "id": "msg_beta",
