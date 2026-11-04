@@ -690,16 +690,11 @@ def test_async_iter_to_sync_iter_close_from_the_runner_thread_does_not_wedge_the
     assert follow_up == ["still running"]
 
 
-@pytest.fixture(
-    params=[
-        "application-nested-worker",
-        "pytest_timeout tests/unit/test_utils.py::test_nested_private_loop_is_torn_down_when_closed_on_its_own_thread",
-    ],
-    ids=["application-thread", "timeout-watchdog"],
-)
+@pytest.fixture
 def unrelated_nested_thread(request: pytest.FixtureRequest) -> Generator[None]:
     stopped = threading.Event()
-    thread = threading.Thread(target=stopped.wait, name=request.param, daemon=True)
+    # Mirrors the pytest-timeout thread-method watchdog, whose name embeds this test's node ID.
+    thread = threading.Thread(target=stopped.wait, name=f"pytest_timeout {request.node.nodeid}", daemon=True)
     thread.start()
     try:
         yield
