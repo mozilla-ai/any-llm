@@ -23,9 +23,9 @@ from typing_extensions import is_typeddict as _is_typeddict
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
 
-# Track only the active path so shared sibling types still expand independently.
-_EXPANDING_MODELS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_MODELS", default=frozenset())
-_EXPANDING_TYPED_DICTS: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_TYPED_DICTS", default=frozenset())
+# A self-referencing object type would otherwise expand forever. Only the active path is tracked, so a type
+# used by sibling fields still expands in each of them.
+_EXPANDING_TYPES: ContextVar[frozenset[Any]] = ContextVar("_EXPANDING_TYPES", default=frozenset())
 
 # Pydantic < 2.11 has no validate_by_alias and ignores the key, so aliases stay accepted there.
 _PYDANTIC_HAS_VALIDATE_BY_ALIAS = "validate_by_alias" in ConfigDict.__annotations__
@@ -123,30 +123,28 @@ def _python_type_to_json_schema(python_type: Any) -> dict[str, Any]:
     - Optional[T] (Union[T, None]) -> schema(T) (nullability not encoded)
     - Literal[...]/Enum -> enum with appropriate type inference when uniform
     - TypedDict -> object with properties/required per annotations; Required/NotRequired/ReadOnly
-      qualifiers are unwrapped, and a self-reference becomes a bare object
+      qualifiers are unwrapped
     - dataclass/Pydantic BaseModel -> object with nested properties inferred from fields;
-      Pydantic fields are named the way Pydantic validates them (see _pydantic_input_name);
-      recursive model references become bare objects, as with TypedDict
+      Pydantic fields are named the way Pydantic validates them (see _pydantic_input_name)
+    - A TypedDict, dataclass or model that references itself, directly or through another type,
+      becomes a bare object at the point of recursion
     """
-    model_type = python_type
-    if get_origin(model_type) is _Annotated:
-        model_type = get_args(model_type)[0]
-    if not inspect.isclass(model_type) or not (
-        dataclasses.is_dataclass(model_type) or issubclass(model_type, PydanticBaseModel)
+    unwrapped = get_args(python_type)[0] if get_origin(python_type) is _Annotated else python_type
+    if not _is_typeddict(unwrapped) and not (
+        inspect.isclass(unwrapped) and (dataclasses.is_dataclass(unwrapped) or issubclass(unwrapped, PydanticBaseModel))
     ):
         return _type_to_json_schema(python_type)
-    expanding = _EXPANDING_MODELS.get()
-    if model_type in expanding:
+    expanding = _EXPANDING_TYPES.get()
+    if unwrapped in expanding:
         return {"type": "object"}
-    token = _EXPANDING_MODELS.set(expanding | {model_type})
+    token = _EXPANDING_TYPES.set(expanding | {unwrapped})
     try:
         return _type_to_json_schema(python_type)
     finally:
-        _EXPANDING_MODELS.reset(token)
+        _EXPANDING_TYPES.reset(token)
 
 
 def _type_to_json_schema(python_type: Any) -> dict[str, Any]:
-    """Expand a type while recursive model calls retain the active-path guard."""
     origin = get_origin(python_type)
     args = get_args(python_type)
 
@@ -204,26 +202,19 @@ def _type_to_json_schema(python_type: Any) -> dict[str, Any]:
         return schema
 
     if _is_typeddict(python_type):
-        expanding = _EXPANDING_TYPED_DICTS.get()
-        if python_type in expanding:
-            return {"type": "object"}
         annotations = _resolve_typed_dict_annotations(python_type)
         required_keys = set(getattr(python_type, "__required_keys__", set()))
         td_properties: dict[str, Any] = {}
         td_required: list[str] = []
-        token = _EXPANDING_TYPED_DICTS.set(expanding | {python_type})
-        try:
-            for field_name, annotation in annotations.items():
-                field_type, explicitly_required = _unwrap_typed_dict_field(annotation)
-                td_properties[field_name] = _python_type_to_json_schema(field_type)
-                # __required_keys__ is computed before postponed annotations are resolved, so an explicit
-                # Required/NotRequired qualifier takes precedence over it.
-                if explicitly_required is None:
-                    explicitly_required = field_name in required_keys
-                if explicitly_required:
-                    td_required.append(field_name)
-        finally:
-            _EXPANDING_TYPED_DICTS.reset(token)
+        for field_name, annotation in annotations.items():
+            field_type, explicitly_required = _unwrap_typed_dict_field(annotation)
+            td_properties[field_name] = _python_type_to_json_schema(field_type)
+            # __required_keys__ is computed before postponed annotations are resolved, so an explicit
+            # Required/NotRequired qualifier takes precedence over it.
+            if explicitly_required is None:
+                explicitly_required = field_name in required_keys
+            if explicitly_required:
+                td_required.append(field_name)
         schema_td: dict[str, Any] = {
             "type": "object",
             "properties": td_properties,
