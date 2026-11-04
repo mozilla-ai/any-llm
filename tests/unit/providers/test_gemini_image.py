@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import re
@@ -134,7 +135,7 @@ def test_generation_request_leaves_auto_size_to_the_model() -> None:
     assert request["config"].image_config is None
 
 
-@pytest.mark.parametrize("size", ["1000x700", "big", "0x1024", "1024x", "7:5"])
+@pytest.mark.parametrize("size", ["1000x700", "big", "0x1024", "1024x", "7:5", "\u00b2x1024"])
 def test_generation_request_rejects_a_size_with_no_matching_ratio(size: str) -> None:
     with pytest.raises(InvalidRequestError, match="aspect ratio"):
         generation_request(_generation(size=size), "gemini")
@@ -178,6 +179,40 @@ def test_build_config_routes_extra_options_to_image_config_and_generate_config()
     assert config.image_config == types.ImageConfig(aspect_ratio="3:2", image_size="2K")
     assert config.seed == 7
     assert config.response_modalities == [types.Modality.TEXT, types.Modality.IMAGE]
+
+
+def test_build_config_maps_timeout_to_http_options() -> None:
+    config, _ = build_config(None, None, None, "gemini", timeout=30)
+
+    assert config.http_options == types.HttpOptions(timeout=30000)
+
+
+def test_build_config_keeps_a_timeout_already_in_http_options() -> None:
+    config, _ = build_config(None, None, None, "gemini", timeout=30, http_options=types.HttpOptions(timeout=5000))
+
+    assert config.http_options == types.HttpOptions(timeout=5000)
+
+
+@pytest.mark.parametrize("image_config", [types.ImageConfig(image_size="2K"), {"image_size": "2K"}])
+def test_build_config_merges_image_config_with_size(image_config: Any) -> None:
+    config, _ = build_config(
+        "1536x1024", None, None, "gemini", image_config=image_config, person_generation="ALLOW_ADULT"
+    )
+
+    assert config.image_config == types.ImageConfig(
+        aspect_ratio="3:2", image_size="2K", person_generation="ALLOW_ADULT"
+    )
+
+
+def test_build_config_accepts_an_image_config_ratio_that_matches_size() -> None:
+    config, _ = build_config("1536x1024", None, None, "gemini", image_config={"aspect_ratio": "3:2"})
+
+    assert config.image_config == types.ImageConfig(aspect_ratio="3:2")
+
+
+def test_build_config_rejects_an_image_config_ratio_that_contradicts_size() -> None:
+    with pytest.raises(InvalidRequestError, match="asks for 3:2, but aspect_ratio asks for 1:1"):
+        build_config("1536x1024", None, None, "gemini", image_config={"aspect_ratio": "1:1"})
 
 
 def test_build_config_rejects_an_unknown_option() -> None:
@@ -225,6 +260,14 @@ def test_edit_request_reads_a_path_inside_a_tuple(tmp_path: Path) -> None:
 def test_edit_request_reports_an_unreadable_path_inside_a_tuple(tmp_path: Path) -> None:
     with pytest.raises(InvalidRequestError, match="Cannot read image path"):
         edit_request(_edit(("photo.png", tmp_path / "missing.png")), "gemini")
+
+
+def test_edit_request_reports_a_closed_file_object() -> None:
+    image = io.BytesIO(PNG)
+    image.close()
+
+    with pytest.raises(InvalidRequestError, match="Cannot read image file object"):
+        edit_request(_edit(image), "gemini")
 
 
 def test_edit_request_rejects_a_text_mode_file() -> None:
@@ -354,3 +397,30 @@ async def test_aimage_generation_refuses_a_text_model_without_calling_gemini() -
         await provider.aimage_generation("gemini-3.8-flash", "a cat")
 
     client.aio.models.generate_content.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_aimage_generation_cancels_the_other_requests_when_one_fails() -> None:
+    provider, client = make_provider()
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def generate_content(**_: Any) -> types.GenerateContentResponse:
+        if not started.is_set():
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+        await started.wait()
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    client.aio.models.generate_content = generate_content
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await provider.aimage_generation(MODEL, "a red apple", n=2)
+
+    await asyncio.sleep(0)
+    assert cancelled.is_set()

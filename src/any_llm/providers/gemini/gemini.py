@@ -134,7 +134,14 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
 
     async def _generate_images(self, request: dict[str, Any], count: int) -> ImagesResponse:
         # The image models answer one candidate per request, so n images are n concurrent requests.
-        responses = await asyncio.gather(*(self.client.aio.models.generate_content(**request) for _ in range(count)))
+        tasks = [asyncio.ensure_future(self.client.aio.models.generate_content(**request)) for _ in range(count)]
+        try:
+            responses = await asyncio.gather(*tasks)
+        except BaseException:
+            # gather leaves the other requests running when one fails; their images would be billed and dropped.
+            for task in tasks:
+                task.cancel()
+            raise
         return convert_responses_to_images(list(responses), self.PROVIDER_NAME)
 
     @override

@@ -21,6 +21,8 @@ from any_llm.exceptions import (
 )
 from any_llm.types.image import Image, ImageEditParams, ImageGenerationParams, ImagesResponse, sniff_image_format
 
+from .base import GoogleProvider
+
 if TYPE_CHECKING:
     from openai._types import FileTypes
 
@@ -101,7 +103,8 @@ def _aspect_ratio(size: str | None, provider_name: str) -> str | None:
     if size in _OPENAI_SIZES:
         return _OPENAI_SIZES[size]
     width, separator, height = size.partition("x")
-    if separator and width.isdigit() and height.isdigit() and int(width) and int(height):
+    # isdecimal, not isdigit: isdigit accepts characters such as '²' that int() rejects.
+    if separator and width.isdecimal() and height.isdecimal() and int(width) and int(height):
         divisor = gcd(int(width), int(height))
         ratio = f"{int(width) // divisor}:{int(height) // divisor}"
         if ratio in _ASPECT_RATIOS:
@@ -124,13 +127,23 @@ def build_config(
     """Build the ``generate_content`` config for an image request and the number of requests to send.
 
     Extra keyword arguments that name an ``ImageConfig`` field (``image_size``,
-    ``person_generation``) go to ``image_config``; the rest go to ``GenerateContentConfig``.
+    ``person_generation``) go to ``image_config``, merged with any ``image_config`` passed; the
+    rest go to ``GenerateContentConfig``. ``timeout`` (seconds) goes to ``http_options``.
     """
     count = _check_n(n, provider_name)
     _check_response_format(response_format, provider_name)
 
-    image_fields = {name: kwargs.pop(name) for name in list(kwargs) if name in types.ImageConfig.model_fields}
+    if (timeout := kwargs.pop("timeout", None)) is not None:
+        GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
+    image_config = kwargs.pop("image_config", None)
+    image_fields = (
+        {} if image_config is None else types.ImageConfig.model_validate(image_config).model_dump(exclude_none=True)
+    )
+    image_fields.update({name: kwargs.pop(name) for name in list(kwargs) if name in types.ImageConfig.model_fields})
     if (aspect_ratio := _aspect_ratio(size, provider_name)) is not None:
+        if image_fields.get("aspect_ratio", aspect_ratio) != aspect_ratio:
+            msg = f"size {size!r} asks for {aspect_ratio}, but aspect_ratio asks for {image_fields['aspect_ratio']}"
+            raise InvalidRequestError(msg, provider_name=provider_name)
         image_fields["aspect_ratio"] = aspect_ratio
     unknown = kwargs.keys() - types.GenerateContentConfig.model_fields.keys()
     if unknown:
@@ -165,7 +178,12 @@ def _read_bytes(content: Any, provider_name: str) -> bytes:
         except (OSError, ValueError) as exc:
             msg = f"Cannot read image path {str(path)!r}: {getattr(exc, 'strerror', None) or exc}"
             raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
-    data = content.read()
+    try:
+        data = content.read()
+    except (OSError, ValueError) as exc:
+        # ValueError is what reading a closed file raises.
+        msg = f"Cannot read image file object: {exc}"
+        raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
     if not isinstance(data, bytes):
         msg = "Image file objects must be opened in binary mode"
         raise InvalidRequestError(msg, provider_name=provider_name)
