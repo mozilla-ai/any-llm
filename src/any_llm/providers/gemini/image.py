@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from google.genai import types
 from openai.types.images_response import Usage, UsageInputTokensDetails, UsageOutputTokensDetails
+from pydantic import ValidationError
 
 from any_llm.exceptions import (
     ContentFilterError,
@@ -38,6 +39,7 @@ _ASPECT_RATIOS = frozenset(
 
 # OpenAI's sizes that do not reduce to one of Gemini's ratios, mapped to the closest one.
 _OPENAI_SIZES = {"1792x1024": "16:9", "1024x1792": "9:16"}
+_MAX_SIDE_DIGITS = 6
 
 # Gemini image model ids carry "image" as a dash-separated word (gemini-3.1-flash-image,
 # gemini-3-pro-image-preview) or name Nano Banana. Imagen models use a different API.
@@ -103,8 +105,17 @@ def _aspect_ratio(size: str | None, provider_name: str) -> str | None:
     if size in _OPENAI_SIZES:
         return _OPENAI_SIZES[size]
     width, separator, height = size.partition("x")
-    # isdecimal, not isdigit: isdigit accepts characters such as '²' that int() rejects.
-    if separator and width.isdecimal() and height.isdecimal() and int(width) and int(height):
+    # isdecimal, not isdigit: isdigit accepts characters such as '²' that int() rejects. The length
+    # bound keeps int() under Python's 4300-digit conversion limit.
+    if (
+        separator
+        and width.isdecimal()
+        and height.isdecimal()
+        and len(width) <= _MAX_SIDE_DIGITS
+        and len(height) <= _MAX_SIDE_DIGITS
+        and int(width)
+        and int(height)
+    ):
         divisor = gcd(int(width), int(height))
         ratio = f"{int(width) // divisor}:{int(height) // divisor}"
         if ratio in _ASPECT_RATIOS:
@@ -136,10 +147,16 @@ def build_config(
     if (timeout := kwargs.pop("timeout", None)) is not None:
         GoogleProvider._merge_timeout_into_http_options(timeout, kwargs)
     image_config = kwargs.pop("image_config", None)
-    image_fields = (
-        {} if image_config is None else types.ImageConfig.model_validate(image_config).model_dump(exclude_none=True)
-    )
-    image_fields.update({name: kwargs.pop(name) for name in list(kwargs) if name in types.ImageConfig.model_fields})
+    try:
+        image_fields = (
+            {} if image_config is None else types.ImageConfig.model_validate(image_config).model_dump(exclude_none=True)
+        )
+    except ValidationError as exc:
+        msg = f"Invalid image_config: {exc}"
+        raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
+    for name in [name for name in kwargs if name in types.ImageConfig.model_fields]:
+        if (value := kwargs.pop(name)) is not None:
+            image_fields[name] = value
     if (aspect_ratio := _aspect_ratio(size, provider_name)) is not None:
         if image_fields.get("aspect_ratio", aspect_ratio) != aspect_ratio:
             msg = f"size {size!r} asks for {aspect_ratio}, but aspect_ratio asks for {image_fields['aspect_ratio']}"
@@ -151,10 +168,14 @@ def build_config(
         raise UnsupportedParameterError(parameter_name, provider_name)
 
     config_fields: dict[str, Any] = {"response_modalities": [types.Modality.IMAGE]}
-    if image_fields:
-        config_fields["image_config"] = types.ImageConfig(**image_fields)
-    config_fields.update(kwargs)
-    return types.GenerateContentConfig(**config_fields), count
+    try:
+        if image_fields:
+            config_fields["image_config"] = types.ImageConfig(**image_fields)
+        config_fields.update(kwargs)
+        return types.GenerateContentConfig(**config_fields), count
+    except ValidationError as exc:
+        msg = f"Invalid Gemini image option: {exc}"
+        raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
 
 
 def generation_request(params: ImageGenerationParams, provider_name: str, **kwargs: Any) -> tuple[dict[str, Any], int]:

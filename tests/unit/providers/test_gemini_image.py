@@ -135,7 +135,7 @@ def test_generation_request_leaves_auto_size_to_the_model() -> None:
     assert request["config"].image_config is None
 
 
-@pytest.mark.parametrize("size", ["1000x700", "big", "0x1024", "1024x", "7:5", "\u00b2x1024"])
+@pytest.mark.parametrize("size", ["1000x700", "big", "0x1024", "1024x", "7:5", "\u00b2x1024", "1" * 5000 + "x1024"])
 def test_generation_request_rejects_a_size_with_no_matching_ratio(size: str) -> None:
     with pytest.raises(InvalidRequestError, match="aspect ratio"):
         generation_request(_generation(size=size), "gemini")
@@ -213,6 +213,21 @@ def test_build_config_accepts_an_image_config_ratio_that_matches_size() -> None:
 def test_build_config_rejects_an_image_config_ratio_that_contradicts_size() -> None:
     with pytest.raises(InvalidRequestError, match="asks for 3:2, but aspect_ratio asks for 1:1"):
         build_config("1536x1024", None, None, "gemini", image_config={"aspect_ratio": "1:1"})
+
+
+def test_build_config_treats_a_none_image_option_as_unset() -> None:
+    config, _ = build_config("1536x1024", None, None, "gemini", aspect_ratio=None, image_size=None)
+
+    assert config.image_config == types.ImageConfig(aspect_ratio="3:2")
+
+
+@pytest.mark.parametrize(
+    ("option", "match"),
+    [({"image_config": 123}, "Invalid image_config"), ({"seed": "not a number"}, "Invalid Gemini image option")],
+)
+def test_build_config_reports_a_malformed_option_as_an_invalid_request(option: dict[str, Any], match: str) -> None:
+    with pytest.raises(InvalidRequestError, match=match):
+        build_config(None, None, None, "gemini", **option)
 
 
 def test_build_config_rejects_an_unknown_option() -> None:
