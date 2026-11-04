@@ -16,6 +16,7 @@ import pytest
 from botocore.exceptions import ClientError, ProfileNotFound
 from botocore.stub import Stubber
 from botocore.tokens import ScopedEnvTokenProvider
+from botocore.validate import validate_parameters
 from pydantic import BaseModel
 
 from any_llm.exceptions import (
@@ -1627,6 +1628,30 @@ def test_convert_params_sends_no_tool_config_without_tools_or_tool_calls() -> No
     )
 
     assert "toolConfig" not in result
+
+
+@pytest.mark.parametrize(
+    ("stop", "expected"),
+    [
+        ("END", ["END"]),
+        (["END", "STOP"], ["END", "STOP"]),
+        (None, None),
+        ("", None),
+        ([], None),
+    ],
+)
+def test_convert_params_normalizes_stop_sequences(stop: str | list[str] | None, expected: list[str] | None) -> None:
+    """Converse types stopSequences as a list, so a scalar `stop` must be wrapped before botocore sees it."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="anthropic.claude-sonnet-4", messages=[{"role": "user", "content": "Hello"}], stop=stop, top_p=0.5
+        ),
+        {},
+    )
+
+    assert result["inferenceConfig"].get("stopSequences") == expected
+    service_model = botocore.session.get_session().get_service_model("bedrock-runtime")  # type: ignore[no-untyped-call]
+    validate_parameters(result, service_model.operation_model("Converse").input_shape)  # type: ignore[no-untyped-call]
 
 
 def test_convert_params_forwards_zero_temperature() -> None:
