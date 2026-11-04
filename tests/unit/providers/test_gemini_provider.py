@@ -3294,7 +3294,7 @@ def _media(function_response: types.FunctionResponse) -> list[tuple[str | None, 
     return [(blob.display_name, blob.mime_type, blob.data) for blob in blobs if blob is not None]
 
 
-def test_convert_messages_tool_result_media_becomes_function_response_parts_in_place() -> None:
+def test_convert_messages_tool_result_media_becomes_unnamed_function_response_parts_in_order() -> None:
     pdf = {"type": "file", "file": {"file_data": f"data:application/pdf;base64,{base64.b64encode(b'%PDF').decode()}"}}
     content = [
         {"type": "text", "text": "Login page:"},
@@ -3307,26 +3307,20 @@ def test_convert_messages_tool_result_media_becomes_function_response_parts_in_p
     function_response = _tool_function_response(content)
 
     assert function_response.response == {
-        "result": [
-            {"type": "text", "text": "Login page:"},
-            {"$ref": "attachment-1"},
-            {"type": "text", "text": "Home page:"},
-            {"$ref": "attachment-2"},
-            {"$ref": "attachment-3"},
-        ]
+        "result": [{"type": "text", "text": "Login page:"}, {"type": "text", "text": "Home page:"}]
     }
     assert _media(function_response) == [
-        ("attachment-1", "image/png", TEST_IMAGE_BYTES),
-        ("attachment-2", "image/jpeg", b"second-image"),
-        ("attachment-3", "application/pdf", b"%PDF"),
+        (None, "image/png", TEST_IMAGE_BYTES),
+        (None, "image/jpeg", b"second-image"),
+        (None, "application/pdf", b"%PDF"),
     ]
 
 
 def test_convert_messages_tool_result_media_in_json_string_content_is_extracted() -> None:
     function_response = _tool_function_response(json.dumps([_image_block("image/png", TEST_IMAGE_BYTES)]))
 
-    assert function_response.response == {"result": [{"$ref": "attachment-1"}]}
-    assert _media(function_response) == [("attachment-1", "image/png", TEST_IMAGE_BYTES)]
+    assert function_response.response == {"result": []}
+    assert _media(function_response) == [(None, "image/png", TEST_IMAGE_BYTES)]
 
 
 @pytest.mark.parametrize(
@@ -3409,7 +3403,7 @@ def test_convert_completion_params_sends_tool_result_images_as_parts_for_the_mod
     )
 
     function_response = result["contents"][1].parts[0].function_response
-    assert _media(function_response) == [("attachment-1", "image/png", TEST_IMAGE_BYTES)]
+    assert _media(function_response) == [(None, "image/png", TEST_IMAGE_BYTES)]
 
 
 def test_streaming_completion_with_tool_call_without_args() -> None:
