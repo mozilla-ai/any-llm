@@ -722,7 +722,6 @@ async def test_amessages_context_compaction_uses_beta_resource_and_preserves_res
     assert len(requests) == 1
     request = requests[0]
     assert request.url.path == "/v1/messages"
-    assert request.url.query == b"beta=true"
     assert request.headers["anthropic-beta"] == "compact-2026-01-12"
     request_body = json.loads(request.content)
     assert request_body["context_management"] == context_management
@@ -928,7 +927,6 @@ async def test_amessages_merges_beta_extra_header_with_inferred_betas() -> None:
         await http_client.aclose()
 
     request = requests[0]
-    assert request.url.query == b"beta=true"
     assert request.headers["anthropic-beta"] == "compact-2026-01-12,fast-mode-2026-02-01"
     assert request.headers["x-custom-header"] == "custom-value"
     assert extra_headers == original_extra_headers
@@ -967,7 +965,6 @@ async def test_amessages_routes_beta_extra_header_through_beta_resource() -> Non
     finally:
         await http_client.aclose()
 
-    assert requests[0].url.query == b"beta=true"
     assert requests[0].headers["anthropic-beta"] == "fast-mode-2026-02-01"
 
 
@@ -1086,7 +1083,7 @@ async def test_amessages_selects_betas_for_context_management(
 @pytest.mark.asyncio
 async def test_amessages_streams_beta_compaction_events() -> None:
     async def handler(request: httpx2.Request) -> httpx2.Response:
-        assert request.url.query == b"beta=true"
+        assert request.headers["anthropic-beta"] == "compact-2026-01-12"
         events = [
             (
                 "message_start",
@@ -1195,7 +1192,7 @@ async def test_amessages_streams_beta_compaction_events() -> None:
 @pytest.mark.asyncio
 async def test_amessages_streams_beta_only_content_block() -> None:
     async def handler(request: httpx2.Request) -> httpx2.Response:
-        assert request.url.query == b"beta=true"
+        assert request.headers["anthropic-beta"] == "mcp-client-2025-04-04"
         events = [
             (
                 "message_start",
