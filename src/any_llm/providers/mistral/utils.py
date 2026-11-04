@@ -49,6 +49,11 @@ if TYPE_CHECKING:
 _MISTRAL_FINISH_REASON_MAP = {"model_length": "length"}
 
 
+def _serialize_mistral_tool_arguments(arguments: dict[str, Any] | str) -> str:
+    # Mistral may return arguments as an already-parsed dict; an empty dict must still serialize to "{}".
+    return arguments if isinstance(arguments, str) else json.dumps(arguments)
+
+
 def _convert_mistral_tool_calls_to_any_llm(
     tool_calls: list[MistralToolCall],
 ) -> list[ChatCompletionMessageToolCall] | None:
@@ -58,15 +63,6 @@ def _convert_mistral_tool_calls_to_any_llm(
 
     any_llm_tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageToolCall] = []
     for tool_call in tool_calls:
-        arguments = ""
-        if tool_call.function and tool_call.function.arguments:
-            if isinstance(tool_call.function.arguments, dict):
-                arguments = json.dumps(tool_call.function.arguments)
-            elif isinstance(tool_call.function.arguments, str):
-                arguments = tool_call.function.arguments
-            else:
-                arguments = str(tool_call.function.arguments)
-
         if not tool_call.id or not tool_call.function or not tool_call.function.name:
             continue
 
@@ -75,7 +71,7 @@ def _convert_mistral_tool_calls_to_any_llm(
             type="function",
             function=Function(
                 name=tool_call.function.name,
-                arguments=arguments,
+                arguments=_serialize_mistral_tool_arguments(tool_call.function.arguments),
             ),
         )
         any_llm_tool_calls.append(any_llm_tool_call)
@@ -94,15 +90,6 @@ def _convert_mistral_streaming_tool_calls_to_any_llm(
     for tool_call in tool_calls:
         index = tool_call.index if tool_call.index is not None else 0
 
-        arguments = ""
-        if tool_call.function and tool_call.function.arguments:
-            if isinstance(tool_call.function.arguments, dict):
-                arguments = json.dumps(tool_call.function.arguments)
-            elif isinstance(tool_call.function.arguments, str):
-                arguments = tool_call.function.arguments
-            else:
-                arguments = str(tool_call.function.arguments)
-
         if not tool_call.id or not tool_call.function or not tool_call.function.name:
             continue
 
@@ -112,7 +99,7 @@ def _convert_mistral_streaming_tool_calls_to_any_llm(
             type="function",
             function=ChoiceDeltaToolCallFunction(
                 name=tool_call.function.name,
-                arguments=arguments,
+                arguments=_serialize_mistral_tool_arguments(tool_call.function.arguments),
             ),
         )
         any_llm_tool_calls.append(openai_tool_call)
