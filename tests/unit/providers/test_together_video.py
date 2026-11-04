@@ -139,6 +139,31 @@ def test_convert_video_params_maps_every_field_to_togethers_names() -> None:
     }
 
 
+def test_convert_video_params_sends_reference_audio_as_media_audio_inputs() -> None:
+    params = VideoGenerationParams(
+        model_id="ByteDance/Seedance-2.5", prompt="a rapper", reference_audios=["https://audio/beat.mp3"]
+    )
+    assert TogetherProvider._convert_video_params(params) == {
+        "model": "ByteDance/Seedance-2.5",
+        "prompt": "a rapper",
+        "extra_body": {"media": {"audio_inputs": ["https://audio/beat.mp3"]}},
+    }
+
+
+def test_convert_video_params_merges_reference_audio_into_the_callers_extra_body() -> None:
+    params = VideoGenerationParams(
+        model_id="ByteDance/Seedance-2.5", prompt="a rapper", reference_audios=["https://audio/beat.mp3"]
+    )
+    extra_body = {"generate_audio": True, "media": {"reference_videos": [{"video": "https://v/ref.mp4"}]}}
+    converted = TogetherProvider._convert_video_params(params, extra_body=extra_body)
+    assert converted["extra_body"] == {
+        "generate_audio": True,
+        "media": {"reference_videos": [{"video": "https://v/ref.mp4"}], "audio_inputs": ["https://audio/beat.mp3"]},
+    }
+    # The caller's dict is left as it was.
+    assert extra_body["media"] == {"reference_videos": [{"video": "https://v/ref.mp4"}]}
+
+
 def test_convert_video_params_merges_caller_frame_images_with_first_and_last_frames() -> None:
     params = VideoGenerationParams(model_id="m", prompt="p", last_frame="https://img/last.png")
     converted = TogetherProvider._convert_video_params(

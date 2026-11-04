@@ -17,8 +17,8 @@ Each function has an async twin with an `a` prefix: `avideo_generation()`, `aret
 
 | Provider | `SUPPORTS_VIDEO_GENERATION` | Notes |
 |----------|-----------------------------|-------|
-| Gemini | Yes | Gemini Omni Flash (`gemini-omni-1.1-flash`) through the Interactions API, created with `background=True` and read back with `interactions.get`. `size` maps to Omni's `16:9`/`9:16` aspect ratio and `360p`/`720p`/`1080p`/`4k` resolution, so the short side must be 360, 720, 1080 or 2160 pixels and the video cannot be square. `first_frame` and `last_frame` go in as image parts before the prompt, in that order, which is how Omni assigns their roles; `reference_images` follow them. `seed` passes through. `seconds` and `negative_prompt` raise `UnsupportedParameterError`; put what to avoid in the prompt. The finished video arrives inline (base64) or as a Files API URI, which `download_video` fetches with your API key. |
-| Together | Yes | `POST /v2/videos` and `GET /v2/videos/{id}` through the Together SDK, for models such as `ByteDance/Seedance-2.0`. `size` maps to `width`/`height`, `seconds` to the string Together expects, and `first_frame`/`last_frame` to `frame_images`. Together-only options such as `fps`, `steps`, `guidance_scale` and `output_format` pass through as keyword arguments. Seedance renders fixed resolutions only (for example `864x496`, `1280x720`, `1920x1080`, and their portrait twins); a `size` that is not `WIDTHxHEIGHT` raises `InvalidRequestError` before any request is sent, and any other `WIDTHxHEIGHT` is accepted, but the job then fails with code `unsupportedModelResolution` and the full list in `error.message`. The finished video is a public URL. |
+| Gemini | Yes | Gemini Omni Flash (`gemini-omni-1.1-flash`) through the Interactions API, created with `background=True` and read back with `interactions.get`. `size` maps to Omni's `16:9`/`9:16` aspect ratio and `360p`/`720p`/`1080p`/`4k` resolution, so the short side must be 360, 720, 1080 or 2160 pixels and the video cannot be square. `first_frame` and `last_frame` go in as image parts before the prompt, in that order, which is how Omni assigns their roles; `reference_images` follow them. `seed` passes through. `seconds`, `negative_prompt` and `reference_audios` raise `UnsupportedParameterError`: put what to avoid in the prompt, and describe the sound track there too, since Omni generates its own audio and documents audio references as unsupported. The finished video arrives inline (base64) or as a Files API URI, which `download_video` fetches with your API key. |
+| Together | Yes | `POST /v2/videos` and `GET /v2/videos/{id}` through the Together SDK, for models such as `ByteDance/Seedance-2.0`. `size` maps to `width`/`height`, `seconds` to the string Together expects, `first_frame`/`last_frame` to `frame_images`, and `reference_audios` to `media.audio_inputs` (sent through `extra_body`, merged with any `media` you pass there, since the pinned SDK has no argument for it). Together-only options such as `fps`, `steps`, `guidance_scale` and `output_format` pass through as keyword arguments. Seedance renders fixed resolutions only (for example `864x496`, `1280x720`, `1920x1080`, and their portrait twins); a `size` that is not `WIDTHxHEIGHT` raises `InvalidRequestError` before any request is sent, and any other `WIDTHxHEIGHT` is accepted, but the job then fails with code `unsupportedModelResolution` and the full list in `error.message`. The finished video is a public URL. |
 
 All other providers return `SUPPORTS_VIDEO_GENERATION = False` and raise `NotImplementedError` if called. OpenAI is among them: OpenAI removed the Sora 2 models and the Videos API on September 24, 2026, with no replacement.
 
@@ -74,6 +74,19 @@ job = video_generation(
 
 Images are URLs, provider file URIs, or `data:` URLs with base64 content. A provider that cannot take one of them says so with `UnsupportedParameterError`.
 
+### Audio
+
+```python
+job = video_generation(
+    "together:ByteDance/Seedance-2.5",
+    prompt="The dancer in the image moves to the beat of the audio.",
+    reference_images=["https://example.com/dancer.png"],
+    reference_audios=["https://example.com/beat.mp3"],
+)
+```
+
+Audio must be a hosted URL the provider can download; no provider documents base64 audio. The same call works against another provider by changing the model string. How a model refers to its references inside the prompt is the model's own convention: Seedance 2.0 uses `@Image1` and `@Audio1`, Wan 3.0 uses `Image 1`, and Seedance 2.5 takes plain prose.
+
 ### Async
 
 ```python
@@ -103,6 +116,7 @@ asyncio.run(main())
 | `seed` | `int \| None` | `None` | Seed for reproducible generation |
 | `negative_prompt` | `str \| None` | `None` | What the video should not contain |
 | `reference_images` | `list[str] \| None` | `None` | Images the video takes its subjects or style from |
+| `reference_audios` | `list[str] \| None` | `None` | Audio URLs the video follows, for lip sync, beat-matched motion or a sound track |
 | `first_frame` | `str \| None` | `None` | Image the video starts from |
 | `last_frame` | `str \| None` | `None` | Image the video ends on |
 | `provider` | `str \| None` | `None` | Explicit provider name. Inferred from `model` if omitted. |
