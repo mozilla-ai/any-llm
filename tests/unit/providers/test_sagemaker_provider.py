@@ -175,3 +175,16 @@ def test_stream_chunk_falls_back_to_generated_id_and_created() -> None:
     assert chunk is not None
     assert chunk.id.startswith("chatcmpl-")
     assert chunk.created > 0
+
+
+def test_convert_params_keeps_system_messages_in_messages() -> None:
+    """The OpenAI chat schema served by SageMaker containers reads system prompts from `messages` only."""
+    messages = [
+        {"role": "system", "content": "Answer in French."},
+        {"role": "user", "content": "hi"},
+        {"role": "system", "content": "Be brief."},
+    ]
+    result = _convert_params(CompletionParams(model_id="model-id", messages=messages), {})
+
+    assert result["messages"] == messages
+    assert "system" not in result
