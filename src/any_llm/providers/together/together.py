@@ -306,14 +306,20 @@ class TogetherProvider(AnyLLM):
 
         Together takes the size as ``width``/``height``, the length as a string, and the first
         and last frames as ``frame_images`` entries, which merge with any the caller passes.
-        Reference audio goes in as ``media.audio_inputs``, which the pinned SDK has no argument
-        for, so it rides in ``extra_body`` and merges with any ``media`` the caller passes there.
+        ``resolution``, ``ratio`` and ``media.audio_inputs`` are fields the pinned SDK has no
+        argument for, so they ride in ``extra_body`` and merge with whatever the caller passes there.
         """
         create_kwargs: dict[str, Any] = {"model": params.model_id, "prompt": params.prompt}
         if params.seconds is not None:
             create_kwargs["seconds"] = str(params.seconds)
-        if (dimensions := params.parse_size()) is not None:
-            create_kwargs["width"], create_kwargs["height"] = dimensions
+        extra_body = dict(kwargs.pop("extra_body", None) or {})
+        if (shape := params.parse_shape()) is not None:
+            if shape.dimensions is not None:
+                create_kwargs["width"], create_kwargs["height"] = shape.dimensions
+            if params.resolution is not None:
+                extra_body["resolution"] = f"{shape.short_side}p"
+            if params.aspect_ratio is not None:
+                extra_body["ratio"] = params.aspect_ratio
         if params.seed is not None:
             create_kwargs["seed"] = params.seed
         if params.negative_prompt is not None:
@@ -328,8 +334,8 @@ class TogetherProvider(AnyLLM):
         if frame_images:
             create_kwargs["frame_images"] = frame_images
         if params.reference_audios is not None:
-            extra_body = dict(kwargs.pop("extra_body", None) or {})
             extra_body["media"] = {**(extra_body.get("media") or {}), "audio_inputs": params.reference_audios}
+        if extra_body:
             create_kwargs["extra_body"] = extra_body
         create_kwargs.update(kwargs)
         return create_kwargs

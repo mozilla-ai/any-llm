@@ -1907,6 +1907,8 @@ def video_generation(
     provider: str | LLMProvider | None = None,
     seconds: int | None = None,
     size: str | None = None,
+    resolution: str | None = None,
+    aspect_ratio: str | None = None,
     seed: int | None = None,
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
@@ -1929,7 +1931,9 @@ def video_generation(
         provider: Provider name to use for the request (e.g., 'together').
         prompt: A text description of the desired video.
         seconds: Length of the video in seconds.
-        size: Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720').
+        size: Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720'). Not combined with the next two.
+        resolution: How sharp, by short side: '480p', '720p', '1080p' or '4k'.
+        aspect_ratio: What shape, as ``WIDTH:HEIGHT`` (e.g., '16:9').
         seed: Seed for reproducible generation.
         negative_prompt: What the video should not contain.
         reference_images: Image URLs the video should take its subjects or style from.
@@ -1957,6 +1961,8 @@ def video_generation(
         prompt,
         seconds=seconds,
         size=size,
+        resolution=resolution,
+        aspect_ratio=aspect_ratio,
         seed=seed,
         negative_prompt=negative_prompt,
         reference_images=reference_images,
@@ -1974,6 +1980,8 @@ async def avideo_generation(
     provider: str | LLMProvider | None = None,
     seconds: int | None = None,
     size: str | None = None,
+    resolution: str | None = None,
+    aspect_ratio: str | None = None,
     seed: int | None = None,
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
@@ -1996,7 +2004,9 @@ async def avideo_generation(
         provider: Provider name to use for the request (e.g., 'together').
         prompt: A text description of the desired video.
         seconds: Length of the video in seconds.
-        size: Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720').
+        size: Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720'). Not combined with the next two.
+        resolution: How sharp, by short side: '480p', '720p', '1080p' or '4k'.
+        aspect_ratio: What shape, as ``WIDTH:HEIGHT`` (e.g., '16:9').
         seed: Seed for reproducible generation.
         negative_prompt: What the video should not contain.
         reference_images: Image URLs the video should take its subjects or style from.
@@ -2024,6 +2034,8 @@ async def avideo_generation(
         prompt,
         seconds=seconds,
         size=size,
+        resolution=resolution,
+        aspect_ratio=aspect_ratio,
         seed=seed,
         negative_prompt=negative_prompt,
         reference_images=reference_images,

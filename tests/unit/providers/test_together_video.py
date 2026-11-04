@@ -139,6 +139,25 @@ def test_convert_video_params_maps_every_field_to_togethers_names() -> None:
     }
 
 
+def test_convert_video_params_sends_resolution_and_ratio_through_extra_body() -> None:
+    params = VideoGenerationParams(
+        model_id="ByteDance/Seedance-2.5", prompt="penguins", resolution="480P", aspect_ratio="16:9"
+    )
+    assert TogetherProvider._convert_video_params(params, extra_body={"generate_audio": False}) == {
+        "model": "ByteDance/Seedance-2.5",
+        "prompt": "penguins",
+        "extra_body": {"generate_audio": False, "resolution": "480p", "ratio": "16:9"},
+    }
+
+
+def test_convert_video_params_rejects_size_combined_with_resolution() -> None:
+    params = VideoGenerationParams(
+        model_id="ByteDance/Seedance-2.5", prompt="penguins", size="854x480", resolution="480p"
+    )
+    with pytest.raises(InvalidRequestError, match="either size or resolution and aspect_ratio, not both"):
+        TogetherProvider._convert_video_params(params)
+
+
 def test_convert_video_params_sends_reference_audio_as_media_audio_inputs() -> None:
     params = VideoGenerationParams(
         model_id="ByteDance/Seedance-2.5", prompt="a rapper", reference_audios=["https://audio/beat.mp3"]

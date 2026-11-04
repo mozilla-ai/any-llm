@@ -63,6 +63,8 @@ async def test_avideo_generation_with_explicit_provider_passes_all_params() -> N
             provider="together",
             seconds=5,
             size="1280x720",
+            resolution="720p",
+            aspect_ratio="16:9",
             seed=7,
             negative_prompt="blurry",
             reference_images=["https://img/1.png"],
@@ -77,6 +79,8 @@ async def test_avideo_generation_with_explicit_provider_passes_all_params() -> N
     assert provider.avideo_generation.call_args[1] == {
         "seconds": 5,
         "size": "1280x720",
+        "resolution": "720p",
+        "aspect_ratio": "16:9",
         "seed": 7,
         "negative_prompt": "blurry",
         "reference_images": ["https://img/1.png"],
@@ -361,3 +365,55 @@ def test_supports_video_generation_only_on_expected_providers() -> None:
         except ImportError:
             continue
         assert cls.SUPPORTS_VIDEO_GENERATION is False, f"{provider_enum.value} should not support video generation"
+
+
+def test_parse_shape_returns_none_without_a_size_or_tier() -> None:
+    assert VideoGenerationParams(model_id="m", prompt="p").parse_shape() is None
+
+
+def test_parse_shape_reads_a_size_as_short_side_ratio_and_dimensions() -> None:
+    shape = VideoGenerationParams(model_id="m", prompt="p", size="720x1280").parse_shape()
+    assert shape is not None
+    assert shape.short_side == 720
+    assert shape.ratio == pytest.approx(9 / 16)
+    assert shape.dimensions == (720, 1280)
+    assert shape.described == "720x1280"
+
+
+@pytest.mark.parametrize(
+    ("resolution", "aspect_ratio", "short_side", "ratio", "described"),
+    [
+        ("480p", "16:9", 480, 16 / 9, "480p 16:9"),
+        ("1080P", None, 1080, None, "1080P"),
+        ("4k", "9:16", 2160, 9 / 16, "4k 9:16"),
+        (None, "1:1", None, 1.0, "1:1"),
+    ],
+)
+def test_parse_shape_reads_a_resolution_tier_and_aspect_ratio(
+    resolution: str | None, aspect_ratio: str | None, short_side: int | None, ratio: float | None, described: str
+) -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", resolution=resolution, aspect_ratio=aspect_ratio)
+    shape = params.parse_shape()
+    assert shape is not None
+    assert shape.short_side == short_side
+    assert shape.ratio == (ratio if ratio is None else pytest.approx(ratio))
+    assert shape.dimensions is None
+    assert shape.described == described
+
+
+def test_parse_shape_rejects_size_combined_with_a_tier_or_ratio() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", size="854x480", aspect_ratio="16:9")
+    with pytest.raises(InvalidRequestError, match="either size or resolution and aspect_ratio, not both"):
+        params.parse_shape()
+
+
+@pytest.mark.parametrize("resolution", ["480", "hd", "p720", "4K2", "²p"])
+def test_parse_shape_rejects_a_malformed_resolution(resolution: str) -> None:
+    with pytest.raises(InvalidRequestError, match=f"such as 720p, or 4k, not {resolution!r}"):
+        VideoGenerationParams(model_id="m", prompt="p", resolution=resolution).parse_shape()
+
+
+@pytest.mark.parametrize("aspect_ratio", ["16x9", "16:", "wide", "16:0", "0:9", "²:3"])
+def test_parse_shape_rejects_a_malformed_aspect_ratio(aspect_ratio: str) -> None:
+    with pytest.raises(InvalidRequestError, match=f"such as 16:9, not {aspect_ratio!r}"):
+        VideoGenerationParams(model_id="m", prompt="p", aspect_ratio=aspect_ratio).parse_shape()
