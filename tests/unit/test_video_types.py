@@ -82,7 +82,7 @@ def test_parse_size_splits_width_and_height(size: str) -> None:
     assert VideoGenerationParams(model_id="m", prompt="a cat", size=size).parse_size() == (1280, 720)
 
 
-@pytest.mark.parametrize("size", ["720p", "1280", "x720", "1280x", "ax720", "1280x720x1"])
+@pytest.mark.parametrize("size", ["720p", "1280", "x720", "1280x", "ax720", "1280x720x1", "1280x0", "0x720", "²x720"])
 def test_parse_size_rejects_malformed_sizes(size: str) -> None:
     with pytest.raises(InvalidRequestError, match="WIDTHxHEIGHT"):
         VideoGenerationParams(model_id="m", prompt="a cat", size=size).parse_size()

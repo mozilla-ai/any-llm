@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 # Omni Flash renders landscape or portrait only, and names a resolution by its short side.
 # https://ai.google.dev/gemini-api/docs/omni
 _RESOLUTIONS: dict[int, str] = {360: "360p", 720: "720p", 1080: "1080p", 2160: "4k"}
+_ASPECT_RATIOS: dict[str, float] = {"16:9": 16 / 9, "9:16": 9 / 16}
 
 # Every interaction status that is not still running has stopped producing a video.
 # https://ai.google.dev/api/interactions-api-v1#Interaction
@@ -46,20 +48,22 @@ def _image_part(image: str) -> dict[str, Any]:
 
 def _response_format(params: VideoGenerationParams) -> dict[str, Any]:
     response_format: dict[str, Any] = {"type": "video"}
-    dimensions = params.parse_size()
-    if dimensions is None:
+    shape = params.parse_shape()
+    if shape is None:
         return response_format
-    width, height = dimensions
-    if width == height:
-        msg = f"Gemini renders 16:9 or 9:16 video, so size cannot be square: {params.size!r}"
-        raise InvalidRequestError(msg)
-    resolution = _RESOLUTIONS.get(min(width, height))
-    if resolution is None:
-        sizes = ", ".join(str(side) for side in _RESOLUTIONS)
-        msg = f"Gemini renders video with a short side of {sizes} pixels, not {params.size!r}"
-        raise InvalidRequestError(msg)
-    response_format["aspect_ratio"] = "16:9" if width > height else "9:16"
-    response_format["resolution"] = resolution
+    if shape.ratio is not None:
+        aspect_ratio = next((name for name, value in _ASPECT_RATIOS.items() if math.isclose(shape.ratio, value)), None)
+        if aspect_ratio is None:
+            msg = f"Gemini renders 16:9 or 9:16 video, not {shape.described!r}"
+            raise InvalidRequestError(msg)
+        response_format["aspect_ratio"] = aspect_ratio
+    if shape.short_side is not None:
+        resolution = _RESOLUTIONS.get(shape.short_side)
+        if resolution is None:
+            sizes = ", ".join(str(side) for side in _RESOLUTIONS)
+            msg = f"Gemini renders video with a short side of {sizes} pixels, not {shape.described!r}"
+            raise InvalidRequestError(msg)
+        response_format["resolution"] = resolution
     return response_format
 
 

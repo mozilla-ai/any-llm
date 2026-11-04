@@ -65,6 +65,19 @@ class VideoJob(BaseModel):
         return self.status in TERMINAL_VIDEO_STATUSES
 
 
+class VideoShape(BaseModel):
+    """What a video should look like, read from ``size`` or from ``resolution`` and ``aspect_ratio``."""
+
+    short_side: int | None
+    """Pixels on the short side, which names the resolution tier (720 for ``720p``)."""
+    ratio: float | None
+    """Width over height, so 16:9 is about 1.78 and a portrait video is below 1."""
+    dimensions: tuple[int, int] | None
+    """Exact ``(width, height)``, only when the shape came from ``size``."""
+    described: str
+    """What the caller wrote, for error messages."""
+
+
 class VideoGenerationParams(BaseModel):
     """Parameters for video generation requests."""
 
@@ -77,7 +90,12 @@ class VideoGenerationParams(BaseModel):
     seconds: int | None = None
     """Length of the video in seconds."""
     size: str | None = None
-    """``WIDTHxHEIGHT``, such as ``1280x720``."""
+    """``WIDTHxHEIGHT``, such as ``1280x720``. Says both how sharp and what shape; not combined with
+    `resolution` or `aspect_ratio`."""
+    resolution: str | None = None
+    """How sharp, by short side: ``480p``, ``720p``, ``1080p`` or ``4k``. Pair it with `aspect_ratio` for the shape."""
+    aspect_ratio: str | None = None
+    """What shape, as ``WIDTH:HEIGHT`` such as ``16:9`` or ``9:16``."""
     seed: int | None = None
     """Seed for reproducible generation."""
     negative_prompt: str | None = None
@@ -105,7 +123,53 @@ class VideoGenerationParams(BaseModel):
         if self.size is None:
             return None
         width, separator, height = self.size.lower().partition("x")
-        if not separator or not width.isdigit() or not height.isdigit():
+        if not separator or not width.isdecimal() or not height.isdecimal() or int(width) == 0 or int(height) == 0:
             msg = f"size must be WIDTHxHEIGHT, such as 1280x720, not {self.size!r}"
             raise InvalidRequestError(msg)
         return int(width), int(height)
+
+    def parse_shape(self) -> VideoShape | None:
+        """Return the requested shape from ``size``, or from ``resolution`` and ``aspect_ratio``.
+
+        Returns:
+            None when none of the three was given.
+
+        Raises:
+            InvalidRequestError: If ``size`` is combined with the other two, or any of them is malformed.
+
+        """
+        if self.size is not None:
+            if self.resolution is not None or self.aspect_ratio is not None:
+                msg = "Pass either size or resolution and aspect_ratio, not both."
+                raise InvalidRequestError(msg)
+            width, height = self.parse_size()  # type: ignore[misc]
+            return VideoShape(
+                short_side=min(width, height), ratio=width / height, dimensions=(width, height), described=self.size
+            )
+        if self.resolution is None and self.aspect_ratio is None:
+            return None
+        short_side: int | None = None
+        if self.resolution is not None:
+            tier = self.resolution.lower()
+            if tier == "4k":
+                short_side = 2160
+            elif tier.endswith("p") and tier[:-1].isdecimal():
+                short_side = int(tier[:-1])
+            else:
+                msg = f"resolution must be a short side such as 720p, or 4k, not {self.resolution!r}"
+                raise InvalidRequestError(msg)
+        ratio: float | None = None
+        if self.aspect_ratio is not None:
+            numerator, separator, denominator = self.aspect_ratio.partition(":")
+            if (
+                not separator
+                or not numerator.isdecimal()
+                or not denominator.isdecimal()
+                or int(numerator) == 0
+                or int(denominator) == 0
+            ):
+                msg = f"aspect_ratio must be WIDTH:HEIGHT, such as 16:9, not {self.aspect_ratio!r}"
+                raise InvalidRequestError(msg)
+            ratio = int(numerator) / int(denominator)
+        described = " ".join(value for value in (self.resolution, self.aspect_ratio) if value is not None)
+        return VideoShape(short_side=short_side, ratio=ratio, dimensions=None, described=described)

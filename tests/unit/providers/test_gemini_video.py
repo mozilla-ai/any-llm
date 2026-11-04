@@ -75,14 +75,43 @@ def test_convert_video_params_maps_size_to_aspect_ratio_and_resolution(
     assert converted["response_format"] == {"type": "video", "aspect_ratio": aspect_ratio, "resolution": resolution}
 
 
-def test_convert_video_params_rejects_a_square_size() -> None:
-    with pytest.raises(InvalidRequestError, match="cannot be square"):
-        convert_video_params(_params(size="720x720"), "gemini", api_version=None)
+@pytest.mark.parametrize("size", ["720x720", "2520x1080", "1080x1440"])
+def test_convert_video_params_rejects_a_size_that_is_not_16_9_or_9_16(size: str) -> None:
+    with pytest.raises(InvalidRequestError, match=f"16:9 or 9:16 video, not {size!r}"):
+        convert_video_params(_params(size=size), "gemini", api_version=None)
+
+
+@pytest.mark.parametrize(
+    ("resolution", "aspect_ratio", "expected"),
+    [
+        ("720p", "16:9", {"aspect_ratio": "16:9", "resolution": "720p"}),
+        ("4K", "9:16", {"aspect_ratio": "9:16", "resolution": "4k"}),
+        ("360p", None, {"resolution": "360p"}),
+        (None, "9:16", {"aspect_ratio": "9:16"}),
+    ],
+)
+def test_convert_video_params_maps_resolution_and_aspect_ratio(
+    resolution: str | None, aspect_ratio: str | None, expected: dict[str, str]
+) -> None:
+    params = _params(resolution=resolution, aspect_ratio=aspect_ratio)
+    converted = convert_video_params(params, "gemini", api_version=None)
+    assert converted["response_format"] == {"type": "video", **expected}
+
+
+@pytest.mark.parametrize("aspect_ratio", ["1:1", "21:9", "3:4", "4:3"])
+def test_convert_video_params_rejects_an_aspect_ratio_that_is_not_16_9_or_9_16(aspect_ratio: str) -> None:
+    with pytest.raises(InvalidRequestError, match=f"16:9 or 9:16 video, not '720p {aspect_ratio}'"):
+        convert_video_params(_params(resolution="720p", aspect_ratio=aspect_ratio), "gemini", api_version=None)
+
+
+def test_convert_video_params_rejects_a_resolution_outside_geminis_tiers() -> None:
+    with pytest.raises(InvalidRequestError, match="short side of 360, 720, 1080, 2160 pixels, not '480p'"):
+        convert_video_params(_params(resolution="480p"), "gemini", api_version=None)
 
 
 def test_convert_video_params_rejects_a_size_outside_geminis_resolutions() -> None:
-    with pytest.raises(InvalidRequestError, match="short side of 360, 720, 1080, 2160 pixels, not '864x480'"):
-        convert_video_params(_params(size="864x480"), "gemini", api_version=None)
+    with pytest.raises(InvalidRequestError, match="short side of 360, 720, 1080, 2160 pixels, not '960x540'"):
+        convert_video_params(_params(size="960x540"), "gemini", api_version=None)
 
 
 @pytest.mark.parametrize("field", ["seconds", "negative_prompt", "reference_audios"])
