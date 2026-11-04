@@ -146,7 +146,24 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
     _check_no_reserved_tool_name_collision(params.tools)
 
     if params.response_format is None:
-        return _convert_tool_spec(params.tools, params.tool_choice) if params.tools else None
+        if params.tool_choice == "none":
+            # Converse has no "none" choice, so the tools are withheld; `_replayed_tool_config`
+            # still declares the ones the history called, which Converse requires.
+            return None
+        tool_config = _convert_tool_spec(params.tools or [], params.tool_choice)
+        if (
+            "toolChoice" in tool_config
+            and params.reasoning_effort is not None
+            and params.reasoning_effort not in ("auto", "none")
+        ):
+            msg = "tool_choice with reasoning_effort"
+            raise UnsupportedParameterError(
+                msg,
+                "bedrock",
+                "Claude rejects forced tool use with manual extended thinking. Use tool_choice='auto' "
+                "or disable reasoning_effort to force a tool.",
+            )
+        return tool_config if params.tools else None
 
     if not _is_anthropic_model(params.model_id):
         msg = "response_format"
@@ -176,9 +193,28 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
             "thinking is enabled. Drop reasoning_effort (or set it to 'none') to use response_format.",
         )
 
-    tool_config = _convert_tool_spec(params.tools, params.tool_choice) if params.tools else {"tools": []}
+    tool_config = _convert_tool_spec(params.tools, None) if params.tools else {"tools": []}
     tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))
-    tool_config["toolChoice"] = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    forced_choice = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    if params.tool_choice == "none":
+        msg = "tool_choice='none' with response_format"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "response_format is emulated via a forced tool call, which tool_choice='none' forbids.",
+        )
+    requested_choice = _convert_tool_choice(
+        params.tool_choice, {tool["toolSpec"]["name"] for tool in tool_config["tools"]}
+    )
+    if requested_choice is not None and requested_choice not in ({"any": {}}, forced_choice):
+        msg = "tool_choice with response_format"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "response_format requires the reserved structured-output tool. Drop the named tool_choice "
+            "or omit response_format to force a different tool.",
+        )
+    tool_config["toolChoice"] = forced_choice
     return tool_config
 
 
@@ -256,8 +292,42 @@ def _replayed_tool_config(messages: list[dict[str, Any]]) -> dict[str, Any] | No
     return _convert_tool_spec([{"type": "function", "function": {"name": name}} for name in names], tool_choice=None)
 
 
+def _convert_tool_choice(tool_choice: str | dict[str, Any] | None, tool_names: set[str]) -> dict[str, Any] | None:
+    """Translate an OpenAI `tool_choice` to a Converse `toolChoice`, or None for automatic selection.
+
+    `"none"` has no Converse equivalent and is handled by the caller. AWS validates
+    which native choice modes a given model supports.
+    """
+    if tool_choice is None or tool_choice == "auto":
+        return None
+    if tool_choice == "required":
+        if not tool_names:
+            msg = "tool_choice='required' requires at least one tool."
+            raise InvalidRequestError(msg, provider_name="bedrock")
+        return {"any": {}}
+    if isinstance(tool_choice, dict):
+        function = tool_choice.get("function")
+        if (
+            set(tool_choice) != {"type", "function"}
+            or tool_choice.get("type") != "function"
+            or not isinstance(function, dict)
+            or set(function) != {"name"}
+            or not isinstance(function["name"], str)
+            or not function["name"]
+        ):
+            msg = "tool_choice must be a function choice containing only a nonempty function name."
+            raise InvalidRequestError(msg, provider_name="bedrock")
+        name = function["name"]
+        if name not in tool_names:
+            msg = f"tool_choice names '{name}', which is not present in tools."
+            raise InvalidRequestError(msg, provider_name="bedrock")
+        return {"tool": {"name": name}}
+    msg = "tool_choice"
+    raise UnsupportedParameterError(msg, "bedrock", "Use 'auto', 'none', 'required', or a named function choice.")
+
+
 def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str, Any] | None) -> dict[str, Any]:
-    """Convert tool specifications to Bedrock format."""
+    """Convert tool specifications and supported explicit choices to Bedrock format."""
     tool_config: dict[str, Any] = {
         "tools": [
             {
@@ -270,9 +340,9 @@ def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str,
             for tool in tools
         ]
     }
-    if tool_choice:
-        if tool_choice == "required":
-            tool_config["toolChoice"] = {"any": {}}
+    converted_choice = _convert_tool_choice(tool_choice, {tool["function"]["name"] for tool in tools})
+    if converted_choice is not None:
+        tool_config["toolChoice"] = converted_choice
     return tool_config
 
 
