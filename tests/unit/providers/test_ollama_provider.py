@@ -16,7 +16,7 @@ from any_llm.providers.ollama.utils import (
     _create_chat_completion_from_ollama_response,
     _create_openai_chunk_from_ollama_chunk,
 )
-from any_llm.types.completion import ChatCompletion, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
 
 
 @pytest.mark.asyncio
@@ -567,89 +567,22 @@ async def test_streaming_completion_passes_tools_top_level() -> None:
         assert "tools" not in call_kwargs.get("options", {})
 
 
-@pytest.mark.asyncio
-async def test_streaming_assigns_distinct_tool_call_indices() -> None:
-    """Ollama streams each tool call in its own chunk and the chunk converter
-    stamps every tool-call delta with index=0. When a model emits several tool
-    calls, a consumer that accumulates streaming deltas by index concatenates
-    the arguments of distinct calls into one invalid JSON string. The provider
-    must reassign a stream-global, monotonically increasing index so each tool
-    call stays in its own slot."""
-
-    def _make_chunk(name: str, arguments: dict[str, str]) -> Mock:
-        func = Mock()
-        func.name = name
-        func.arguments = arguments
-        tool_call = Mock()
-        tool_call.function = func
-
-        message = Mock(spec=OllamaMessage)
-        message.content = None
-        message.role = "assistant"
-        message.thinking = None
-        message.tool_calls = [tool_call]
-
-        chunk = Mock(spec=OllamaChatResponse)
-        chunk.message = message
-        chunk.created_at = None
-        chunk.model = "llama3.1"
-        chunk.done = False
-        chunk.done_reason = None
-        chunk.prompt_eval_count = None
-        chunk.eval_count = None
-        chunk.total_duration = None
-        chunk.load_duration = None
-        chunk.prompt_eval_duration = None
-        chunk.eval_duration = None
-        return chunk
-
-    chunks = [
-        _make_chunk("find", {"query": "diode connected nmos"}),
-        _make_chunk("find", {"query": "5t nmos ota"}),
-        _make_chunk("find", {"query": "source follower"}),
-    ]
-
-    async def chunk_iter() -> AsyncIterator[Mock]:
-        for chunk in chunks:
-            yield chunk
-
-    with patch.object(OllamaProvider, "_init_client"):
-        provider = OllamaProvider(api_key=None)
-        provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=chunk_iter())
-
-        result = await provider._acompletion(
-            CompletionParams(
-                model_id="llama3.1",
-                messages=[{"role": "user", "content": "find three fixtures"}],
-                stream=True,
-            ),
-        )
-
-        indices = []
-        async for chunk in result:  # type: ignore[union-attr]
-            for choice in chunk.choices:
-                for tool_call in choice.delta.tool_calls or []:
-                    indices.append(tool_call.index)
-
-    assert indices == [0, 1, 2], f"expected distinct per-call indices, got {indices}"
-
-
 def _make_stream_chunk(
     *,
     tool_name: str | None = None,
+    tool_arguments: dict[str, str] | None = None,
     done: bool = False,
     done_reason: str | None = None,
 ) -> Mock:
     message = Mock(spec=OllamaMessage)
-    message.content = ""
+    message.content = None
     message.role = "assistant"
     message.thinking = None
     message.tool_calls = None
     if tool_name is not None:
         func = Mock()
         func.name = tool_name
-        func.arguments = {"city": "Paris"}
+        func.arguments = tool_arguments or {}
         tool_call = Mock()
         tool_call.function = func
         message.tool_calls = [tool_call]
@@ -669,7 +602,7 @@ def _make_stream_chunk(
     return chunk
 
 
-async def _stream_finish_reasons(chunks: list[Mock]) -> list[str | None]:
+async def _stream(chunks: list[Mock]) -> list[ChatCompletionChunk]:
     async def chunk_iter() -> AsyncIterator[Mock]:
         for chunk in chunks:
             yield chunk
@@ -686,7 +619,33 @@ async def _stream_finish_reasons(chunks: list[Mock]) -> list[str | None]:
                 stream=True,
             ),
         )
-        return [choice.finish_reason async for chunk in result for choice in chunk.choices]  # type: ignore[union-attr]
+        return [chunk async for chunk in result]  # type: ignore[union-attr]
+
+
+async def _stream_finish_reasons(chunks: list[Mock]) -> list[str | None]:
+    return [choice.finish_reason for chunk in await _stream(chunks) for choice in chunk.choices]
+
+
+@pytest.mark.asyncio
+async def test_streaming_assigns_distinct_tool_call_indices() -> None:
+    """Ollama streams each tool call in its own chunk and the chunk converter
+    stamps every tool-call delta with index=0. When a model emits several tool
+    calls, a consumer that accumulates streaming deltas by index concatenates
+    the arguments of distinct calls into one invalid JSON string. The provider
+    must reassign a stream-global, monotonically increasing index so each tool
+    call stays in its own slot."""
+    streamed = await _stream(
+        [
+            _make_stream_chunk(tool_name="find", tool_arguments={"query": "diode connected nmos"}),
+            _make_stream_chunk(tool_name="find", tool_arguments={"query": "5t nmos ota"}),
+            _make_stream_chunk(tool_name="find", tool_arguments={"query": "source follower"}),
+        ]
+    )
+
+    indices = [
+        tool_call.index for chunk in streamed for choice in chunk.choices for tool_call in choice.delta.tool_calls or []
+    ]
+    assert indices == [0, 1, 2], f"expected distinct per-call indices, got {indices}"
 
 
 @pytest.mark.asyncio
@@ -722,7 +681,7 @@ async def test_streaming_reports_tool_calls_finish_reason_on_the_tool_call_chunk
         ),
     ],
 )
-async def test_streaming_keeps_finish_reason_without_a_finished_tool_call(
+async def test_streaming_rewrites_only_a_stop_that_follows_a_tool_call(
     chunks: list[Mock], expected: list[str | None]
 ) -> None:
     assert await _stream_finish_reasons(chunks) == expected
