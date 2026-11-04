@@ -1036,31 +1036,56 @@ def test_convert_params_rejects_invalid_system_content(content: Any) -> None:
         _convert_params(params, {})
 
 
-@pytest.mark.parametrize(
-    "block",
-    [
-        {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
-        {"type": "text", "text": "Keep this", "cache_control": {"type": "ephemeral"}},
-    ],
-)
-def test_convert_params_rejects_unsupported_system_blocks(block: dict[str, Any]) -> None:
+def test_convert_params_rejects_non_text_system_blocks() -> None:
     params = CompletionParams(
         model_id="anthropic.claude-sonnet-4",
-        messages=[{"role": "system", "content": [block]}, {"role": "user", "content": "Hello"}],
+        messages=[
+            {"role": "system", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}]},
+            {"role": "user", "content": "Hello"},
+        ],
     )
 
     with pytest.raises(UnsupportedParameterError, match="system content"):
         _convert_params(params, {})
 
 
-@pytest.mark.parametrize("leading_system", [False, True])
-def test_convert_params_rejects_late_system_messages(leading_system: bool) -> None:
-    messages = [{"role": "system", "content": "First"}] if leading_system else []
-    messages.extend([{"role": "user", "content": "Hello"}, {"role": "system", "content": "Do not lose this"}])
-    params = CompletionParams(model_id="anthropic.claude-sonnet-4", messages=messages)
+def test_convert_params_drops_system_text_annotations() -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": "Keep this", "cache_control": {"type": "ephemeral"}}],
+            },
+            {"role": "user", "content": "Hello"},
+        ],
+    )
 
-    with pytest.raises(InvalidRequestError, match="System messages must precede"):
-        _convert_params(params, {})
+    result = _convert_params(params, {})
+
+    assert result["system"] == [{"text": "Keep this"}]
+
+
+def test_convert_params_hoists_late_system_messages() -> None:
+    params = CompletionParams(
+        model_id="anthropic.claude-sonnet-4",
+        messages=[
+            {"role": "system", "content": "First"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi"},
+            {"role": "system", "content": "Second"},
+            {"role": "user", "content": "Again"},
+        ],
+    )
+
+    result = _convert_params(params, {})
+
+    assert result["system"] == [{"text": "First"}, {"text": "Second"}]
+    assert result["messages"] == [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi"}]},
+        {"role": "user", "content": [{"text": "Again"}]},
+    ]
 
 
 @pytest.mark.parametrize("content", [None, "Message instruction", [{"type": "text", "text": "Message instruction"}]])
