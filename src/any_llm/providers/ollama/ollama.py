@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import binascii
 from typing import TYPE_CHECKING, Any, Literal
 
 from typing_extensions import override
@@ -228,7 +227,7 @@ class OllamaProvider(AnyLLM):
                     # its contents, so decode here and hand it bytes it cannot take for a path.
                     try:
                         images.append(base64.b64decode(base64_data, validate=True))
-                    except (binascii.Error, ValueError) as exc:
+                    except ValueError as exc:
                         msg = f"Data URI image contains invalid base64 data. Got: {image_url[:100]}"
                         raise InvalidRequestError(msg, exc, self.PROVIDER_NAME) from exc
                 else:
