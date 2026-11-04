@@ -42,3 +42,24 @@ async def test_embedding_providers_async(
     if provider not in (LLMProvider.GEMINI, LLMProvider.VERTEXAI, LLMProvider.LMSTUDIO):
         assert result.usage.prompt_tokens > 0
         assert result.usage.total_tokens > 0
+
+
+@pytest.mark.asyncio
+async def test_gemini_embedding_2_text_batch() -> None:
+    """Exercise separate text embeddings against the real Gemini Developer API."""
+    try:
+        llm = AnyLLM.create(LLMProvider.GEMINI)
+    except MissingApiKeyError:
+        if LLMProvider.GEMINI in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip("Gemini API key not provided, skipping live embedding-2 batch test")
+
+    texts = ["A quiet forest", "A busy city", "An open sea"]
+    result = await llm.aembedding(model="gemini-embedding-2", inputs=texts)
+
+    assert len(result.data) == 3
+    assert [entry.index for entry in result.data] == [0, 1, 2]
+    assert all(entry.embedding and all(isinstance(value, float) for value in entry.embedding) for entry in result.data)
+    for text, entry in zip(texts, result.data, strict=True):
+        single = await llm.aembedding(model="gemini-embedding-2", inputs=text)
+        assert entry.embedding == pytest.approx(single.data[0].embedding, abs=1e-3)
