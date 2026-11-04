@@ -2220,6 +2220,7 @@ class AnyLLM(FilesMixin, ABC):
         seed: int | None = None,
         negative_prompt: str | None = None,
         reference_images: list[str] | None = None,
+        reference_audios: list[str] | None = None,
         first_frame: str | None = None,
         last_frame: str | None = None,
         **kwargs: Any,
@@ -2238,6 +2239,7 @@ class AnyLLM(FilesMixin, ABC):
             seed: Seed for reproducible generation.
             negative_prompt: What the video should not contain.
             reference_images: Image URLs the video should take its subjects or style from.
+            reference_audios: Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track.
             first_frame: Image URL to start the video from.
             last_frame: Image URL to end the video on.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
@@ -2257,6 +2259,7 @@ class AnyLLM(FilesMixin, ABC):
             seed=seed,
             negative_prompt=negative_prompt,
             reference_images=reference_images,
+            reference_audios=reference_audios,
             first_frame=first_frame,
             last_frame=last_frame,
         )

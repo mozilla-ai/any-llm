@@ -306,6 +306,8 @@ class TogetherProvider(AnyLLM):
 
         Together takes the size as ``width``/``height``, the length as a string, and the first
         and last frames as ``frame_images`` entries, which merge with any the caller passes.
+        Reference audio goes in as ``media.audio_inputs``, which the pinned SDK has no argument
+        for, so it rides in ``extra_body`` and merges with any ``media`` the caller passes there.
         """
         create_kwargs: dict[str, Any] = {"model": params.model_id, "prompt": params.prompt}
         if params.seconds is not None:
@@ -325,6 +327,10 @@ class TogetherProvider(AnyLLM):
             frame_images.append({"input_image": params.last_frame, "frame": "last"})
         if frame_images:
             create_kwargs["frame_images"] = frame_images
+        if params.reference_audios is not None:
+            extra_body = dict(kwargs.pop("extra_body", None) or {})
+            extra_body["media"] = {**(extra_body.get("media") or {}), "audio_inputs": params.reference_audios}
+            create_kwargs["extra_body"] = extra_body
         create_kwargs.update(kwargs)
         return create_kwargs
 

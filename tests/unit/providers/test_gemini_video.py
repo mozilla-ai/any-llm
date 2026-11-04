@@ -85,9 +85,10 @@ def test_convert_video_params_rejects_a_size_outside_geminis_resolutions() -> No
         convert_video_params(_params(size="864x480"), "gemini", api_version=None)
 
 
-@pytest.mark.parametrize("field", ["seconds", "negative_prompt"])
+@pytest.mark.parametrize("field", ["seconds", "negative_prompt", "reference_audios"])
 def test_convert_video_params_rejects_fields_gemini_has_no_home_for(field: str) -> None:
-    value: Any = 5 if field == "seconds" else "blurry"
+    values: dict[str, Any] = {"seconds": 5, "negative_prompt": "blurry", "reference_audios": ["https://a/beat.mp3"]}
+    value = values[field]
     with pytest.raises(UnsupportedParameterError, match=field):
         convert_video_params(_params(**{field: value}), "gemini", api_version=None)
 

@@ -79,6 +79,10 @@ def convert_video_params(
     if params.negative_prompt is not None:
         parameter_name = "negative_prompt"
         raise UnsupportedParameterError(parameter_name, provider_name)
+    if params.reference_audios is not None:
+        # Omni ignores audio in references and documents audio uploads as unsupported.
+        parameter_name = "reference_audios"
+        raise UnsupportedParameterError(parameter_name, provider_name)
 
     parts: list[dict[str, Any]] = []
     if params.first_frame is not None:
