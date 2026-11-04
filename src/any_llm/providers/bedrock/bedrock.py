@@ -57,7 +57,7 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+    from collections.abc import AsyncIterator, Callable, Sequence
 
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.messages import MessagesParams, ParsedBetaMessage, ParsedMessage
@@ -389,31 +389,30 @@ class BedrockProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        logger.warning("AWS Bedrock client does not support async. Calls made with this method will be blocking.")
-
-        loop = asyncio.get_event_loop()
-
-        # create partial function of sync call
-        call_sync_partial: Callable[[], ChatCompletion | Iterator[ChatCompletionChunk]] = functools.partial(
-            self._completion, params, **kwargs
-        )
-
-        result = await loop.run_in_executor(None, call_sync_partial)
-
+        result = await asyncio.to_thread(self._completion, params, **kwargs)
         if isinstance(result, ChatCompletion):
             return result
+        return self._stream_converse(result, params.model_id)
 
-        async def _stream() -> AsyncIterator[ChatCompletionChunk]:
-            for chunk in result:
-                yield chunk
-
-        return _stream()
+    @staticmethod
+    async def _stream_converse(event_stream: Any, model_id: str) -> AsyncIterator[ChatCompletionChunk]:
+        """Yield the chunks of a Converse response stream, reading each event off the event loop."""
+        events = iter(event_stream)
+        tool_index_map: dict[int, int] = {}
+        try:
+            while (item := await asyncio.to_thread(next, events, None)) is not None:
+                chunk = _create_openai_chunk_from_aws_chunk(item, model_id, tool_index_map)
+                if chunk is not None:
+                    yield chunk
+        finally:
+            event_stream.close()
 
     def _completion(
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
+    ) -> ChatCompletion | Any:
+        """Return a ``ChatCompletion``, or the raw Converse event stream when ``params.stream`` is set."""
         # boto3's Converse API has no `timeout` parameter; it must be pulled out here so it
         # never reaches `converse`/`converse_stream`, and applied via a client whose connection
         # is configured with that timeout instead (see `_client_for_timeout`).
@@ -425,16 +424,7 @@ class BedrockProvider(AnyLLM):
             response_stream = client.converse_stream(
                 **completion_kwargs,
             )
-            stream_generator = response_stream["stream"]
-
-            def _stream_with_state() -> Iterator[ChatCompletionChunk]:
-                tool_index_map: dict[int, int] = {}
-                for item in stream_generator:
-                    chunk = _create_openai_chunk_from_aws_chunk(item, params.model_id, tool_index_map)
-                    if chunk is not None:
-                        yield chunk
-
-            return _stream_with_state()
+            return response_stream["stream"]
         response = client.converse(**completion_kwargs)
 
         return self._convert_completion_response(response)
