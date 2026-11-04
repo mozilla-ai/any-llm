@@ -1,5 +1,6 @@
 import base64
 import io
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -159,7 +160,7 @@ def test_generation_request_accepts_b64_json_and_rejects_url() -> None:
 
 
 def test_generation_request_refuses_a_text_model_before_sending() -> None:
-    with pytest.raises(InvalidRequestError, match="'gemini-3.8-flash' does not generate images"):
+    with pytest.raises(InvalidRequestError, match=re.escape("'gemini-3.8-flash' does not generate images")):
         generation_request(_generation(model_id="gemini-3.8-flash"), "gemini")
 
 
