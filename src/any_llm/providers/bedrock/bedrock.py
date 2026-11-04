@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import functools
 import json
 import os
@@ -20,6 +19,7 @@ from any_llm.exceptions import (
 )
 from any_llm.logging import logger
 from any_llm.providers.anthropic.base import _messages_betas
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
     ContentBlockStartEvent,
@@ -57,10 +57,9 @@ except ImportError as e:
     MISSING_PACKAGES_ERROR = e
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+    from collections.abc import AsyncIterator, Callable, Sequence
 
     from any_llm.types.batch import Batch, BatchResult
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.messages import MessagesParams, ParsedBetaMessage, ParsedMessage
 
 # Claude's Messages body on Bedrock carries the API version and the betas in the body itself,
@@ -111,114 +110,6 @@ _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
     "content_block_delta": ContentBlockDeltaEvent,
     "content_block_stop": ContentBlockStopEvent,
 }
-
-
-class _ConverseStream:
-    """Own a Converse stream, reading one converted chunk at a time off the event loop.
-
-    Cancellation cannot interrupt a boto3 socket read. A read already in progress owns
-    cleanup after it returns, so cancellation does not wait for it or close its socket
-    concurrently. Cleanup still depends on the SDK read returning or timing out.
-
-    A cancelled task also does not wait for cleanup queued in the executor. Outside
-    cancellation, aclose() waits for idle-stream cleanup; close() performs it inline.
-    """
-
-    def __init__(self, event_stream: Any, model_id: str) -> None:
-        self._event_stream = event_stream
-        self._events: Iterator[dict[str, Any]] | None = None
-        self._model_id = model_id
-        self._tool_index_map: dict[int, int] = {}
-        self._state_lock = threading.Lock()
-        self._close_requested = threading.Event()
-        self._reading = False
-        self._closed = False
-        self._async_read_pending = False
-        self._close_future: asyncio.Future[None] | None = None
-
-    def __iter__(self) -> _ConverseStream:
-        return self
-
-    def __next__(self) -> ChatCompletionChunk:
-        with self._state_lock:
-            if self._close_requested.is_set():
-                raise StopIteration
-            if self._reading:
-                message = "A Bedrock stream read is already in progress."
-                raise RuntimeError(message)
-            self._reading = True
-
-        try:
-            if self._events is None:
-                self._events = iter(self._event_stream)
-            while not self._close_requested.is_set():
-                item = next(self._events)
-                chunk = _create_openai_chunk_from_aws_chunk(item, self._model_id, self._tool_index_map)
-                if chunk is not None:
-                    return chunk
-        except BaseException:
-            self._close_requested.set()
-            raise
-        finally:
-            with self._state_lock:
-                self._reading = False
-            if self._claim_close():
-                self._close_raw()
-        raise StopIteration
-
-    def __aiter__(self) -> _ConverseStream:
-        return self
-
-    async def __anext__(self) -> ChatCompletionChunk:
-        if self._close_requested.is_set():
-            raise StopAsyncIteration
-        if self._async_read_pending:
-            message = "A Bedrock stream read is already in progress."
-            raise RuntimeError(message)
-        self._async_read_pending = True
-        try:
-            # A default keeps StopIteration from crossing the Future boundary.
-            chunk = await asyncio.to_thread(next, self, None)
-        except BaseException:
-            self._start_close()
-            raise
-        finally:
-            self._async_read_pending = False
-        if chunk is None or self._close_requested.is_set():
-            raise StopAsyncIteration
-        return chunk
-
-    def _claim_close(self) -> bool:
-        with self._state_lock:
-            if not self._close_requested.is_set() or self._reading or self._closed:
-                return False
-            self._closed = True
-            return True
-
-    def _close_raw(self) -> None:
-        # As in aclose_quietly, a cleanup error must not replace the stream's outcome.
-        with contextlib.suppress(Exception):
-            self._event_stream.close()
-
-    def close(self) -> None:
-        self._close_requested.set()
-        if self._claim_close():
-            self._close_raw()
-
-    def _start_close(self) -> asyncio.Future[None] | None:
-        self._close_requested.set()
-        if self._claim_close():
-            self._close_future = asyncio.get_running_loop().run_in_executor(None, self._close_raw)
-        return self._close_future
-
-    async def aclose(self) -> None:
-        close_future = self._start_close()
-        task = asyncio.current_task()
-        # The exception wrapper closes while unwinding cancellation. Queued cleanup
-        # must not make that cancellation wait for an available executor worker.
-        if close_future is not None and (task is None or not task.cancelling()):
-            # A cancelled waiter must not cancel cleanup that has yet to start.
-            await asyncio.shield(close_future)
 
 
 def _is_cacheable(block: Any) -> bool:
@@ -498,36 +389,30 @@ class BedrockProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Open Converse off-loop and retain stream ownership even if opening is cancelled."""
-        abandoned = threading.Event()
-        handoff_lock = threading.Lock()
-        result: ChatCompletion | _ConverseStream | None = None
+        result = await asyncio.to_thread(self._completion, params, **kwargs)
+        if isinstance(result, ChatCompletion):
+            return result
+        return self._stream_converse(result, params.model_id)
 
-        def call_sync() -> ChatCompletion | _ConverseStream:
-            nonlocal result
-            response = self._completion(params, **kwargs)
-            with handoff_lock:
-                result = response
-                close_response = abandoned.is_set()
-            if close_response and isinstance(response, _ConverseStream):
-                response.close()
-            return response
-
+    @staticmethod
+    async def _stream_converse(event_stream: Any, model_id: str) -> AsyncIterator[ChatCompletionChunk]:
+        """Yield the chunks of a Converse response stream, reading each event off the event loop."""
+        events = iter(event_stream)
+        tool_index_map: dict[int, int] = {}
         try:
-            return await asyncio.get_running_loop().run_in_executor(None, call_sync)
-        except BaseException:
-            with handoff_lock:
-                abandoned.set()
-                response = result
-            if isinstance(response, _ConverseStream):
-                response._start_close()
-            raise
+            while (item := await asyncio.to_thread(next, events, None)) is not None:
+                chunk = _create_openai_chunk_from_aws_chunk(item, model_id, tool_index_map)
+                if chunk is not None:
+                    yield chunk
+        finally:
+            event_stream.close()
 
     def _completion(
         self,
         params: CompletionParams,
         **kwargs: Any,
-    ) -> ChatCompletion | _ConverseStream:
+    ) -> ChatCompletion | Any:
+        """Return a ``ChatCompletion``, or the raw Converse event stream when ``params.stream`` is set."""
         # boto3's Converse API has no `timeout` parameter; it must be pulled out here so it
         # never reaches `converse`/`converse_stream`, and applied via a client whose connection
         # is configured with that timeout instead (see `_client_for_timeout`).
@@ -539,7 +424,7 @@ class BedrockProvider(AnyLLM):
             response_stream = client.converse_stream(
                 **completion_kwargs,
             )
-            return _ConverseStream(response_stream["stream"], params.model_id)
+            return response_stream["stream"]
         response = client.converse(**completion_kwargs)
 
         return self._convert_completion_response(response)
