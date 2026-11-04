@@ -65,7 +65,10 @@ async def test_upload_preserves_metadata_and_sends_multipart(tmp_path: Path) -> 
         assert result.model_extra == {"type": "file", "future_field": "preserved"}
         assert len(requests) == 1
         assert requests[0].url.path == "/v1/files"
-        assert requests[0].headers["x-api-key"] == "test-key"
+        assert (requests[0].headers.get("x-api-key"), requests[0].headers.get("authorization")) in {
+            ("test-key", None),  # anthropic<2
+            (None, "Bearer test-key"),  # anthropic>=2
+        }
         assert requests[0].headers["content-type"].startswith("multipart/form-data;")
         assert b"a,b\n" in requests[0].content
         assert b'filename="input.csv"' in requests[0].content
