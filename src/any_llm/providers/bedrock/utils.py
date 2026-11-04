@@ -146,6 +146,10 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
     _check_no_reserved_tool_name_collision(params.tools)
 
     if params.response_format is None:
+        if params.tool_choice == "none":
+            # Converse has no "none" choice, so the tools are withheld; `_replayed_tool_config`
+            # still declares the ones the history called, which Converse requires.
+            return None
         tool_config = _convert_tool_spec(params.tools or [], params.tool_choice)
         if (
             "toolChoice" in tool_config
@@ -192,6 +196,13 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
     tool_config = _convert_tool_spec(params.tools, None) if params.tools else {"tools": []}
     tool_config["tools"].append(_convert_response_format_to_tool_spec(params.response_format, "bedrock"))
     forced_choice = {"tool": {"name": _STRUCTURED_OUTPUT_TOOL_NAME}}
+    if params.tool_choice == "none":
+        msg = "tool_choice='none' with response_format"
+        raise UnsupportedParameterError(
+            msg,
+            "bedrock",
+            "response_format is emulated via a forced tool call, which tool_choice='none' forbids.",
+        )
     requested_choice = _convert_tool_choice(
         params.tool_choice, {tool["toolSpec"]["name"] for tool in tool_config["tools"]}
     )
@@ -282,21 +293,13 @@ def _replayed_tool_config(messages: list[dict[str, Any]]) -> dict[str, Any] | No
 
 
 def _convert_tool_choice(tool_choice: str | dict[str, Any] | None, tool_names: set[str]) -> dict[str, Any] | None:
-    """Preserve explicit tool intent or reject choices Converse cannot represent.
+    """Translate an OpenAI `tool_choice` to a Converse `toolChoice`, or None for automatic selection.
 
-    AWS validates model-specific support for its native choice modes. There is no
-    Converse ``none`` mode; removing tool definitions would also break tool-use history.
+    `"none"` has no Converse equivalent and is handled by the caller. AWS validates
+    which native choice modes a given model supports.
     """
     if tool_choice is None or tool_choice == "auto":
         return None
-    if tool_choice == "none":
-        msg = "tool_choice='none'"
-        raise UnsupportedParameterError(
-            msg,
-            "bedrock",
-            "Converse has no 'none' tool choice. Omit both tools and tool_choice for a request without tools; "
-            "tool definitions must not be dropped from a conversation containing tool-use history.",
-        )
     if tool_choice == "required":
         if not tool_names:
             msg = "tool_choice='required' requires at least one tool."
@@ -320,7 +323,7 @@ def _convert_tool_choice(tool_choice: str | dict[str, Any] | None, tool_names: s
             raise InvalidRequestError(msg, provider_name="bedrock")
         return {"tool": {"name": name}}
     msg = "tool_choice"
-    raise UnsupportedParameterError(msg, "bedrock", "Use 'auto', 'required', or a named function choice.")
+    raise UnsupportedParameterError(msg, "bedrock", "Use 'auto', 'none', 'required', or a named function choice.")
 
 
 def _convert_tool_spec(tools: list[dict[str, Any]], tool_choice: str | dict[str, Any] | None) -> dict[str, Any]:

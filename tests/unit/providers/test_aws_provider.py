@@ -1321,7 +1321,9 @@ def test_convert_params_preserves_tool_choice(
 
 
 @pytest.mark.parametrize("with_history", [False, True])
-def test_convert_params_rejects_none_tool_choice(tool_choice_tools: list[dict[str, Any]], with_history: bool) -> None:
+def test_convert_params_none_tool_choice_withholds_tools(
+    tool_choice_tools: list[dict[str, Any]], with_history: bool
+) -> None:
     messages: list[dict[str, Any]] = [{"role": "user", "content": "Look up the answer"}]
     if with_history:
         messages.extend(
@@ -1337,8 +1339,13 @@ def test_convert_params_rejects_none_tool_choice(tool_choice_tools: list[dict[st
         model_id="anthropic.claude-sonnet-4", messages=messages, tools=tool_choice_tools, tool_choice="none"
     )
 
-    with pytest.raises(UnsupportedParameterError, match="tool_choice='none'"):
-        _convert_params(params, {})
+    result = _convert_params(params, {})
+
+    if with_history:
+        assert [tool["toolSpec"]["name"] for tool in result["toolConfig"]["tools"]] == ["lookup"]
+        assert "toolChoice" not in result["toolConfig"]
+    else:
+        assert "toolConfig" not in result
 
 
 @pytest.mark.parametrize(
