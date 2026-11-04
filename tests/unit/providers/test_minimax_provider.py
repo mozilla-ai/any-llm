@@ -1,6 +1,8 @@
+import json
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, cast
 
+import httpx
 import pytest
 from openai._models import construct_type
 from openai.types.chat.chat_completion_chunk import (
@@ -18,7 +20,7 @@ from pydantic import BaseModel
 from any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.minimax.minimax import MinimaxProvider
-from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, ReasoningEffort
 
 if TYPE_CHECKING:
     from openai._streaming import AsyncStream
@@ -178,3 +180,87 @@ async def test_stream_preserves_usage_on_chunk_without_delta() -> None:
     assert result[0].choices == []
     assert result[0].usage is not None
     assert result[0].usage.total_tokens == 13
+
+
+def _mock_chat_provider(api_base: str | None, message: dict[str, str]) -> tuple[MinimaxProvider, list[httpx.Request]]:
+    requests: list[httpx.Request] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "MiniMax-M3.1-Flash",
+                "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+            },
+        )
+
+    provider = MinimaxProvider(
+        api_key="test-key",
+        api_base=api_base,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle_request)),
+        max_retries=0,
+    )
+    return provider, requests
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_base", [None, "https://api.minimaxi.com/v1", "https://custom.example/v1"])
+async def test_request_targets_api_base(api_base: str | None) -> None:
+    provider, requests = _mock_chat_provider(api_base, {"role": "assistant", "content": "ok"})
+    try:
+        await provider.acompletion(model="MiniMax-M3.1-Flash", messages=[{"role": "user", "content": "Hello"}])
+    finally:
+        await provider.client.close()
+
+    assert len(requests) == 1
+    assert str(requests[0].url) == f"{api_base or MinimaxProvider.API_BASE}/chat/completions"
+    body = json.loads(requests[0].content)
+    assert body["model"] == "MiniMax-M3.1-Flash"
+    assert body["messages"] == [{"role": "user", "content": "Hello"}]
+    assert "reasoning_effort" not in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("effort", "expected"),
+    [("auto", None), ("low", "low"), ("medium", "medium"), ("high", "high"), ("xhigh", "xhigh"), ("max", "max")],
+)
+async def test_reasoning_effort_reaches_request(effort: ReasoningEffort, expected: str | None) -> None:
+    provider, requests = _mock_chat_provider(None, {"role": "assistant", "content": "ok"})
+    try:
+        await provider.acompletion(
+            model="MiniMax-M3.1-Flash",
+            messages=[{"role": "user", "content": "Hello"}],
+            reasoning_effort=effort,
+        )
+    finally:
+        await provider.client.close()
+
+    body = json.loads(requests[0].content)
+    if expected is None:
+        assert "reasoning_effort" not in body
+    else:
+        assert body["reasoning_effort"] == expected
+
+
+@pytest.mark.asyncio
+async def test_reasoning_content_field_is_extracted() -> None:
+    """MiniMax-M3.1-Flash always returns thinking in `reasoning_content` rather than `<think>` tags."""
+    provider, _ = _mock_chat_provider(
+        None, {"role": "assistant", "content": "9.9", "reasoning_content": "Compare the decimals."}
+    )
+    try:
+        result = await provider.acompletion(
+            model="MiniMax-M3.1-Flash", messages=[{"role": "user", "content": "Which is bigger, 9.11 or 9.9?"}]
+        )
+    finally:
+        await provider.client.close()
+
+    assert isinstance(result, ChatCompletion)
+    assert result.choices[0].message.content == "9.9"
+    assert result.choices[0].message.reasoning is not None
+    assert result.choices[0].message.reasoning.content == "Compare the decimals."
