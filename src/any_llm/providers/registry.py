@@ -106,17 +106,6 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_moderation=True,
         supports_list_models=False,
     ),
-    "deepinfra": OpenAICompatibleProviderConfig(
-        name="deepinfra",
-        api_base="https://api.deepinfra.com/v1/openai",
-        env_api_key_name="DEEPINFRA_API_KEY",
-        env_api_base_name="DEEPINFRA_API_BASE",
-        provider_documentation_url="https://deepinfra.com/docs/openai_api",
-        supports_completion_reasoning=True,
-        supports_completion_image=True,
-        supports_embedding=True,
-        supports_moderation=True,
-    ),
     "kenari": OpenAICompatibleProviderConfig(
         name="kenari",
         api_base="https://kenari.id/v1",

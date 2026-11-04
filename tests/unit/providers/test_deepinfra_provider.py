@@ -29,6 +29,7 @@ def test_deepinfra_supports_flags() -> None:
     assert provider.SUPPORTS_COMPLETION_IMAGE is True
     assert provider.SUPPORTS_COMPLETION_PDF is False
     assert provider.SUPPORTS_EMBEDDING is True
+    assert provider.SUPPORTS_MODERATION is True
     assert provider.SUPPORTS_LIST_MODELS is True
 
 
