@@ -252,6 +252,11 @@ class OllamaProvider(AnyLLM):
                     for tool_call in delta.tool_calls:
                         tool_call.index = tool_call_index
                         tool_call_index += 1
+                # Ollama ends a stream that called a tool with done_reason "stop",
+                # usually in a later chunk without tool calls. Report "tool_calls"
+                # as the non-streaming conversion and Ollama's OpenAI endpoint do.
+                if choice.finish_reason == "stop" and tool_call_index > 0:
+                    choice.finish_reason = "tool_calls"
             yield converted
 
     @override
