@@ -4,6 +4,7 @@ from typing import Any
 
 from typing_extensions import override
 
+from any_llm.exceptions import InvalidRequestError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -16,16 +17,54 @@ from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
 
-def _convert_structured_type_to_deepseek_json(
-    response_format: type, messages: list[dict[str, Any]]
+def _asks_for_json(response_format: Any) -> bool:
+    """Whether ``response_format`` asks for JSON output that DeepSeek must serve as JSON mode.
+
+    DeepSeek's ``response_format`` takes only ``text`` and ``json_object``, so a type and an
+    OpenAI ``json_schema`` dict (which the Messages bridge produces) both become JSON mode.
+    https://api-docs.deepseek.com/api/create-chat-completion
+    """
+    if is_structured_output_type(response_format):
+        return True
+    return isinstance(response_format, dict) and response_format.get("type") == "json_schema"
+
+
+def _json_schema_of(response_format: Any) -> dict[str, Any] | None:
+    """The JSON schema a JSON-mode ``response_format`` carries, or None when it names none.
+
+    OpenAI's ``json_schema`` format requires the ``json_schema`` object but not its
+    ``schema``, so a format without one asks for JSON with no shape.
+
+    Raises:
+        InvalidRequestError: when the ``json_schema`` object is missing or its ``schema``
+            is not a JSON schema object, which no request could mean.
+
+    """
+    if is_structured_output_type(response_format):
+        return get_json_schema(response_format)
+    json_schema = response_format.get("json_schema")
+    if not isinstance(json_schema, dict):
+        msg = "response_format of type 'json_schema' must include a 'json_schema' object"
+        raise InvalidRequestError(msg, provider_name="deepseek")
+    if "schema" not in json_schema:
+        return None
+    schema = json_schema["schema"]
+    if not isinstance(schema, dict):
+        msg = "response_format 'json_schema.schema' must be a JSON schema object"
+        raise InvalidRequestError(msg, provider_name="deepseek")
+    return schema
+
+
+def _convert_schema_to_deepseek_json(
+    schema: dict[str, Any] | None, messages: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """
-    Convert a structured type to DeepSeek JSON format.
+    Convert a JSON schema, or a request for unconstrained JSON, to DeepSeek JSON format.
 
     DeepSeek requires:
     1. response_format = {'type': 'json_object'}
     2. The word "json" in the prompt
-    3. An example of the desired JSON structure
+    3. An example of the desired JSON structure, given here when there is a schema
 
     Following the instructions in the DeepSeek documentation:
     https://api-docs.deepseek.com/guides/json_mode
@@ -33,15 +72,15 @@ def _convert_structured_type_to_deepseek_json(
     Returns:
         modified_messages
     """
-    schema = get_json_schema(response_format)
-
     modified_messages = messages.copy()
     if modified_messages and modified_messages[-1]["role"] == "user":
         original_content = modified_messages[-1]["content"]
+        if schema is None:
+            shape = "Please respond with a JSON object."
+        else:
+            shape = f"Please respond with a JSON object that matches the following schema:\n\n{json.dumps(schema, indent=2)}"
         json_instruction = f"""
-Please respond with a JSON object that matches the following schema:
-
-{json.dumps(schema, indent=2)}
+{shape}
 
 Return the JSON object only, no other text, do not wrap it in ```json or ```.
 """
@@ -85,11 +124,9 @@ def _reinject_reasoning_content(messages: list[dict[str, Any]], *, replay_reason
 
 def _preprocess_messages(params: CompletionParams) -> CompletionParams:
     """Preprocess messages"""
-    if params.response_format:
-        if is_structured_output_type(params.response_format):
-            modified_messages = _convert_structured_type_to_deepseek_json(params.response_format, params.messages)
-            params.response_format = {"type": "json_object"}
-            params.messages = modified_messages
+    if params.response_format and _asks_for_json(params.response_format):
+        params.messages = _convert_schema_to_deepseek_json(_json_schema_of(params.response_format), params.messages)
+        params.response_format = {"type": "json_object"}
 
     params.messages = _reinject_reasoning_content(params.messages, replay_reasoning=params.tools is not None)
 

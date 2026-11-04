@@ -4,9 +4,13 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat.chat_completion_usage import ChatCompletionUsage as TogetherChatCompletionUsage
 
-from any_llm.providers.together.utils import _create_openai_chunk_from_together_chunk
+from any_llm.providers.together.utils import (
+    _convert_together_response_to_chat_completion,
+    _create_openai_chunk_from_together_chunk,
+)
 from any_llm.types.completion import ChatCompletionChunk, CompletionParams, Usage
 from any_llm.types.model import Model
 
@@ -17,7 +21,7 @@ def make_together_chunk(
     reasoning: str | None = None,
     tool_calls: list[Any] | None = None,
     finish_reason: str = "stop",
-    usage: dict[str, int] | None = None,
+    usage: dict[str, Any] | None = None,
 ) -> Mock:
     """Create a mock TogetherChatCompletionChunk for testing."""
     delta_mock = Mock()
@@ -31,19 +35,14 @@ def make_together_chunk(
     choice_mock.index = 0
     choice_mock.finish_reason = finish_reason
 
-    usage_mock = None
-    if usage:
-        usage_mock = Mock()
-        usage_mock.prompt_tokens = usage.get("prompt_tokens", 0)
-        usage_mock.completion_tokens = usage.get("completion_tokens", 0)
-        usage_mock.total_tokens = usage.get("total_tokens", 0)
+    usage_model = TogetherChatCompletionUsage.model_validate(usage) if usage else None
 
     together_chunk = Mock(spec=TogetherChatCompletionChunk)
     together_chunk.choices = [choice_mock]
     together_chunk.id = "test-id"
     together_chunk.created = int(datetime.now().timestamp())
     together_chunk.model = "test-model"
-    together_chunk.usage = usage_mock
+    together_chunk.usage = usage_model
 
     return together_chunk
 
@@ -161,10 +160,10 @@ def test_create_openai_chunk_with_tool_calls_object_format() -> None:
 
 
 def test_create_openai_chunk_with_tool_calls_missing_id() -> None:
-    """Test handling tool calls without id generates uuid."""
+    """A delta without an id keeps it absent, so a client joins it to its call by index."""
     tool_call_dict = {
         "index": 0,
-        "function": {"name": "func", "arguments": "{}"},
+        "function": {"arguments": "{}"},
     }
 
     together_chunk = make_together_chunk(tool_calls=[tool_call_dict], finish_reason="tool_calls")
@@ -172,8 +171,33 @@ def test_create_openai_chunk_with_tool_calls_missing_id() -> None:
 
     assert result.choices[0].delta.tool_calls is not None
     tool_call = result.choices[0].delta.tool_calls[0]
-    assert tool_call.id is not None
-    assert len(tool_call.id) > 0
+    assert tool_call.id is None
+    assert tool_call.type is None
+    assert tool_call.function is not None
+    assert tool_call.function.name is None
+    assert tool_call.function.arguments == "{}"
+
+
+def test_create_openai_chunk_streamed_tool_call_keeps_one_id() -> None:
+    """Together's argument deltas carry no id or name; none is invented for them."""
+    first = make_together_chunk(
+        tool_calls=[{"index": 0, "id": "call_1", "type": "function", "function": {"name": "get_weather"}}],
+        finish_reason=None,  # type: ignore[arg-type]
+    )
+    rest = [
+        make_together_chunk(tool_calls=[{"index": 0, "function": {"arguments": part}}], finish_reason=None)  # type: ignore[arg-type]
+        for part in ("{", '"location":"Paris"}')
+    ]
+
+    deltas = [
+        call
+        for chunk in (first, *rest)
+        for call in _create_openai_chunk_from_together_chunk(chunk).choices[0].delta.tool_calls or []
+    ]
+
+    assert [call.id for call in deltas] == ["call_1", None, None]
+    assert [call.function.name for call in deltas if call.function] == ["get_weather", None, None]
+    assert "".join(call.function.arguments or "" for call in deltas if call.function) == '{"location":"Paris"}'
 
 
 def test_create_openai_chunk_with_tool_calls_object_missing_function() -> None:
@@ -189,8 +213,8 @@ def test_create_openai_chunk_with_tool_calls_object_missing_function() -> None:
     assert result.choices[0].delta.tool_calls is not None
     tool_call = result.choices[0].delta.tool_calls[0]
     assert tool_call.function is not None
-    assert tool_call.function.name == ""
-    assert tool_call.function.arguments == ""
+    assert tool_call.function.name is None
+    assert tool_call.function.arguments is None
 
 
 def test_create_openai_chunk_with_reasoning() -> None:
@@ -215,6 +239,123 @@ def test_create_openai_chunk_with_usage() -> None:
     assert result.usage.prompt_tokens == 10
     assert result.usage.completion_tokens == 5
     assert result.usage.total_tokens == 15
+
+
+def test_create_openai_chunk_keeps_usage_details() -> None:
+    """Together reports cache hits and reasoning tokens as extras its SDK model does not declare."""
+    together_chunk = make_together_chunk(
+        content=None,
+        usage={
+            "prompt_tokens": 10439,
+            "completion_tokens": 5,
+            "total_tokens": 10444,
+            "prompt_tokens_details": {"cached_tokens": 10368},
+            "completion_tokens_details": {"reasoning_tokens": 5},
+        },
+    )
+    result = _create_openai_chunk_from_together_chunk(together_chunk)
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 10368
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 5
+
+
+def test_convert_response_keeps_usage_details() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {
+            "id": "resp-1",
+            "choices": [{"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": 10439,
+                "completion_tokens": 5,
+                "total_tokens": 10444,
+                "prompt_tokens_details": {"cached_tokens": 10368},
+                "completion_tokens_details": {"reasoning_tokens": 5},
+            },
+        },
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+    )
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 10439
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 10368
+    assert result.usage.completion_tokens_details is not None
+    assert result.usage.completion_tokens_details.reasoning_tokens == 5
+
+
+def test_convert_response_reads_top_level_cached_tokens() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {"usage": {"prompt_tokens": 100, "completion_tokens": 1, "total_tokens": 101, "cached_tokens": 64}},
+        "model",
+    )
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 64
+
+
+def test_convert_response_reads_top_level_cached_tokens_when_nested_is_null() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 1,
+                "total_tokens": 101,
+                "prompt_tokens_details": {"cached_tokens": None},
+                "cached_tokens": 64,
+            }
+        },
+        "model",
+    )
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 64
+
+
+def test_convert_response_without_usage_details() -> None:
+    result = _convert_together_response_to_chat_completion(
+        {"usage": {"prompt_tokens": 3, "completion_tokens": None, "total_tokens": 3}},
+        "model",
+    )
+
+    assert result.usage is not None
+    assert result.usage.completion_tokens == 0
+    assert result.usage.prompt_tokens_details is None
+    assert result.usage.completion_tokens_details is None
+
+
+def test_convert_completion_params_sends_stream_options_in_extra_body() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    result = TogetherProvider._convert_completion_params(params, extra_body={"other": 1})
+
+    assert "stream_options" not in result
+    assert result["extra_body"] == {"other": 1, "stream_options": {"include_usage": True}}
+
+
+def test_convert_completion_params_drops_stream_options_when_not_streaming() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=False,
+        stream_options={"include_usage": True},
+    )
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "stream_options" not in result
+    assert "extra_body" not in result
 
 
 def test_convert_completion_params_with_pydantic_response_format() -> None:
@@ -594,3 +735,60 @@ def test_together_convert_embedding_params_forwards_kwargs() -> None:
     from any_llm.providers.together.together import TogetherProvider
 
     assert TogetherProvider._convert_embedding_params("hello", timeout=5) == {"input": "hello", "timeout": 5}
+
+
+def test_convert_completion_params_sends_prompt_cache_key_in_extra_body() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+        stream_options={"include_usage": True},
+        prompt_cache_key="tenant-1",
+    )
+    result = TogetherProvider._convert_completion_params(params, extra_body={"other": 1})
+
+    assert "prompt_cache_key" not in result
+    assert result["extra_body"] == {
+        "other": 1,
+        "stream_options": {"include_usage": True},
+        "prompt_cache_key": "tenant-1",
+    }
+
+
+@pytest.mark.parametrize("parallel_tool_calls", [True, False])
+def test_convert_completion_params_sends_parallel_tool_calls_in_extra_body(parallel_tool_calls: bool) -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    params = CompletionParams(
+        model_id="model",
+        messages=[{"role": "user", "content": "Hi"}],
+        parallel_tool_calls=parallel_tool_calls,
+    )
+    result = TogetherProvider._convert_completion_params(params)
+
+    assert "parallel_tool_calls" not in result
+    assert result["extra_body"] == {"parallel_tool_calls": parallel_tool_calls}
+
+
+@pytest.mark.asyncio
+async def test_acompletion_accepts_prompt_cache_key() -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    with (
+        patch("any_llm.providers.together.together.together.AsyncTogether") as mock_together,
+        patch.object(TogetherProvider, "_convert_completion_response", return_value=Mock()),
+    ):
+        mock_together.return_value.chat.completions.create = AsyncMock(return_value=Mock())
+        provider = TogetherProvider(api_key="test-api-key")
+
+        await provider.acompletion(
+            model="deepseek-ai/DeepSeek-V4.1-Flash",
+            messages=[{"role": "user", "content": "Hi"}],
+            prompt_cache_key="tenant-1",
+        )
+
+        call_kwargs = mock_together.return_value.chat.completions.create.call_args[1]
+        assert "prompt_cache_key" not in call_kwargs
+        assert call_kwargs["extra_body"] == {"prompt_cache_key": "tenant-1"}

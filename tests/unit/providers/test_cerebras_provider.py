@@ -344,3 +344,57 @@ def test_convert_chunk_without_choices_keeps_one_empty_choice() -> None:
     assert len(result.choices) == 1
     assert result.choices[0].index == 0
     assert result.choices[0].delta.content is None
+
+
+_CEREBRAS_CACHED_USAGE = {
+    "prompt_tokens": 2048,
+    "completion_tokens": 5,
+    "total_tokens": 2053,
+    "prompt_tokens_details": {"cached_tokens": 1920},
+}
+
+
+def test_convert_response_keeps_cached_tokens() -> None:
+    result = _convert_response({"id": "r", "model": "m", "choices": [], "usage": _CEREBRAS_CACHED_USAGE})
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 2048
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 1920
+
+
+def test_create_chunk_keeps_cached_tokens() -> None:
+    from cerebras.cloud.sdk.types.chat.chat_completion import ChatChunkResponseUsage
+
+    mock_chunk = Mock(id="chunk-id", model="llama-3.3-70b", created=1)
+    mock_chunk.choices = []
+    mock_chunk.usage = ChatChunkResponseUsage.model_validate(_CEREBRAS_CACHED_USAGE)
+
+    result = _create_openai_chunk_from_cerebras_chunk(mock_chunk)
+
+    assert result.usage is not None
+    assert result.usage.total_tokens == 2053
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 1920
+
+
+def test_convert_completion_params_forwards_stream_options_when_streaming() -> None:
+    params = CompletionParams(
+        model_id="m",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+
+    assert CerebrasProvider._convert_completion_params(params)["stream_options"] == {"include_usage": True}
+
+
+def test_convert_completion_params_drops_stream_options_when_not_streaming() -> None:
+    params = CompletionParams(
+        model_id="m",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=False,
+        stream_options={"include_usage": True},
+    )
+
+    assert "stream_options" not in CerebrasProvider._convert_completion_params(params)

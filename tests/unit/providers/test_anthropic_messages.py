@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Self, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import httpx
+import httpx2
 import pytest
 from anthropic import transform_schema
 from anthropic.types import Message, TextBlock, ThinkingBlock, ToolUseBlock, Usage
@@ -405,13 +405,13 @@ async def test_amessages_output_format_container_uses_beta_parse_when_betas_requ
 
 @pytest.mark.asyncio
 async def test_anthropic_sdk_accepts_completion_sampling_parameters() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json=_sdk_message_response())
+        return httpx2.Response(200, json=_sdk_message_response())
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         provider = AnthropicProvider(api_key="test-key", http_client=http_client)
         await provider._acompletion(
             CompletionParams(
@@ -439,23 +439,23 @@ async def test_anthropic_sdk_accepts_completion_sampling_parameters() -> None:
 async def test_anthropic_sdk_preserves_reasoning_effort_thinking(
     model: str, stream: bool, effort: ReasoningEffort, thinking: dict[str, str] | None
 ) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if stream:
             events = [
                 ("message_start", {"type": "message_start", "message": _sdk_message_response()}),
                 ("message_stop", {"type": "message_stop"}),
             ]
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
                 text="".join(f"event: {event}\ndata: {json.dumps(data)}\n\n" for event, data in events),
             )
-        return httpx.Response(200, json=_sdk_message_response())
+        return httpx2.Response(200, json=_sdk_message_response())
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         provider = AnthropicProvider(api_key="test-key", http_client=http_client)
         response = await provider._acompletion(
             CompletionParams(
@@ -481,13 +481,13 @@ async def test_anthropic_sdk_preserves_reasoning_effort_thinking(
 
 @pytest.mark.asyncio
 async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json=_sdk_message_response())
+        return httpx2.Response(200, json=_sdk_message_response())
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         provider = AnthropicProvider(api_key="test-key", http_client=http_client)
         result = await provider._amessages(
             MessagesParams(
@@ -513,8 +513,35 @@ async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
 
 
 @pytest.mark.asyncio
+async def test_anthropic_sdk_caller_extra_body_overrides_sampling_parameters() -> None:
+    requests: list[httpx2.Request] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json=_sdk_message_response())
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        await provider._amessages(
+            MessagesParams(
+                model="claude-3-5-sonnet",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.9,
+            ),
+            extra_body={"temperature": 0.2, "custom_field": "kept"},
+        )
+
+    request_body = json.loads(requests[0].content)
+    assert request_body["temperature"] == 0.2
+    assert request_body["top_p"] == 0.9
+    assert request_body["custom_field"] == "kept"
+
+
+@pytest.mark.asyncio
 async def test_anthropic_sdk_forwards_container_skills_object() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     container = {
         "id": "container_123",
         "skills": [
@@ -523,11 +550,11 @@ async def test_anthropic_sdk_forwards_container_skills_object() -> None:
         ],
     }
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json=_sdk_message_response())
+        return httpx2.Response(200, json=_sdk_message_response())
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         provider = AnthropicProvider(api_key="test-key", http_client=http_client)
         result = await provider._amessages(
             MessagesParams(
@@ -592,13 +619,13 @@ def test_messages_entrypoint_forwards_container_skills_object() -> None:
 
 @pytest.mark.asyncio
 async def test_amessages_rejects_prompt_cache_key_before_client_call() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(500)
+        return httpx2.Response(500)
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     try:
         with pytest.raises(UnsupportedParameterError, match="prompt_cache_key"):
@@ -616,13 +643,13 @@ async def test_amessages_rejects_prompt_cache_key_before_client_call() -> None:
 
 @pytest.mark.asyncio
 async def test_acompletion_rejects_prompt_cache_key_before_client_call() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(500)
+        return httpx2.Response(500)
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     try:
         with pytest.raises(UnsupportedParameterError, match="prompt_cache_key"):
@@ -639,11 +666,11 @@ async def test_acompletion_rejects_prompt_cache_key_before_client_call() -> None
 
 @pytest.mark.asyncio
 async def test_amessages_context_compaction_uses_beta_resource_and_preserves_response() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             headers={"request-id": "req_test"},
             json={
@@ -670,7 +697,7 @@ async def test_amessages_context_compaction_uses_beta_resource_and_preserves_res
             },
         )
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     context_management = {"edits": [{"type": "compact_20260112"}]}
     params = MessagesParams(
@@ -863,11 +890,11 @@ def test_pop_anthropic_beta_header_preserves_unparseable_values(value: object) -
 
 @pytest.mark.asyncio
 async def test_amessages_merges_beta_extra_header_with_inferred_betas() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "msg_test",
@@ -886,7 +913,7 @@ async def test_amessages_merges_beta_extra_header_with_inferred_betas() -> None:
         "x-custom-header": "custom-value",
     }
     original_extra_headers = extra_headers.copy()
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",
@@ -909,11 +936,11 @@ async def test_amessages_merges_beta_extra_header_with_inferred_betas() -> None:
 
 @pytest.mark.asyncio
 async def test_amessages_routes_beta_extra_header_through_beta_resource() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "msg_test",
@@ -927,7 +954,7 @@ async def test_amessages_routes_beta_extra_header_through_beta_resource() -> Non
             },
         )
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",
@@ -948,8 +975,8 @@ async def test_amessages_routes_beta_extra_header_through_beta_resource() -> Non
 async def test_amessages_beta_extra_header_suppresses_unknown_edit_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200,
             json={
                 "id": "msg_test",
@@ -963,7 +990,7 @@ async def test_amessages_beta_extra_header_suppresses_unknown_edit_warning(
             },
         )
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",
@@ -1019,11 +1046,11 @@ async def test_amessages_beta_extra_header_suppresses_unknown_edit_warning(
 async def test_amessages_selects_betas_for_context_management(
     context_management: dict[str, Any] | None, betas: list[str] | None, expected_betas: str
 ) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             headers={"request-id": "req_test"},
             json={
@@ -1038,7 +1065,7 @@ async def test_amessages_selects_betas_for_context_management(
             },
         )
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",
@@ -1058,7 +1085,7 @@ async def test_amessages_selects_betas_for_context_management(
 
 @pytest.mark.asyncio
 async def test_amessages_streams_beta_compaction_events() -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         assert request.url.query == b"beta=true"
         events = [
             (
@@ -1110,9 +1137,9 @@ async def test_amessages_streams_beta_compaction_events() -> None:
             ("message_stop", {"type": "message_stop"}),
         ]
         body = "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events)
-        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+        return httpx2.Response(200, text=body, headers={"content-type": "text/event-stream"})
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",
@@ -1167,7 +1194,7 @@ async def test_amessages_streams_beta_compaction_events() -> None:
 
 @pytest.mark.asyncio
 async def test_amessages_streams_beta_only_content_block() -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         assert request.url.query == b"beta=true"
         events = [
             (
@@ -1212,9 +1239,9 @@ async def test_amessages_streams_beta_only_content_block() -> None:
             ("message_stop", {"type": "message_stop"}),
         ]
         body = "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events)
-        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+        return httpx2.Response(200, text=body, headers={"content-type": "text/event-stream"})
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",
@@ -1273,9 +1300,7 @@ async def test_amessages_non_streaming_with_all_params() -> None:
 
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["system"] == "Be helpful"
-    assert call_kwargs["temperature"] == 0.7
-    assert call_kwargs["top_p"] == 0.9
-    assert call_kwargs["top_k"] == 40
+    assert call_kwargs["extra_body"] == {"temperature": 0.7, "top_p": 0.9, "top_k": 40}
     assert call_kwargs["stop_sequences"] == ["END"]
     assert call_kwargs["tools"] == [{"name": "fn", "description": "d", "input_schema": {}}]
     assert call_kwargs["tool_choice"] == {"type": "auto"}
@@ -1286,13 +1311,13 @@ async def test_amessages_non_streaming_with_all_params() -> None:
 @pytest.mark.parametrize("beta_header", ["future-beta", b"future-beta"])
 @pytest.mark.asyncio
 async def test_amessages_sdk_accepts_normalized_beta_header(beta_header: str | bytes) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(200, json=_sdk_message_response())
+        return httpx2.Response(200, json=_sdk_message_response())
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",
@@ -1362,9 +1387,7 @@ async def test_amessages_output_format_uses_native_parse() -> None:
     # output_format is passed to parse as its dedicated kwarg; other params still flow through.
     call_kwargs = mock_client.messages.parse.call_args.kwargs
     assert call_kwargs["output_format"] is City
-    assert call_kwargs["temperature"] == 0.5
-    assert call_kwargs["top_p"] == 0.9
-    assert call_kwargs["top_k"] == 40
+    assert call_kwargs["extra_body"] == {"temperature": 0.5, "top_p": 0.9, "top_k": 40}
 
 
 @pytest.mark.asyncio
@@ -1424,11 +1447,11 @@ async def test_amessages_effort_only_output_config_reaches_create() -> None:
 async def test_public_amessages_without_schema_returns_message_response() -> None:
     """amessages with an effort-only output config takes the create path and returns a plain MessageResponse."""
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         assert json.loads(request.content)["output_config"] == {"effort": "high"}
-        return httpx.Response(200, json=_sdk_message_response())
+        return httpx2.Response(200, json=_sdk_message_response())
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         provider = AnthropicProvider(api_key="test-key", http_client=http_client)
         result = await provider.amessages(
             model="test-model",
@@ -1616,9 +1639,9 @@ async def test_amessages_typed_output_format_streams_through_sdk_transport() -> 
     class City(BaseModel):
         city: str
 
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         events = [
             (
@@ -1661,9 +1684,9 @@ async def test_amessages_typed_output_format_streams_through_sdk_transport() -> 
             ("message_stop", {"type": "message_stop"}),
         ]
         body = "".join(f"event: {name}\ndata: {json.dumps(payload)}\n\n" for name, payload in events)
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     try:
         result = await provider.amessages(
@@ -1692,13 +1715,13 @@ async def test_public_amessages_parsed_result_type(beta_kwargs: dict[str, Any], 
     class City(BaseModel):
         city: str
 
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200,
             json=_make_message(content=[TextBlock(type="text", text='{"city":"Paris"}')]).model_dump(mode="json"),
         )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         provider = AnthropicProvider(api_key="test-key", http_client=client)
         result = await provider.amessages(
             model="test-model",
@@ -1779,7 +1802,7 @@ async def test_amessages_streaming_delegates_to_stream_method() -> None:
     )
     await BaseAnthropicProvider._amessages(provider, params)
     call_kwargs = provider._stream_messages_async.call_args.kwargs
-    assert call_kwargs["top_p"] == 0.9
+    assert call_kwargs["extra_body"] == {"top_p": 0.9}
 
 
 @pytest.mark.asyncio
@@ -1897,7 +1920,7 @@ async def test_stream_messages_async_emits_events() -> None:
 async def test_amessages_stream_preserves_accumulated_stop_event_payloads() -> None:
     """The SDK's stream helper attaches the accumulated message and block to the stop events."""
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         assert request.url.query == b""
         request_body = json.loads(request.content)
         assert request_body["temperature"] == 0.7
@@ -1940,9 +1963,9 @@ async def test_amessages_stream_preserves_accumulated_stop_event_payloads() -> N
             ("message_stop", {"type": "message_stop"}),
         ]
         body = "".join(f"event: {name}\ndata: {json.dumps(payload)}\n\n" for name, payload in events)
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     provider = AnthropicProvider(api_key="test-key", http_client=http_client)
     params = MessagesParams(
         model="claude-opus-5",

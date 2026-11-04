@@ -20,7 +20,9 @@ from any_llm.types.decide import (
     Question,
     Score,
     ScoreAnswer,
+    UnknownAnswer,
 )
+from any_llm.utils.decide import question_to_dict
 
 
 def _response() -> DecideResponse:
@@ -113,6 +115,67 @@ def test_response_answers_validate_by_type() -> None:
     assert response.usage == DecideUsage(input_tokens=10, output_tokens=2)
 
 
+def test_usage_keeps_the_reported_cost() -> None:
+    usage = DecideUsage.model_validate({"input_tokens": 10, "output_tokens": 0, "cost": 0.00042})
+
+    assert usage.cost == 0.00042
+    assert DecideUsage().cost is None
+
+
+def test_response_keeps_fields_it_does_not_model() -> None:
+    response = DecideResponse.model_validate(
+        {
+            "model": "jev-1",
+            "provider": "TypeSafe",
+            "answers": {"billing": {"type": "noul", "noul": 0.9, "calibrated": True}},
+            "usage": {"input_tokens": 10, "cached_tokens": 4},
+        }
+    )
+
+    assert response.model_extra == {"provider": "TypeSafe"}
+    assert response.nouls["billing"].model_extra == {"calibrated": True}
+    assert response.usage is not None
+    assert response.usage.model_extra == {"cached_tokens": 4}
+    assert response.model_dump(exclude_none=True) == {
+        "model": "jev-1",
+        "provider": "TypeSafe",
+        "answers": {"billing": {"type": "noul", "noul": 0.9, "calibrated": True}},
+        "usage": {"input_tokens": 10, "cached_tokens": 4},
+    }
+
+
+def test_answer_of_an_unknown_type_is_kept_whole() -> None:
+    box = {"type": "box", "box": {"top": 1, "bottom": 2, "left": 3, "right": 4}, "confidence": 0.9}
+
+    response = DecideResponse.model_validate({"answers": {"logo": box, "billing": {"type": "noul", "noul": 0.2}}})
+
+    answer = response.answers["logo"]
+    assert isinstance(answer, UnknownAnswer)
+    assert answer.type == "box"
+    assert answer.model_dump() == box
+    assert list(response.nouls) == ["billing"]
+    assert not response.choices
+    assert not response.scores
+
+
+def test_unknown_answer_is_frozen() -> None:
+    answer = UnknownAnswer(type="box")
+
+    with pytest.raises(ValidationError):
+        answer.type = "noul"
+
+
+@pytest.mark.parametrize("answer", [{"noul": 0.2}, {"type": 1}, "noul"])
+def test_answer_without_a_type_name_is_rejected(answer: object) -> None:
+    with pytest.raises(ValidationError):
+        DecideResponse.model_validate({"answers": {"billing": answer}})
+
+
+def test_known_answer_types_still_validate_their_fields() -> None:
+    with pytest.raises(ValidationError):
+        DecideResponse.model_validate({"answers": {"billing": {"type": "noul"}}})
+
+
 def test_score_answer_keys_are_integer_levels() -> None:
     answer = _response().scores["urgency"]
 
@@ -134,6 +197,17 @@ def test_response_optional_fields_default_to_none() -> None:
     assert response.id is None
     assert response.model is None
     assert response.usage is None
+
+
+def test_question_to_dict_leaves_unset_fields_off() -> None:
+    assert question_to_dict(Noul()) == {"type": "noul"}
+    assert question_to_dict(Choice(criteria={"calm": None})) == {"type": "choice", "criteria": {"calm": None}}
+
+
+def test_question_to_dict_leaves_undescribed_noul_outcomes_off() -> None:
+    question = Noul(instructions="Spam?", criteria=NoulCriteria(true="spam"))
+
+    assert question_to_dict(question) == {"type": "noul", "instructions": "Spam?", "criteria": {"true": "spam"}}
 
 
 @pytest.fixture
@@ -178,6 +252,55 @@ async def test_unsupported_provider_raises_from_the_hook_too() -> None:
 async def test_supported_provider_must_implement_adecide(provider: OpenaiProvider) -> None:
     with pytest.raises(NotImplementedError, match="must implement _adecide"):
         await provider.adecide("model", "state", {"billing": Noul()})
+
+
+@pytest.mark.asyncio
+async def test_adecide_forwards_images_when_supported(provider: OpenaiProvider) -> None:
+    images = ["data:image/png;base64,iVBORw0KGgo="]
+
+    with (
+        patch.object(provider, "SUPPORTS_DECIDE_IMAGE", True),
+        patch.object(provider, "_adecide", new=AsyncMock(return_value=_response())) as adecide,
+    ):
+        await provider.adecide("model", "state", {"billing": Noul()}, images=images)
+
+    adecide.assert_awaited_once_with("model", "state", {"billing": Noul()}, images=images)
+
+
+@pytest.mark.asyncio
+async def test_adecide_leaves_images_off_when_not_given(provider: OpenaiProvider) -> None:
+    with patch.object(provider, "_adecide", new=AsyncMock(return_value=_response())) as adecide:
+        await provider.adecide("model", "state", {"billing": Noul()}, images=None)
+
+    adecide.assert_awaited_once_with("model", "state", {"billing": Noul()})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unified_exceptions", [True, False])
+@pytest.mark.parametrize("images", [["data:image/png;base64,iVBORw0KGgo="], []])
+async def test_adecide_rejects_images_when_unsupported(
+    provider: OpenaiProvider, unified_exceptions: bool, images: list[str]
+) -> None:
+    provider._unified_exceptions = unified_exceptions
+
+    with (
+        patch.object(provider, "_adecide", new=AsyncMock()) as adecide,
+        pytest.raises(UnsupportedParameterError, match="images"),
+    ):
+        await provider.adecide("model", "state", {"billing": Noul()}, images=images)
+
+    adecide.assert_not_awaited()
+
+
+def test_decide_forwards_images() -> None:
+    llm = Mock()
+    llm.decide.return_value = _response()
+    images = ["data:image/png;base64,iVBORw0KGgo="]
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=llm):
+        decide("llamacpp:laya", "state", {"billing": Noul()}, images=images)
+
+    llm.decide.assert_called_once_with("laya", "state", {"billing": Noul()}, images=images)
 
 
 @pytest.mark.asyncio
@@ -292,7 +415,7 @@ def test_decide_api_splits_the_provider_from_the_model() -> None:
 
     assert result == _response()
     create.assert_called_once_with("typesafe", api_key="key", api_base=None)
-    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()}, timeout=5)
+    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()}, images=None, timeout=5)
 
 
 def test_decide_api_warns_about_the_legacy_model_format_at_the_caller() -> None:
@@ -306,7 +429,7 @@ def test_decide_api_warns_about_the_legacy_model_format_at_the_caller() -> None:
         decide("typesafe/jev-latest", "state", {"billing": Noul()})
 
     assert record[0].filename == __file__
-    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()})
+    llm.decide.assert_called_once_with("jev-latest", "state", {"billing": Noul()}, images=None)
 
 
 @pytest.mark.asyncio
@@ -326,7 +449,7 @@ async def test_adecide_api_uses_an_explicit_provider_and_client_args() -> None:
 
     assert result == _response()
     create.assert_called_once_with("typesafe", api_key=None, api_base="http://localhost:11434", max_retries=0)
-    llm.adecide.assert_awaited_once_with("jev-latest", "state", {"billing": Noul()})
+    llm.adecide.assert_awaited_once_with("jev-latest", "state", {"billing": Noul()}, images=None)
 
 
 def test_decide_is_importable_from_the_top_level() -> None:

@@ -53,6 +53,10 @@ class OpenAICompatibleProviderConfig:
     supports_batch: bool = False
     supports_image_generation: bool = False
     supports_rerank: bool = False
+    decide_path: str | None = None
+    """Path of the System One decisions endpoint, relative to the API base. Setting it
+    turns on ``SUPPORTS_DECIDE``; see ``BaseOpenAIProvider.DECIDE_PATH``."""
+    supports_decide_image: bool = False
     api_key_optional: bool = False
     """Resolve the key as the explicit argument, then the env var, then the
     ``"no-key-required"`` placeholder, instead of raising ``MissingApiKeyError``.
@@ -131,6 +135,8 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_image=True,
         supports_embedding=True,
         supports_moderation=True,
+        decide_path="systemone",
+        supports_decide_image=True,
         api_key_optional=True,
     ),
     "moonshot": OpenAICompatibleProviderConfig(
@@ -186,6 +192,7 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         env_api_key_name="OVHCLOUD_API_KEY",
         env_api_base_name="OVHCLOUD_API_BASE",
         provider_documentation_url="https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
+        supports_embedding=True,
     ),
     "perplexity": OpenAICompatibleProviderConfig(
         name="perplexity",
@@ -217,6 +224,13 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_reasoning=True,
         supports_completion_image=True,
         supports_moderation=True,
+    ),
+    "tokenhub": OpenAICompatibleProviderConfig(
+        name="tokenhub",
+        api_base="https://us-api.tokenhub.com/v1",
+        env_api_key_name="TOKENHUB_API_KEY",
+        env_api_base_name="TOKENHUB_API_BASE",
+        provider_documentation_url="https://tokenhub.com/docs",
     ),
     "vllm": OpenAICompatibleProviderConfig(
         name="vllm",
@@ -287,6 +301,9 @@ def _build_provider_class(config: OpenAICompatibleProviderConfig) -> type[BaseOp
         "SUPPORTS_BATCH": config.supports_batch,
         "SUPPORTS_IMAGE_GENERATION": config.supports_image_generation,
         "SUPPORTS_RERANK": config.supports_rerank,
+        "SUPPORTS_DECIDE": config.decide_path is not None,
+        "DECIDE_PATH": config.decide_path,
+        "SUPPORTS_DECIDE_IMAGE": config.supports_decide_image,
     }
     # The class name follows the same convention as folder-based providers so
     # metadata.class_name is stable across a migration.

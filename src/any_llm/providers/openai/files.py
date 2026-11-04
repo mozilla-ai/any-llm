@@ -16,12 +16,14 @@ if TYPE_CHECKING:
 
     from openai import AsyncOpenAI
     from openai.types import FileObject, FilePurpose
+    from openai.types.containers import FileRetrieveResponse
 
 
 class OpenAIFileMethods(FilesMixin):
     """Opt-in Files implementation using the OpenAI SDK.
 
     Capabilities belong to the concrete providers, not the shared OpenAI base.
+    Retrieve and download accept container_id for files produced in a container.
     """
 
     client: AsyncOpenAI
@@ -48,8 +50,18 @@ class OpenAIFileMethods(FilesMixin):
             message = "A nonempty provider file ID without path separators, URL delimiters, or whitespace is required"
             raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
 
+    def _pop_container_id(self, kwargs: dict[str, Any]) -> str | None:
+        container_id = kwargs.pop("container_id", None)
+        if container_id is None:
+            return None
+        if not isinstance(container_id, str):
+            message = "container_id must be a nonempty provider container ID"
+            raise InvalidRequestError(message, provider_name=self.PROVIDER_NAME)
+        self._validate_file_id(container_id)
+        return container_id
+
     @staticmethod
-    def _convert_file_metadata(result: FileObject) -> FileMetadata:
+    def _convert_file_metadata(result: FileObject | FileRetrieveResponse) -> FileMetadata:
         data = result.model_dump(exclude_unset=True)
         data["size_bytes"] = data.pop("bytes", None)
         return FileMetadata.model_validate(data)
@@ -136,7 +148,12 @@ class OpenAIFileMethods(FilesMixin):
     @override
     async def _aretrieve_file(self, file_id: str, **kwargs: Any) -> FileMetadata:
         self._validate_file_id(file_id)
+        container_id = self._pop_container_id(kwargs)
         client, options = self._file_request_options(kwargs)
+        if container_id is not None:
+            return self._convert_file_metadata(
+                await client.containers.files.retrieve(file_id, container_id=container_id, **options)
+            )
         return self._convert_file_metadata(await client.files.retrieve(file_id, **options))
 
     @override
@@ -152,8 +169,16 @@ class OpenAIFileMethods(FilesMixin):
         self, file_id: str, *, chunk_size: int, **kwargs: Any
     ) -> AsyncIterator[AsyncFileDownload]:
         self._validate_file_id(file_id)
+        container_id = self._pop_container_id(kwargs)
         client, options = self._file_request_options(kwargs)
-        async with client.files.with_streaming_response.content(file_id, **options) as response:
+        request = (
+            client.containers.files.content.with_streaming_response.retrieve(
+                file_id, container_id=container_id, **options
+            )
+            if container_id is not None
+            else client.files.with_streaming_response.content(file_id, **options)
+        )
+        async with request as response:
             yield AsyncFileDownload(
                 status_code=response.status_code,
                 headers=response.headers.copy(),

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx2
 import pytest
+from pydantic import ValidationError
 from typesafe_sdk import (
     ListModelsResponse,
     ModelMetadata,
@@ -23,6 +24,7 @@ from typesafe_sdk import Noul as TypeSafeNoul
 
 from any_llm import AnyLLM
 from any_llm.exceptions import (
+    AnyLLMError,
     InsufficientFundsError,
     InvalidRequestError,
     MissingApiKeyError,
@@ -42,6 +44,7 @@ from any_llm.types.decide import (
     Question,
     Score,
     ScoreAnswer,
+    UnknownAnswer,
 )
 
 _MODEL = "jev-latest"
@@ -85,7 +88,7 @@ def provider() -> Iterator[TypesafeProvider]:
         patch.object(provider.client, "system_one", new_callable=AsyncMock) as system_one,
         patch.object(provider.client.models, "list", new_callable=AsyncMock),
     ):
-        system_one.return_value = SystemOneResponse.model_validate(_SYSTEM_ONE_BODY)
+        system_one.return_value = SystemOneResponse.from_http_response(httpx2.Response(200, json=_SYSTEM_ONE_BODY))
         yield provider
 
 
@@ -241,6 +244,14 @@ async def test_adecide_accepts_sdk_question_objects(provider: TypesafeProvider) 
 
 
 @pytest.mark.asyncio
+async def test_adecide_refuses_images(provider: TypesafeProvider) -> None:
+    with pytest.raises(UnsupportedParameterError, match="images"):
+        await provider.adecide(_MODEL, "state", _QUESTIONS, images=["data:image/png;base64,"])
+
+    provider.client.system_one.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
 async def test_adecide_rejects_response_model(provider: TypesafeProvider) -> None:
     with pytest.raises(UnsupportedParameterError, match="response_model") as exc_info:
         await provider.adecide(_MODEL, "state", _QUESTIONS, response_model=SystemOneResponse)
@@ -358,6 +369,57 @@ def _provider_answering(body: dict[str, Any], headers: dict[str, str] | None = N
     )
 
 
+def _provider_overloaded(requests: list[httpx2.Request], **kwargs: Any) -> TypesafeProvider:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        # A 1 ms retry-after keeps the SDK's default retries fast.
+        return httpx2.Response(503, json={"detail": "overloaded"}, headers={"retry-after-ms": "1"})
+
+    transport = httpx2.MockTransport(handler)
+    return TypesafeProvider(
+        api_key="test_key", unified_exceptions=True, http_client=httpx2.AsyncClient(transport=transport), **kwargs
+    )
+
+
+@pytest.mark.parametrize(("kwargs", "expected_requests"), [({}, 3), ({"max_retries": 0}, 1)])
+@pytest.mark.asyncio
+async def test_adecide_retries_only_when_max_retries_allows_it(kwargs: dict[str, Any], expected_requests: int) -> None:
+    requests: list[httpx2.Request] = []
+    provider = _provider_overloaded(requests, **kwargs)
+
+    with pytest.raises(AnyLLMError) as exc_info:
+        await provider.adecide(_MODEL, "state", _QUESTIONS)
+
+    assert exc_info.value.status_code == 503
+    assert len(requests) == expected_requests
+
+
+@pytest.mark.asyncio
+async def test_adecide_retry_policy_turns_retries_off_for_one_call() -> None:
+    requests: list[httpx2.Request] = []
+    provider = _provider_overloaded(requests)
+
+    with pytest.raises(AnyLLMError):
+        await provider.adecide(_MODEL, "state", _QUESTIONS, retry=RetryPolicy(max_retries=0))
+
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_unified_error_message_can_quote_the_upstream_body() -> None:
+    body = {"detail": "State refused: I was charged twice."}
+    transport = httpx2.MockTransport(lambda _request: httpx2.Response(400, json=body))
+    provider = TypesafeProvider(
+        api_key="test_key", unified_exceptions=True, http_client=httpx2.AsyncClient(transport=transport)
+    )
+
+    with pytest.raises(InvalidRequestError) as exc_info:
+        await provider.adecide(_MODEL, "I was charged twice.", _QUESTIONS)
+
+    assert "I was charged twice." in exc_info.value.message
+    assert exc_info.value.status_code == 400
+
+
 @pytest.mark.parametrize(
     ("headers", "expected_id"),
     [({"x-typesafe-request-id": "req_123"}, "req_123"), (None, None)],
@@ -369,6 +431,50 @@ async def test_adecide_carries_the_request_id(headers: dict[str, str] | None, ex
     result = await provider.adecide(_MODEL, "state", _QUESTIONS)
 
     assert result.id == expected_id
+
+
+@pytest.mark.asyncio
+async def test_adecide_keeps_fields_and_answer_types_the_sdk_drops() -> None:
+    body = {
+        **_SYSTEM_ONE_BODY,
+        "provider": "typesafe",
+        "usage": {"input_tokens": 12, "output_tokens": 3, "cost": 0.0001, "cached_tokens": 4},
+        "answers": {
+            **_SYSTEM_ONE_BODY["answers"],
+            # typesafe-sdk 0.7.5 models box answers, so this is a type no SDK version knows.
+            "logo": {"type": "polygon", "points": [[1, 2], [3, 4], [5, 6]]},
+        },
+    }
+    provider = _provider_answering(body, {"x-typesafe-request-id": "req_123"})
+
+    result = await provider.adecide(_MODEL, "state", _QUESTIONS)
+
+    assert result.id == "req_123"
+    assert result.model_extra == {"provider": "typesafe"}
+    assert result.usage is not None
+    assert result.usage.cost == 0.0001
+    assert result.usage.model_extra == {"cached_tokens": 4}
+    assert result.answers["logo"] == UnknownAnswer.model_validate(body["answers"]["logo"])
+    assert result.nouls["billing"].noul == 0.9
+
+
+@pytest.mark.asyncio
+async def test_adecide_falls_back_to_the_body_id_without_a_request_id_header() -> None:
+    provider = _provider_answering({**_SYSTEM_ONE_BODY, "id": "body_123"})
+
+    result = await provider.adecide(_MODEL, "state", _QUESTIONS)
+
+    assert result.id == "body_123"
+
+
+def test_a_body_the_sdk_reads_but_decide_cannot_is_a_provider_error() -> None:
+    response = MagicMock()
+    response.raw_http_response.json.return_value = {"answers": {"billing": {"type": 1}}}
+
+    with pytest.raises(ProviderError, match="TypeSafe returned a System One response that is not valid") as exc_info:
+        TypesafeProvider._convert_decide_response(response)
+
+    assert isinstance(exc_info.value.__cause__, ValidationError)
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,11 @@
 # mypy: disable-error-code="union-attr"
 from typing import Any
 
-from any_llm.types.completion import Reasoning
+from fireworks.types.chat import ChatCompletionChunk as FireworksChatCompletionChunk
+from fireworks.types.chat import CompletionCreateResponse as FireworksChatCompletion
+
+from any_llm.providers.openai.utils import _normalize_openai_dict_response
+from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, Reasoning
 from any_llm.types.rerank import RerankResponse, RerankResult, RerankUsage
 from any_llm.types.responses import Response
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
@@ -57,3 +61,21 @@ def convert_fireworks_rerank_response(response: dict[str, Any]) -> RerankRespons
         results=results,
         usage=RerankUsage(total_tokens=usage.get("total_tokens")) if usage is not None else None,
     )
+
+
+def convert_fireworks_chat_completion(response: FireworksChatCompletion) -> ChatCompletion:
+    """Convert a Fireworks SDK chat completion to a ChatCompletion.
+
+    Only the fields Fireworks sent are dumped, so SDK-only fields left unset do not surface as
+    None-valued extras. `reasoning_content` is moved to `reasoning`.
+    """
+    data = response.model_dump(exclude_unset=True, warnings=False)
+    data["object"] = "chat.completion"
+    return ChatCompletion.model_validate(_normalize_openai_dict_response(data))
+
+
+def convert_fireworks_chat_completion_chunk(chunk: FireworksChatCompletionChunk) -> ChatCompletionChunk:
+    """Convert a Fireworks SDK streaming chunk to a ChatCompletionChunk."""
+    data = chunk.model_dump(exclude_unset=True, warnings=False)
+    data["object"] = "chat.completion.chunk"
+    return ChatCompletionChunk.model_validate(_normalize_openai_dict_response(data))

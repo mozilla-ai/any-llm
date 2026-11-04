@@ -2,8 +2,9 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from together.types import ChatCompletionChunk as TogetherChatCompletionChunk
+from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 
+from any_llm.exceptions import ProviderError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch
 from any_llm.types.completion import (
@@ -15,7 +16,6 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
-    CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
     Reasoning,
@@ -23,12 +23,15 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse, RerankResult, RerankUsage
+from any_llm.types.video import VideoError, VideoJob, VideoOutput, VideoStatus
 from any_llm.utils.reasoning import normalize_reasoning_from_provider_fields_and_xml_tags
+from any_llm.utils.usage import completion_usage_from_dict
 
 if TYPE_CHECKING:
     from together.types import BatchJob as TogetherBatchJob
     from together.types import Embedding as TogetherEmbedding
     from together.types import RerankCreateResponse as TogetherRerankResponse
+    from together.types import VideoJob as TogetherVideoJob
 
 DEFAULT_COMPLETION_WINDOW = "24h"
 
@@ -68,25 +71,28 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
         if delta_content and hasattr(delta_content, "tool_calls") and delta_content.tool_calls:
             openai_tool_calls = []
             for idx, tool_call in enumerate(delta_content.tool_calls):
+                # Together sends the id and name only on a call's first delta, as OpenAI does.
+                # The later deltas must keep them absent: clients join deltas by id, so an id
+                # minted for each one splits one call into several.
                 if isinstance(tool_call, dict):
-                    func = tool_call.get("function", {})
-                    tc_id = tool_call.get("id") or str(uuid.uuid4())
+                    func = tool_call.get("function") or {}
+                    tc_id = tool_call.get("id")
                     raw_index = tool_call.get("index")
                     tc_index = raw_index if raw_index is not None else idx
-                    name = func.get("name", "")
-                    arguments = func.get("arguments", "")
+                    name = func.get("name")
+                    arguments = func.get("arguments")
                 else:
-                    tc_id = getattr(tool_call, "id", None) or str(uuid.uuid4())
+                    tc_id = getattr(tool_call, "id", None)
                     raw_index = getattr(tool_call, "index", None)
                     tc_index = raw_index if raw_index is not None else idx
                     func = getattr(tool_call, "function", None)
-                    name = getattr(func, "name", "") if func else ""
-                    arguments = getattr(func, "arguments", "") if func else ""
+                    name = getattr(func, "name", None) if func else None
+                    arguments = getattr(func, "arguments", None) if func else None
 
                 openai_tool_call = ChoiceDeltaToolCall(
                     index=tc_index,
                     id=tc_id,
-                    type="function",
+                    type="function" if tc_id else None,
                     function=ChoiceDeltaToolCallFunction(
                         name=name,
                         arguments=arguments,
@@ -107,11 +113,7 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
 
     usage = None
     if together_chunk.usage:
-        usage = CompletionUsage(
-            prompt_tokens=together_chunk.usage.prompt_tokens or 0,
-            completion_tokens=together_chunk.usage.completion_tokens or 0,
-            total_tokens=together_chunk.usage.total_tokens or 0,
-        )
+        usage = completion_usage_from_dict(together_chunk.usage.model_dump())
 
     return ChatCompletionChunk(
         id=together_chunk.id or f"chatcmpl-{uuid.uuid4()}",
@@ -150,12 +152,7 @@ def _convert_together_response_to_chat_completion(response_data: dict[str, Any],
 
     usage = None
     if response_data.get("usage"):
-        u = response_data["usage"]
-        usage = CompletionUsage(
-            prompt_tokens=u.get("prompt_tokens", 0),
-            completion_tokens=u.get("completion_tokens", 0),
-            total_tokens=u.get("total_tokens", 0),
-        )
+        usage = completion_usage_from_dict(response_data["usage"])
 
     return ChatCompletion(
         id=response_data.get("id", ""),
@@ -276,4 +273,38 @@ def _convert_batch_job_to_openai(batch_job: "TogetherBatchJob") -> Batch:
         output_file_id=batch_job.output_file_id,
         error_file_id=batch_job.error_file_id,
         model=batch_job.x_model_id,
+    )
+
+
+# Together's SDK types only the statuses it has seen; the API may still add a queued state.
+_VIDEO_STATUSES: dict[str, VideoStatus] = {
+    "queued": "queued",
+    "pending": "queued",
+    "in_progress": "in_progress",
+    "processing": "in_progress",
+    "completed": "completed",
+    "failed": "failed",
+}
+
+
+def _convert_video_job(job: "TogetherVideoJob") -> VideoJob:
+    """Convert a Together video job to a normalized VideoJob."""
+    status = _VIDEO_STATUSES.get(job.status)
+    if status is None:
+        msg = f"Together returned an unknown video status {job.status!r} for job {job.id}"
+        raise ProviderError(msg)
+    try:
+        seconds: int | None = int(float(job.seconds))
+    except (TypeError, ValueError):
+        seconds = None
+    return VideoJob(
+        id=job.id,
+        model=job.model,
+        status=status,
+        created_at=int(job.created_at),
+        completed_at=None if job.completed_at is None else int(job.completed_at),
+        seconds=seconds,
+        size=job.size or None,
+        error=None if job.error is None else VideoError(message=job.error.message, code=job.error.code),
+        outputs=[] if job.outputs is None else [VideoOutput(url=job.outputs.video_url)],
     )

@@ -2,6 +2,8 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from cohere.types import Usage as CohereUsage
+from cohere.types import UsageTokens
 from pydantic import BaseModel
 
 from any_llm.exceptions import ProviderError, UnsupportedParameterError
@@ -765,10 +767,7 @@ def _mock_v2chat_response(tool_calls: list[Mock], tool_plan: str = "I'll help.")
     response.message = Mock()
     response.message.tool_calls = tool_calls
     response.message.tool_plan = tool_plan
-    response.usage = Mock()
-    response.usage.tokens = Mock()
-    response.usage.tokens.input_tokens = 10
-    response.usage.tokens.output_tokens = 20
+    response.usage = CohereUsage(tokens=UsageTokens(input_tokens=10, output_tokens=20))
     return response
 
 
@@ -859,10 +858,7 @@ def _mock_v2chat_text_response(finish_reason: Any, text: str = "Hello there") ->
     text_block.type = "text"
     text_block.text = text
     response.message.content = [text_block]
-    response.usage = Mock()
-    response.usage.tokens = Mock()
-    response.usage.tokens.input_tokens = 10
-    response.usage.tokens.output_tokens = 20
+    response.usage = CohereUsage(tokens=UsageTokens(input_tokens=10, output_tokens=20))
     return response
 
 
@@ -940,10 +936,7 @@ def test_streaming_message_end_without_delta_falls_back_to_stop() -> None:
 
 def test_streaming_message_end_still_reports_usage() -> None:
     chunk = _mock_message_end_chunk("COMPLETE")
-    chunk.delta.usage = Mock()
-    chunk.delta.usage.tokens = Mock()
-    chunk.delta.usage.tokens.input_tokens = 12
-    chunk.delta.usage.tokens.output_tokens = 8
+    chunk.delta.usage = CohereUsage(tokens=UsageTokens(input_tokens=12, output_tokens=8))
 
     result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
 
@@ -1296,10 +1289,7 @@ async def test_completion_with_image_content() -> None:
     text_block.type = "text"
     text_block.text = "A landscape photo."
     mock_response.message.content = [text_block]
-    mock_response.usage = Mock()
-    mock_response.usage.tokens = Mock()
-    mock_response.usage.tokens.input_tokens = 50
-    mock_response.usage.tokens.output_tokens = 10
+    mock_response.usage = CohereUsage(tokens=UsageTokens(input_tokens=50, output_tokens=10))
 
     with patch("any_llm.providers.cohere.cohere.cohere") as mock_cohere:
         mock_client = Mock()
@@ -1433,3 +1423,32 @@ async def test_list_models_raises_when_a_page_token_repeats(
         await provider._alist_models(**kwargs)
 
     assert [call.kwargs.get("page_token") for call in mock_list.call_args_list] == requested_tokens
+
+
+def test_convert_response_maps_cached_tokens() -> None:
+    response = _mock_v2chat_text_response("COMPLETE")
+    response.usage = CohereUsage(tokens=UsageTokens(input_tokens=3000, output_tokens=5), cached_tokens=2048.0)
+
+    result = _convert_response(response, model="command-a-03-2025")
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 2048
+
+
+def test_convert_response_without_cached_tokens_has_no_details() -> None:
+    result = _convert_response(_mock_v2chat_text_response("COMPLETE"), model="command-a-03-2025")
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is None
+
+
+def test_streaming_message_end_maps_cached_tokens() -> None:
+    chunk = _mock_message_end_chunk("COMPLETE")
+    chunk.delta.usage = CohereUsage(tokens=UsageTokens(input_tokens=3000, output_tokens=5), cached_tokens=2048.0)
+
+    result = _create_openai_chunk_from_cohere_chunk(chunk, "command-a-03-2025")
+
+    assert result.usage is not None
+    assert result.usage.prompt_tokens_details is not None
+    assert result.usage.prompt_tokens_details.cached_tokens == 2048

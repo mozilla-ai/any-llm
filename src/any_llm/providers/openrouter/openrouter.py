@@ -28,6 +28,9 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = True
     # OpenRouter does not expose a moderation endpoint.
     SUPPORTS_MODERATION = False
+    SUPPORTS_DECIDE = True
+    # The alpha decisions endpoint sits outside /v1: https://openrouter.ai/api/alpha/decisions.
+    DECIDE_PATH = "../alpha/decisions"
 
     @staticmethod
     @override

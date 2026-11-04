@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any, ClassVar, Literal, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
 
 from openai import AsyncOpenAI
 from openai._streaming import AsyncStream
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError, UnsupportedParameterError
+from any_llm.exceptions import BatchNotCompleteError, ProviderError, UnsupportedParameterError
 from any_llm.logging import logger
 from any_llm.providers.openai.utils import (
     _convert_chat_completion,
@@ -33,6 +33,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     ReasoningEffort,
 )
+from any_llm.types.decide import DecideResponse, JSONContent, Question
 from any_llm.types.image import ImageEditParams, ImageGenerationParams, ImagesResponse
 from any_llm.types.messages import (
     MessageResponse,
@@ -45,6 +46,7 @@ from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.aio import aclose_quietly
+from any_llm.utils.decide import question_to_dict
 from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import (
     build_responses_text_format,
@@ -58,6 +60,9 @@ from .messages_responses import (
     messages_params_to_responses_params,
     response_to_message_response,
 )
+
+if TYPE_CHECKING:
+    from openai._types import RequestOptions
 
 
 class OpenAIChunkStream(AsyncIterator[ChatCompletionChunk]):
@@ -120,6 +125,10 @@ class BaseOpenAIProvider(AnyLLM):
     SUPPORTS_BATCH = False
     SUPPORTS_IMAGE_GENERATION = False
     SUPPORTS_RERANK = False
+
+    DECIDE_PATH: ClassVar[str | None] = None
+    """Path of the System One decisions endpoint, relative to the API base, for a provider that
+    sets ``SUPPORTS_DECIDE``. It is resolved like a link, so ``../`` leaves the API version."""
 
     # The OpenAI SDK accepts a per-request `timeout` on its client calls, so it forwards unchanged.
     TIMEOUT_SUPPORT = "native"
@@ -458,6 +467,41 @@ class BaseOpenAIProvider(AnyLLM):
             **kwargs,
         )
         return _convert_moderation_response_from_openai(raw, include_raw=include_raw)
+
+    @override
+    async def _adecide(
+        self, model: str, state: JSONContent, questions: dict[str, Question], **kwargs: Any
+    ) -> DecideResponse:
+        if self.DECIDE_PATH is None:
+            return await super()._adecide(model, state, questions, **kwargs)
+        # The OpenAI SDK has no decisions resource, so post through its client to keep the
+        # provider's auth, retries and error mapping. A per-request timeout and extra headers are
+        # request options there, not body fields.
+        options: RequestOptions = {}
+        if (timeout := kwargs.pop("timeout", None)) is not None:
+            options["timeout"] = timeout
+        if (extra_headers := kwargs.pop("extra_headers", None)) is not None:
+            options["headers"] = extra_headers
+        extra_body = kwargs.pop("extra_body", None) or {}
+        body = {
+            "model": model,
+            "state": state,
+            "questions": {name: question_to_dict(question) for name, question in questions.items()},
+            **kwargs,
+            **extra_body,
+        }
+        response = await self.client.post(
+            str(self.client.base_url.join(self.DECIDE_PATH)),
+            body=body,
+            cast_to=dict[str, Any],
+            options=options,
+        )
+        try:
+            return DecideResponse.model_validate(response)
+        except ValidationError as error:
+            # The validation error can quote the answers, so it stays on the cause.
+            msg = f"{self.PROVIDER_NAME} returned a decisions response that is not valid"
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME) from error
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:

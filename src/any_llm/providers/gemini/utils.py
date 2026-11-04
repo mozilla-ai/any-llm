@@ -41,6 +41,8 @@ _INLINE_SIZE_LIMIT = 20 * 1024 * 1024
 # https://ai.google.dev/gemini-api/docs/function-calling#multimodal
 _FUNCTION_RESPONSE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "application/pdf", "text/plain"})
 _GEMINI_MAJOR_VERSION = re.compile(r"(?:^|/)gemini-(\d+)")
+# Resource prefixes ``models.list`` puts on a name that completion calls do not need.
+_MODEL_RESOURCE_PREFIX = re.compile(r"^(?:publishers/google/)?models/")
 _GEMINI_CONTENT_FILTER_REFUSAL = "Response blocked by Gemini content filtering."
 
 
@@ -1162,7 +1164,15 @@ def _create_openai_chunk_from_google_chunk(
 
 
 def _convert_models_list(models_list: Pager[types.Model]) -> list[Model]:
-    return [Model(id=model.name or "Unknown", object="model", created=0, owned_by="google") for model in models_list]
+    return [
+        Model(
+            id=_MODEL_RESOURCE_PREFIX.sub("", model.name) if model.name else "Unknown",
+            object="model",
+            created=0,
+            owned_by="google",
+        )
+        for model in models_list
+    ]
 
 
 _GOOGLE_TO_OPENAI_STATUS_MAP: dict[str, str] = {

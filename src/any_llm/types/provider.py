@@ -32,6 +32,8 @@ class ProviderMetadata(BaseModel):
     rerank: bool = False
     decide: bool = False
     """Whether the provider implements the decide API (`decide`/`adecide`)."""
+    video_generation: bool = False
+    """Whether the provider implements the video API (`video_generation`/`retrieve_video`)."""
 
     files: bool = False
     file_operations: tuple[FileOperation, ...] = ()

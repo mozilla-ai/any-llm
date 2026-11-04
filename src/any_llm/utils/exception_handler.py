@@ -76,7 +76,13 @@ _ERROR_PATTERNS: tuple[tuple[str, type[AnyLLMError]], ...] = (
         ),
         AuthenticationError,
     ),
-    (r"context.*length|length.*context|token limit|maximum.*length", ContextLengthExceededError),
+    (
+        (
+            r"context.*length|length.*context|token limit|maximum.*length|"
+            r"prompt is too long|exceeds the maximum number of tokens"
+        ),
+        ContextLengthExceededError,
+    ),
     (r"notfound|not_found|model not found|does not exist|model.*not.*found", ModelNotFoundError),
     (
         r"content.*(filter|policy)|(filter|policy).*content|safety|moderation|blocked|harmful content",

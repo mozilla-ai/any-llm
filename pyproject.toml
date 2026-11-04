@@ -12,7 +12,7 @@ dependencies = [
   "pydantic>2,<3",
   "openai>=2.18.0,<4",
   "openresponses-types>=2.4.0,<3",
-  "anthropic>=0.124.0,<1",
+  "anthropic>=1.2.0,<2",
   "rich",
   "httpx",
   "typing_extensions>=4.5.0",
@@ -33,7 +33,7 @@ platform = [
 perplexity = []
 
 mistral = [
-  "mistralai>=2.0.0",
+  "mistralai>=2.4.2",
 ]
 
 anthropic = []
@@ -50,15 +50,15 @@ vertexai = [
 ]
 
 vertexaianthropic = [
-  "anthropic[vertex]>=0.119.0,<1",
+  "anthropic[vertex]>=1.2.0,<2",
 ]
 
 azureanthropic = [
-  "anthropic>=0.124.0,<1",
+  "anthropic>=1.2.0,<2",
 ]
 
 huggingface = [
-  "huggingface-hub",
+  "huggingface-hub>=0.30.0",
 ]
 
 cohere = [
@@ -67,6 +67,10 @@ cohere = [
 
 cerebras = [
   "cerebras_cloud_sdk>=1.23.0",
+]
+
+fireworks = [
+  "fireworks-ai>=1.2.0",
 ]
 
 groq = [
@@ -86,7 +90,7 @@ watsonx = [
 ]
 
 together = [
-  "together>=2.0.0",
+  "together>=2.0.0,<3",
 ]
 
 ollama = [
@@ -115,7 +119,6 @@ azureopenai = []
 cascadia = []
 databricks = []
 deepseek = []
-fireworks = []
 gmi = []
 otari = [
   "otari>=0.4.0,<0.5",
@@ -250,11 +253,9 @@ ignore_missing_imports = true # pytest related modules are not found
 
 [tool.pytest.ini_options]
 timeout = 120
+# Integration tests retry; without this, only the last attempt leaves a traceback in the log.
+addopts = "--rerun-show-tracebacks"
 filterwarnings = [
-  # Silence Pydantic V1-style validator deprecation warnings coming from fireworks only
-  "ignore:Pydantic V1 style `@validator` validators are deprecated:pydantic.warnings.PydanticDeprecatedSince20:fireworks\\.client\\.image_api",
-  # Silence fireworks generated protos deprecation about BaseModelDetails.tunable only
-  "ignore:BaseModelDetails\\.tunable is deprecated:DeprecationWarning:fireworks\\.control_plane\\.generated\\.protos\\.gateway.*",
   # Silence model format deprecation warnings
   "ignore:Model format 'provider/model' is deprecated:DeprecationWarning",
 ]
@@ -289,7 +290,7 @@ tests = [
   "pytest>=8,<10",
   "pytest-cov>=6.2.1,<8",
   "pytest-asyncio>=0.26.0",
-  "pytest-rerunfailures>=16.0",
+  "pytest-rerunfailures>=16.3",
   "mktestdocs>=0.2.4",
   "pytest-xdist>=3.6.1",
   "pytest-timeout",

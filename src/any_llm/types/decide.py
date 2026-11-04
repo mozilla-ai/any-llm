@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal, TypeAlias, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag
 
 JSONContent: TypeAlias = str | Mapping[str, Any] | Sequence[Any]
 """Text, a JSON object, or an array. Nested values are sent as the provider encodes them."""
@@ -66,7 +66,8 @@ QuestionsInput: TypeAlias = Mapping[str, Question | Mapping[str, Any]]
 
 class _Answer(BaseModel):
     # Frozen, so answers stay hashable and a mutation cannot leave one that no longer fits its type.
-    model_config = ConfigDict(frozen=True)
+    # Fields a provider adds are kept, so a caller that passes the answer on loses nothing.
+    model_config = ConfigDict(frozen=True, extra="allow")
 
 
 class NoulAnswer(_Answer):
@@ -95,23 +96,55 @@ class ScoreAnswer(_Answer):
     probabilities: dict[int, float] = Field(description="Probability of each score level")
 
 
-Answer: TypeAlias = Annotated[NoulAnswer | ChoiceAnswer | ScoreAnswer, Field(discriminator="type")]
-"""An answer, identified by its `type`."""
+class UnknownAnswer(_Answer):
+    """An answer of a type any-llm does not model, such as OpenRouter's `box`, with all its fields."""
+
+    type: str
+
+
+_KNOWN_ANSWER_TYPES = frozenset({"noul", "choice", "score"})
+
+
+def _answer_tag(value: Any) -> str | None:
+    answer_type = value.get("type") if isinstance(value, Mapping) else getattr(value, "type", None)
+    if not isinstance(answer_type, str):
+        # No tag fails validation, so an answer must still name its type.
+        return None
+    return answer_type if answer_type in _KNOWN_ANSWER_TYPES else "unknown"
+
+
+Answer: TypeAlias = Annotated[
+    Annotated[NoulAnswer, Tag("noul")]
+    | Annotated[ChoiceAnswer, Tag("choice")]
+    | Annotated[ScoreAnswer, Tag("score")]
+    | Annotated[UnknownAnswer, Tag("unknown")],
+    Discriminator(_answer_tag),
+]
+"""An answer, identified by its `type`. A type any-llm does not model is kept as an `UnknownAnswer`."""
 
 AnswerT = TypeVar("AnswerT", NoulAnswer, ChoiceAnswer, ScoreAnswer)
 
 
 class DecideUsage(BaseModel):
-    """Token usage of a decide request."""
+    """Token usage of a decide request. Fields a provider adds are kept."""
+
+    model_config = ConfigDict(extra="allow")
 
     input_tokens: int | None = None
     """Input tokens used, or `None` when the provider did not report it."""
     output_tokens: int | None = None
     """Output tokens used, or `None` when the provider did not report it."""
+    cost: float | None = None
+    """What the provider charged for the request in USD, or `None` when it did not report it."""
 
 
 class DecideResponse(BaseModel):
-    """Answers keyed by the question names of the request, provider-agnostic."""
+    """Answers keyed by the question names of the request, provider-agnostic.
+
+    Fields a provider adds, such as OpenRouter's `provider`, are kept and appear in `model_dump()`.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     id: str | None = Field(default=None, description="Provider-assigned request ID, when the provider reports one")
     model: str | None = Field(

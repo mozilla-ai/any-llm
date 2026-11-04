@@ -1,12 +1,17 @@
 # Inspired by https://github.com/andrewyng/aisuite/tree/main/aisuite
 from __future__ import annotations
 
+import asyncio
+import base64
 import importlib
 import os
+import re
+import time
 import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
 
+import httpx
 from openresponses_types import ResponseResource
 from pydantic import BaseModel, TypeAdapter
 
@@ -15,6 +20,7 @@ from any_llm.constants import INSIDE_NOTEBOOK, LLMProvider, get_provider_tier
 from any_llm.exceptions import (
     AnyLLMError,
     ContentFilterFinishReasonError,
+    InvalidRequestError,
     LengthFinishReasonError,
     MissingApiKeyError,
     UnsupportedParameterError,
@@ -52,6 +58,7 @@ from any_llm.types.responses import (
     ResponsesParams,
     ResponseStreamEvent,
 )
+from any_llm.types.video import VideoGenerationParams, VideoJob, VideoOutput
 from any_llm.utils.aio import aclose_quietly, async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
 from any_llm.utils.exception_handler import handle_exceptions, provider_exception_handler
 from any_llm.utils.structured_output import (
@@ -66,6 +73,14 @@ ResponseFormatT = TypeVar("ResponseFormatT", bound=BaseModel)
 
 # Validated as one mapping, so every invalid question is reported under its name.
 _QUESTIONS_ADAPTER: TypeAdapter[dict[str, Question]] = TypeAdapter(dict[str, Question])
+
+# Hosts render DeepSeek V4 and V4.1 with templates that lack some levels: V4's encoding takes
+# high and max, V4.1's low, high and max, and some servers add medium or xhigh. The levels they
+# lack map as DeepSeek's own API maps them, minimal to low and medium and xhigh to high; low is
+# kept, as DeepSeek keeps it, rather than raised to high for V4's encoding.
+# https://api-docs.deepseek.com/guides/thinking_mode/
+_DEEPSEEK_V4_MODEL = re.compile(r"\bdeepseek-v4(?!\d)", re.IGNORECASE)
+_DEEPSEEK_V4_EFFORTS: dict[str, ReasoningEffort] = {"minimal": "low", "medium": "high", "xhigh": "high"}
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
@@ -143,6 +158,12 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_DECIDE: bool = False
     """Decide API - answer named yes/no, choice, and score questions about a state."""
 
+    SUPPORTS_DECIDE_IMAGE: bool = False
+    """Decide API - accept images (data URLs) alongside the state."""
+
+    SUPPORTS_VIDEO_GENERATION: bool = False
+    """Video generation API - start a video job and poll it (`video_generation`, `retrieve_video`)."""
+
     SUPPORTS_MESSAGES: bool = True
     """Anthropic Messages API (all providers support it via conversion)"""
 
@@ -154,7 +175,7 @@ class AnyLLM(FilesMixin, ABC):
     in `serves_messages_natively`."""
 
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
-    """Whether Messages structured output can be streamed by this provider."""
+    """Whether a Messages `output_format` type can be streamed by this provider."""
 
     SUPPORTS_COMPLETION_N: bool = False
     """Whether the provider can return more than one choice per request (OpenAI's ``n``).
@@ -630,6 +651,7 @@ class AnyLLM(FilesMixin, ABC):
             audio_speech=cls.SUPPORTS_AUDIO_SPEECH,
             rerank=cls.SUPPORTS_RERANK,
             decide=cls.SUPPORTS_DECIDE,
+            video_generation=cls.SUPPORTS_VIDEO_GENERATION,
             files=bool(cls.SUPPORTED_FILE_OPERATIONS),
             file_operations=tuple(sorted(cls.SUPPORTED_FILE_OPERATIONS)),
             messages=cls.SUPPORTS_MESSAGES,
@@ -902,7 +924,7 @@ class AnyLLM(FilesMixin, ABC):
             logit_bias=logit_bias,
             stream_options=stream_options,
             max_completion_tokens=max_completion_tokens,
-            reasoning_effort=reasoning_effort,
+            reasoning_effort=self._reasoning_effort_for_model(reasoning_effort, model),
             prompt_cache_key=prompt_cache_key,
             service_tier=service_tier,
         )
@@ -944,6 +966,18 @@ class AnyLLM(FilesMixin, ABC):
             additional_message = f"{self.PROVIDER_NAME} returns one choice per request; omit n or set it to 1."
             raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
         return n
+
+    def _reasoning_effort_for_model(
+        self, reasoning_effort: ReasoningEffort | None, model: str
+    ) -> ReasoningEffort | None:
+        """The level ``model`` accepts in place of ``reasoning_effort``.
+
+        Any host serving DeepSeek V4 or V4.1 renders it with a chat template that lacks some
+        levels, so they are mapped by model name rather than per provider.
+        """
+        if reasoning_effort is not None and _DEEPSEEK_V4_MODEL.search(model):
+            return _DEEPSEEK_V4_EFFORTS.get(reasoning_effort, reasoning_effort)
+        return reasoning_effort
 
     def _validate_prompt_cache_key(self, prompt_cache_key: str | None) -> None:
         if prompt_cache_key is not None and self.PROMPT_CACHE_KEY_SUPPORT == "unsupported":
@@ -1100,8 +1134,8 @@ class AnyLLM(FilesMixin, ABC):
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
                 JSON schemas (``parsed_output`` holds the parsed JSON). Non-streaming calls return
                 Anthropic's ``ParsedMessage`` for types or mappings with a non-empty schema dict;
-                mappings without one return ``MessageResponse``. Providers with native support
-                can stream schema-constrained Messages events instead.
+                mappings without one return ``MessageResponse``. A mapping can be streamed, as
+                schema-constrained JSON text; a type streams only on providers with native support.
                 Native Anthropic typed beta requests return ``ParsedBetaMessage`` when
                 ``context_management`` is set or beta identifiers are supplied.
             timeout: Per-request timeout in seconds, passed through to the provider's client/SDK.
@@ -1117,19 +1151,18 @@ class AnyLLM(FilesMixin, ABC):
             Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
-            ValueError: If an `output_format` that names a format is combined with `stream=True`
-                for a provider that does not support streaming structured output.
+            ValueError: If an `output_format` type is combined with `stream=True` for a provider
+                that does not support streaming typed structured output.
             NotImplementedError: If `container`, `context_management`, or `betas` is used
                 with a provider that has no native Anthropic Messages API.
 
         """
-        # An output_config that names no format (effort alone) asks for no structured output,
-        # so there is nothing a stream could fail to honour.
-        names_format = not isinstance(output_format, dict) or "format" in normalize_output_config(output_format)
+        # A raw output_config dict streams as JSON text deltas, as Anthropic's own API does, and
+        # the bridge streams its schema as a `response_format`. Only a type needs a finished
+        # message to parse into, which a stream never produces.
         if (
-            output_format is not None
+            is_structured_output_type(output_format)
             and stream
-            and names_format
             and not self.SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING
         ):
             msg = "stream is not supported for output_format"
@@ -1205,6 +1238,9 @@ class AnyLLM(FilesMixin, ABC):
             params, cache_breakpoints=self._READS_CACHE_CONTROL_SIDE_CHANNEL
         )
         completion_params = CompletionParams(**completion_kwargs)
+        completion_params.reasoning_effort = self._reasoning_effort_for_model(
+            completion_params.reasoning_effort, completion_params.model_id
+        )
         try:
             result = await self._acompletion(completion_params, **kwargs)
         except UnsupportedParameterError as exc:
@@ -1254,8 +1290,8 @@ class AnyLLM(FilesMixin, ABC):
 
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
-                for stop_event in close_open_blocks(state):
-                    yield stop_event
+                for close_event in close_open_blocks(state):
+                    yield close_event
                 yield usage_delta(state.stop_reason or "end_turn")
                 yield MessageStopEvent(type="message_stop")
 
@@ -1883,6 +1919,8 @@ class AnyLLM(FilesMixin, ABC):
         model: str,
         state: JSONContent,
         questions: QuestionsInput,
+        *,
+        images: list[str] | None = None,
         **kwargs: Any,
     ) -> DecideResponse:
         """Answer named questions about a state synchronously.
@@ -1890,7 +1928,9 @@ class AnyLLM(FilesMixin, ABC):
         See [AnyLLM.adecide][any_llm.any_llm.AnyLLM.adecide]
         """
         allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
-        return run_async_in_sync(self.adecide(model, state, questions, **kwargs), allow_running_loop=allow_running_loop)
+        return run_async_in_sync(
+            self.adecide(model, state, questions, images=images, **kwargs), allow_running_loop=allow_running_loop
+        )
 
     @handle_exceptions()
     async def adecide(
@@ -1899,6 +1939,7 @@ class AnyLLM(FilesMixin, ABC):
         state: JSONContent,
         questions: QuestionsInput,
         *,
+        images: list[str] | None = None,
         timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
     ) -> DecideResponse:
@@ -1909,6 +1950,9 @@ class AnyLLM(FilesMixin, ABC):
             state: Text, a JSON object, or an array the questions refer to.
             questions: Names mapped to `Noul`, `Choice` or `Score` questions, their dict forms, or
                 objects with the same attributes. The response uses the same names to key the answers.
+            images: Images the questions refer to, as data URLs (`data:image/...;base64,...`).
+                Providers that do not accept images (`SUPPORTS_DECIDE_IMAGE`) raise
+                `UnsupportedParameterError`.
             timeout: Per-request timeout in seconds. Providers that have no per-request timeout
                 raise `UnsupportedParameterError`.
             **kwargs: Additional provider-specific arguments.
@@ -1928,6 +1972,11 @@ class AnyLLM(FilesMixin, ABC):
             # than as a timeout problem.
             msg = "Provider doesn't support decide."
             raise NotImplementedError(msg)
+        if images is not None:
+            if not self.SUPPORTS_DECIDE_IMAGE:
+                parameter_name = "images"
+                raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+            kwargs["images"] = images
         self._validate_and_forward_timeout(timeout, kwargs)
         # from_attributes accepts question objects of the same shape, such as the typesafe_sdk classes.
         validated = _QUESTIONS_ADAPTER.validate_python(questions, from_attributes=True)
@@ -2151,3 +2200,182 @@ class AnyLLM(FilesMixin, ABC):
             raise NotImplementedError(msg)
         msg = "Subclasses must implement _aretrieve_batch_results method"
         raise NotImplementedError(msg)
+
+    def video_generation(self, model: str, prompt: str, **kwargs: Any) -> VideoJob:
+        """Start a video generation job synchronously.
+
+        See [AnyLLM.avideo_generation][any_llm.any_llm.AnyLLM.avideo_generation]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.avideo_generation(model, prompt, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def avideo_generation(
+        self,
+        model: str,
+        prompt: str,
+        *,
+        seconds: int | None = None,
+        size: str | None = None,
+        seed: int | None = None,
+        negative_prompt: str | None = None,
+        reference_images: list[str] | None = None,
+        first_frame: str | None = None,
+        last_frame: str | None = None,
+        **kwargs: Any,
+    ) -> VideoJob:
+        """Start a video generation job asynchronously.
+
+        Video generation is slow, so the provider returns a job rather than a video. Poll it
+        with [AnyLLM.aretrieve_video][any_llm.any_llm.AnyLLM.aretrieve_video], or wait with
+        [AnyLLM.apoll_video][any_llm.any_llm.AnyLLM.apoll_video], until `VideoJob.done`.
+
+        Args:
+            model: Model identifier for the chosen provider (e.g., 'ByteDance/Seedance-2.0' for Together).
+            prompt: A text description of the desired video.
+            seconds: Length of the video in seconds.
+            size: Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720').
+            seed: Seed for reproducible generation.
+            negative_prompt: What the video should not contain.
+            reference_images: Image URLs the video should take its subjects or style from.
+            first_frame: Image URL to start the video from.
+            last_frame: Image URL to end the video on.
+            **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
+
+        Returns:
+            The video job, usually still `queued` or `in_progress`.
+
+        """
+        if not self.SUPPORTS_VIDEO_GENERATION:
+            msg = "Provider doesn't support video generation."
+            raise NotImplementedError(msg)
+        params = VideoGenerationParams(
+            model_id=model,
+            prompt=prompt,
+            seconds=seconds,
+            size=size,
+            seed=seed,
+            negative_prompt=negative_prompt,
+            reference_images=reference_images,
+            first_frame=first_frame,
+            last_frame=last_frame,
+        )
+        return await self._avideo_generation(params, **kwargs)
+
+    async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:
+        msg = "Subclasses must implement _avideo_generation method"
+        raise NotImplementedError(msg)
+
+    def retrieve_video(self, video_id: str, **kwargs: Any) -> VideoJob:
+        """Retrieve a video job synchronously.
+
+        See [AnyLLM.aretrieve_video][any_llm.any_llm.AnyLLM.aretrieve_video]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.aretrieve_video(video_id, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def aretrieve_video(self, video_id: str, **kwargs: Any) -> VideoJob:
+        """Retrieve a video job asynchronously.
+
+        Args:
+            video_id: The ID of the video job to retrieve.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            The video job with its current status, and its outputs once completed.
+
+        """
+        if not self.SUPPORTS_VIDEO_GENERATION:
+            msg = "Provider doesn't support video generation."
+            raise NotImplementedError(msg)
+        return await self._aretrieve_video(video_id, **kwargs)
+
+    async def _aretrieve_video(self, video_id: str, **kwargs: Any) -> VideoJob:
+        msg = "Subclasses must implement _aretrieve_video method"
+        raise NotImplementedError(msg)
+
+    def poll_video(
+        self, video_id: str, *, poll_interval: float = 5.0, timeout: float | None = 600.0, **kwargs: Any
+    ) -> VideoJob:
+        """Wait for a video job to finish synchronously.
+
+        See [AnyLLM.apoll_video][any_llm.any_llm.AnyLLM.apoll_video]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(
+            self.apoll_video(video_id, poll_interval=poll_interval, timeout=timeout, **kwargs),
+            allow_running_loop=allow_running_loop,
+        )
+
+    async def apoll_video(
+        self,
+        video_id: str,
+        *,
+        poll_interval: float = 5.0,
+        timeout: float | None = 600.0,  # noqa: ASYNC109  # total wait across polls, not one request's timeout
+        **kwargs: Any,
+    ) -> VideoJob:
+        """Retrieve a video job until it is `completed` or `failed`.
+
+        Args:
+            video_id: The ID of the video job to wait for.
+            poll_interval: Seconds to wait between retrievals.
+            timeout: Seconds to wait in total before giving up, or `None` to wait forever.
+            **kwargs: Additional provider-specific arguments passed to each retrieval.
+
+        Returns:
+            The finished video job. A `failed` job is returned, not raised, so its `error` can be read.
+
+        Raises:
+            TimeoutError: If the job is still running after `timeout` seconds.
+
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            job = await self.aretrieve_video(video_id, **kwargs)
+            if job.done:
+                return job
+            if deadline is not None and time.monotonic() >= deadline:
+                msg = f"Video job {video_id} is still {job.status} after {timeout} seconds."
+                raise TimeoutError(msg)
+            await asyncio.sleep(poll_interval)
+
+    def download_video(self, output: VideoOutput, **kwargs: Any) -> bytes:
+        """Download a generated video synchronously.
+
+        See [AnyLLM.adownload_video][any_llm.any_llm.AnyLLM.adownload_video]
+        """
+        allow_running_loop = kwargs.pop("allow_running_loop", INSIDE_NOTEBOOK)
+        return run_async_in_sync(self.adownload_video(output, **kwargs), allow_running_loop=allow_running_loop)
+
+    @handle_exceptions()
+    async def adownload_video(self, output: VideoOutput, **kwargs: Any) -> bytes:
+        """Return the bytes of a generated video.
+
+        Inline data is decoded; a URL is fetched. Providers whose URLs need credentials
+        override `_adownload_video`.
+
+        Args:
+            output: One entry of `VideoJob.outputs`.
+            **kwargs: Additional provider-specific arguments.
+
+        Returns:
+            The video file, usually MP4.
+
+        Raises:
+            InvalidRequestError: If the output has neither data nor a URL.
+
+        """
+        if output.b64_data is not None:
+            return base64.b64decode(output.b64_data)
+        if output.url is None:
+            msg = "Video output has neither a URL nor inline data to download."
+            raise InvalidRequestError(msg)
+        return await self._adownload_video(output.url, **kwargs)
+
+    async def _adownload_video(self, url: str, **kwargs: Any) -> bytes:
+        async with httpx.AsyncClient(follow_redirects=True, **kwargs) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.content

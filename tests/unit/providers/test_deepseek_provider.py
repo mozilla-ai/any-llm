@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
@@ -78,6 +78,64 @@ async def test_preprocess_messages_with_non_pydantic_response_format() -> None:
     processed_params = _preprocess_messages(params)
     assert processed_params.response_format == response_format
     assert processed_params.messages == messages
+
+
+def test_preprocess_messages_with_json_schema_dict() -> None:
+    """A json_schema dict, which DeepSeek rejects, becomes JSON mode with the schema in the prompt."""
+    schema = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "Name this session"}],
+        response_format={"type": "json_schema", "json_schema": {"name": "structured_output", "schema": schema}},
+    )
+
+    processed_params = _preprocess_messages(params)
+
+    assert processed_params.response_format == {"type": "json_object"}
+    content = processed_params.messages[0]["content"]
+    assert json.dumps(schema, indent=2) in content
+    assert "Name this session" in content
+
+
+def test_preprocess_messages_with_json_schema_dict_without_a_schema() -> None:
+    """OpenAI's json_schema format makes the schema optional, so its absence asks for JSON of any shape."""
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format={"type": "json_schema", "json_schema": {"name": "structured_output"}},
+    )
+
+    processed_params = _preprocess_messages(params)
+
+    assert processed_params.response_format == {"type": "json_object"}
+    content = processed_params.messages[0]["content"]
+    assert "Please respond with a JSON object.\n" in content
+    assert "schema" not in content
+    assert "Hello" in content
+
+
+@pytest.mark.parametrize(
+    ("response_format", "message"),
+    [
+        ({"type": "json_schema"}, "must include a 'json_schema' object"),
+        ({"type": "json_schema", "json_schema": "structured_output"}, "must include a 'json_schema' object"),
+        (
+            {"type": "json_schema", "json_schema": {"name": "structured_output", "schema": "object"}},
+            "must be a JSON schema object",
+        ),
+    ],
+)
+def test_preprocess_messages_rejects_a_malformed_json_schema_dict(
+    response_format: dict[str, Any], message: str
+) -> None:
+    params = CompletionParams(
+        model_id="deepseek-v4-flash",
+        messages=[{"role": "user", "content": "Hello"}],
+        response_format=response_format,
+    )
+
+    with pytest.raises(InvalidRequestError, match=message):
+        _preprocess_messages(params)
 
 
 @pytest.mark.asyncio
@@ -378,6 +436,19 @@ def test_deepseek_rejects_unsupported_minimal_reasoning_effort() -> None:
         DeepseekProvider._convert_completion_params(params)
 
 
+@pytest.mark.asyncio
+async def test_deepseek_acompletion_keeps_minimal_for_its_own_rejection() -> None:
+    """DeepSeek's own API rejects minimal, so the V4 template mapping does not soften it."""
+    provider = DeepseekProvider(api_key="sk-test")
+
+    with pytest.raises(InvalidRequestError, match="minimal"):
+        await provider.acompletion(
+            model="deepseek-v4-pro",
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort="minimal",
+        )
+
+
 def test_deepseek_thinking_respects_explicit_extra_body_override() -> None:
     """Caller-supplied DeepSeek fields take precedence over normalized controls."""
     params = CompletionParams(
@@ -425,12 +496,12 @@ def test_deepseek_does_not_mutate_reused_extra_body_when_mapping_user() -> None:
 
 @pytest.mark.asyncio
 async def test_deepseek_emits_current_chat_wire_contract() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handle_request(request: httpx.Request) -> httpx.Response:
+    def handle_request(request: httpx2.Request) -> httpx2.Response:
         request.read()
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "chatcmpl-test",
@@ -444,7 +515,7 @@ async def test_deepseek_emits_current_chat_wire_contract() -> None:
     user_id = "a" * 512
     provider = DeepseekProvider(
         api_key="test-key",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle_request)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle_request)),
         max_retries=0,
     )
     try:
@@ -940,9 +1011,9 @@ async def test_reasoning_replay_stream_closes_the_underlying_stream() -> None:
     assert source.closed
 
 
-def sse_response(events: list[dict[str, Any]]) -> httpx.Response:
+def sse_response(events: list[dict[str, Any]]) -> httpx2.Response:
     body = "".join(f"data: {json.dumps(event)}\n\n" for event in events) + "data: [DONE]\n\n"
-    return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
+    return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body.encode())
 
 
 def stream_event(delta: dict[str, Any], finish_reason: str | None = None) -> dict[str, Any]:
@@ -959,7 +1030,7 @@ def stream_event(delta: dict[str, Any], finish_reason: str | None = None) -> dic
 async def test_streamed_tool_call_turn_replays_reasoning_content() -> None:
     requests: list[dict[str, Any]] = []
 
-    def handle_request(request: httpx.Request) -> httpx.Response:
+    def handle_request(request: httpx2.Request) -> httpx2.Response:
         request.read()
         requests.append(json.loads(request.content))
         if len(requests) > 1:
@@ -987,7 +1058,7 @@ async def test_streamed_tool_call_turn_replays_reasoning_content() -> None:
 
     provider = DeepseekProvider(
         api_key="test-key",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle_request)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle_request)),
         max_retries=0,
     )
     tools = [{"type": "function", "function": {"name": "weather", "parameters": {"type": "object"}}}]

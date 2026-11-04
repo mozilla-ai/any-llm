@@ -64,7 +64,8 @@ def provider_reasoning_model_map() -> dict[LLMProvider, str]:
         LLMProvider.CASCADIA: "N/A",
         LLMProvider.ATLASCLOUD: "deepseek-ai/deepseek-v4-flash",
         LLMProvider.KENARI: "deepseek-v4-flash",
-        LLMProvider.LMSTUDIO: "qwen3-0.6b",
+        # CI downloads and loads only the LMSTUDIO_MODEL in tests-integration.yaml.
+        LLMProvider.LMSTUDIO: "qwen/qwen3-1.7b",
         LLMProvider.AZUREOPENAI: "gpt-4.1-nano",
         LLMProvider.CEREBRAS: "gpt-oss-120b",
         LLMProvider.COHERE: "command-a-reasoning-08-2025",
@@ -208,6 +209,24 @@ def rerank_provider_model_map() -> dict[LLMProvider, str]:
         # tests/integration/test_rerank.py.
         # otari intentionally omitted: the test account routes only Anthropic upstreams, which
         # have no rerank endpoint, so test_rerank skips otari.
+    }
+
+
+@pytest.fixture
+def decide_provider_model_map() -> dict[LLMProvider, str]:
+    return {
+        # llama-server ignores the model when it serves one model.
+        LLMProvider.LLAMACPP: "N/A",
+        LLMProvider.OPENROUTER: "typesafe/jev-1.13",
+        LLMProvider.TYPESAFE: "jev-latest",
+    }
+
+
+@pytest.fixture
+def video_provider_model_map() -> dict[LLMProvider, str]:
+    return {
+        LLMProvider.GEMINI: "gemini-omni-1.1-flash",
+        LLMProvider.TOGETHER: "ByteDance/Seedance-2.0",
     }
 
 

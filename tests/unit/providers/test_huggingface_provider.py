@@ -68,6 +68,36 @@ async def test_huggingface_with_timeout() -> None:
         mock_huggingface.assert_called_with(base_url=None, token=api_key, timeout=10)
 
 
+def test_huggingface_bill_to_reaches_both_clients() -> None:
+    api_key = "test-api-key"
+    with (
+        patch("any_llm.providers.huggingface.huggingface.AsyncInferenceClient") as mock_inference,
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+    ):
+        provider = HuggingfaceProvider(api_key=api_key, bill_to="my-org", timeout=10)
+
+    mock_inference.assert_called_once_with(base_url=None, token=api_key, bill_to="my-org", timeout=10)
+    mock_openai.assert_called_once_with(
+        base_url=HuggingfaceProvider.OPENRESPONSES_ROUTER_URL,
+        api_key=api_key,
+        default_headers={"X-HF-Bill-To": "my-org"},
+        timeout=10,
+    )
+    assert "bill_to" not in provider.kwargs
+
+
+def test_huggingface_without_bill_to_bills_the_token_account() -> None:
+    api_key = "test-api-key"
+    with (
+        patch("any_llm.providers.huggingface.huggingface.AsyncInferenceClient") as mock_inference,
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+    ):
+        HuggingfaceProvider(api_key=api_key)
+
+    mock_inference.assert_called_once_with(base_url=None, token=api_key)
+    mock_openai.assert_called_once_with(base_url=HuggingfaceProvider.OPENRESPONSES_ROUTER_URL, api_key=api_key)
+
+
 @pytest.mark.asyncio
 async def test_huggingface_extracts_multiple_tag_types() -> None:
     """Test that different reasoning tag formats are all extracted correctly."""

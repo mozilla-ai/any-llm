@@ -26,7 +26,6 @@ from any_llm.types.completion import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
     ChunkChoice,
-    CompletionUsage,
     CreateEmbeddingResponse,
     Embedding,
     Function,
@@ -35,6 +34,7 @@ from any_llm.types.completion import (
 )
 from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse, ModerationResult
+from any_llm.utils.usage import completion_usage_from_dict
 
 DEFAULT_TIMEOUT_HOURS = 24
 DEFAULT_COMPLETION_WINDOW = f"{DEFAULT_TIMEOUT_HOURS}h"
@@ -260,11 +260,7 @@ def _create_mistral_completion_from_response(
 
     usage = None
     if response_data.usage:
-        usage = CompletionUsage(
-            completion_tokens=response_data.usage.completion_tokens or 0,
-            prompt_tokens=response_data.usage.prompt_tokens or 0,
-            total_tokens=response_data.usage.total_tokens or 0,
-        )
+        usage = completion_usage_from_dict(response_data.usage.model_dump())
 
     return ChatCompletion(
         id=response_data.id,
@@ -346,11 +342,7 @@ def _create_openai_chunk_from_mistral_chunk(event: CompletionEvent) -> ChatCompl
 
     usage = None
     if chunk.usage:
-        usage = CompletionUsage(
-            prompt_tokens=chunk.usage.prompt_tokens or 0,
-            completion_tokens=chunk.usage.completion_tokens or 0,
-            total_tokens=chunk.usage.total_tokens or 0,
-        )
+        usage = completion_usage_from_dict(chunk.usage.model_dump())
 
     return ChatCompletionChunk(
         id=chunk.id,

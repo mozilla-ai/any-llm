@@ -25,7 +25,7 @@ from any_llm.types.messages import (
     MessageStopEvent,
     MessageStreamEvent,
 )
-from any_llm.utils.messages_compat import prepare_blocks_for_native_messages
+from any_llm.utils.messages_compat import prepare_blocks_for_native_messages, sampling_params_in_extra_body
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type, normalize_output_config
 
 MISSING_PACKAGES_ERROR = None
@@ -343,6 +343,7 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         if betas:
             api_kwargs["betas"] = betas
         api_kwargs.update(kwargs)
+        api_kwargs = sampling_params_in_extra_body(api_kwargs)
 
         # GA, beta, and Vertex resources have incompatible SDK method overloads.
         # Keep the dynamic boundary here rather than duplicating request handling.
@@ -357,8 +358,8 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                 return self._stream_messages_async(use_beta=use_beta, **api_kwargs)
             if is_structured_output_type(params.output_format):
                 # The GA messages.parse() helper has no container parameter (still absent on
-                # anthropic 1.7), so this combination has to go through messages.create(); the beta
-                # helper does accept it. Re-check when #1370 moves the pin to anthropic>=1.
+                # anthropic 1.17), so this combination has to go through messages.create(); the beta
+                # helper does accept it.
                 if params.container is not None and not use_beta:
                     output_config = {
                         "format": {

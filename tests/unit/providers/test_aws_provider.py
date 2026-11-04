@@ -519,7 +519,7 @@ def test_completion_streaming_uses_converse_stream_on_resolved_client() -> None:
 @pytest.mark.parametrize("reasoning_effort", [None, *get_args(ReasoningEffort)])
 def test_completion_with_custom_reasoning_effort(reasoning_effort: ReasoningEffort | None) -> None:
     """Test that reasoning_effort is correctly passed to Bedrock API."""
-    model_id = "model-id"
+    model_id = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     messages = [{"role": "user", "content": "Hello"}]
 
     with mock_aws_provider() as mock_boto3_client:
@@ -1377,6 +1377,57 @@ def test_convert_params_response_format_json_schema_non_dict_schema_raises() -> 
         )
 
 
+@pytest.mark.parametrize("model_id", ["xai.grok-4-fast", "deepseek.v3-v1:0", "openai.gpt-oss-120b-1:0"])
+def test_convert_params_reasoning_effort_on_non_claude_model_raises(model_id: str) -> None:
+    """Non-Claude models reject Claude's `reasoning_config` object, so it is never sent to them."""
+    with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
+        _convert_params(
+            CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "hi"}], reasoning_effort="low"),
+            {},
+        )
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6",
+        "arn:aws:bedrock:us-east-1:123456789012:provisioned-model/a1b2c3d4e5f6",
+        "arn:aws:bedrock:us-east-1:123456789012:imported-model/a1b2c3d4e5f6",
+    ],
+)
+def test_convert_params_reasoning_effort_on_opaque_arn_keeps_claude_shape(model_id: str) -> None:
+    """An ARN that does not name its model may front Claude, so it is not refused."""
+    result = _convert_params(
+        CompletionParams(
+            model_id=model_id,
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort="low",
+        ),
+        {},
+    )
+
+    assert result["additionalModelRequestFields"]["reasoning_config"] == {
+        "type": "enabled",
+        "budget_tokens": REASONING_EFFORT_TO_THINKING_BUDGETS["low"],
+    }
+
+
+@pytest.mark.parametrize("reasoning_effort", [None, "none", "auto"])
+def test_convert_params_without_reasoning_on_non_claude_model_sends_no_reasoning_config(
+    reasoning_effort: ReasoningEffort | None,
+) -> None:
+    result = _convert_params(
+        CompletionParams(
+            model_id="xai.grok-4-fast",
+            messages=[{"role": "user", "content": "hi"}],
+            reasoning_effort=reasoning_effort,
+        ),
+        {},
+    )
+
+    assert "additionalModelRequestFields" not in result
+
+
 def test_convert_params_response_format_with_reasoning_effort_raises() -> None:
     """Claude rejects forced tool use while extended thinking is enabled, so the combination is refused."""
     with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
@@ -1518,6 +1569,64 @@ def test_convert_params_rejects_reserved_tool_name_without_response_format() -> 
             ),
             {},
         )
+
+
+def _replayed_search(*, repeat: bool = False) -> list[dict[str, Any]]:
+    """A conversation that called `web_search`, as an agent loop replays it."""
+    turns: list[dict[str, Any]] = [{"role": "user", "content": "find it"}]
+    for index in range(2 if repeat else 1):
+        call_id = f"call_{index}"
+        turns.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": call_id, "type": "function", "function": {"name": "web_search", "arguments": "{}"}}
+                ],
+            }
+        )
+        turns.append({"role": "tool", "tool_call_id": call_id, "content": "results"})
+    turns.append({"role": "user", "content": "Answer now."})
+    return turns
+
+
+def test_convert_params_declares_replayed_tools_when_none_are_passed() -> None:
+    """Converse refuses toolUse/toolResult blocks in a request with no toolConfig."""
+    result = _convert_params(
+        CompletionParams(model_id="nvidia.nemotron-super-3-120b", messages=_replayed_search(repeat=True)),
+        {},
+    )
+
+    assert result["toolConfig"] == {
+        "tools": [
+            {
+                "toolSpec": {
+                    "name": "web_search",
+                    "description": " ",
+                    "inputSchema": {"json": {"type": "object", "properties": {}}},
+                }
+            }
+        ]
+    }
+
+
+def test_convert_params_keeps_the_passed_tools_over_replayed_ones() -> None:
+    tools = [{"type": "function", "function": {"name": "get_weather", "parameters": None}}]
+    result = _convert_params(
+        CompletionParams(model_id="nvidia.nemotron-super-3-120b", messages=_replayed_search(), tools=tools),
+        {},
+    )
+
+    assert [tool["toolSpec"]["name"] for tool in result["toolConfig"]["tools"]] == ["get_weather"]
+
+
+def test_convert_params_sends_no_tool_config_without_tools_or_tool_calls() -> None:
+    result = _convert_params(
+        CompletionParams(model_id="nvidia.nemotron-super-3-120b", messages=[{"role": "user", "content": "hi"}]),
+        {},
+    )
+
+    assert "toolConfig" not in result
 
 
 def test_convert_params_forwards_zero_temperature() -> None:

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import Annotated, Any, Literal
 
 from anthropic.types import ContentBlock as AnthropicContentBlock
 from anthropic.types import InputJSONDelta, RawContentBlockDelta, TextDelta, ThinkingDelta
@@ -27,24 +27,11 @@ from anthropic.types.beta import (
     BetaThinkingBlock,
 )
 from anthropic.types.beta.beta_context_management_response import BetaContextManagementResponse
+from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
 from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage, ParsedBetaTextBlock
 from anthropic.types.parsed_message import ParsedMessage, ParsedTextBlock
 from anthropic.types.raw_message_delta_event import Delta as AnthropicMessageDelta
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
-
-if TYPE_CHECKING:
-    from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
-else:
-    try:
-        from anthropic.types.beta.beta_diagnostics import BetaDiagnostics
-    except ModuleNotFoundError:
-        # BetaDiagnostics was added in anthropic 0.102.0, while any-llm supports 0.83.0.
-        class _BetaDiagnosticsFallback(BaseModel):
-            model_config = ConfigDict(extra="allow", from_attributes=True)
-
-            cache_miss_reason: dict[str, Any] | None = None
-
-        BetaDiagnostics = _BetaDiagnosticsFallback
 
 __all__ = [
     "BetaContextManagementResponse",
@@ -86,13 +73,13 @@ StopReason = BetaStopReason
 class MessageIterationUsage(BetaMessageIterationUsage):
     """Usage of one sampling iteration of the requested model.
 
-    The Anthropic SDK requires ``model`` here, but a Messages stream can arrive
+    Anthropic SDKs before 1.8 require ``model`` here, but a Messages stream can arrive
     without it (Otari relays code-execution turns that way), and strict
     validation would then reject the whole event. The SDK itself builds its
     objects without validating, so its own instances can lack it too.
     """
 
-    model: str | None = None  # type: ignore[assignment]
+    model: str | None = None
 
 
 IterationsUsage = list[
@@ -180,7 +167,7 @@ class MessageResponse(AnthropicMessage):
     stop_reason: StopReason | None = None  # type: ignore[assignment]
     usage: MessageUsage
     context_management: BetaContextManagementResponse | None = None
-    diagnostics: BetaDiagnostics | None = None
+    diagnostics: BetaDiagnostics | None = None  # type: ignore[assignment]
 
 
 class MessageDelta(AnthropicMessageDelta):
@@ -291,8 +278,7 @@ class MessagesParams(BaseModel):
     or ``custom``) and ``skill_id``; ``version`` is optional.
 
     This matches Anthropic SDK ``MessageCreateParamsContainerParam``
-    (``str | ContainerParams``) on the pinned ``anthropic>=0.124`` Messages
-    contract. ``messages.create`` accepts the object on the GA path; any-llm
+    (``str | ContainerParams``). ``messages.create`` accepts the object on the GA path; any-llm
     does not infer a skills beta header. Tenant ownership, authorization,
     persistence, and cleanup remain application responsibilities.
     """

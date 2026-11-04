@@ -3,7 +3,7 @@ import sys
 from contextlib import ExitStack
 from types import ModuleType, SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from mktestdocs import check_md_file
@@ -11,6 +11,7 @@ from mktestdocs import check_md_file
 from any_llm.constants import LLMProvider
 from any_llm.types.completion import ChatCompletionChunk
 from any_llm.types.decide import ChoiceAnswer, DecideResponse, NoulAnswer, ScoreAnswer
+from any_llm.types.video import VideoJob, VideoOutput
 
 
 class FakeChatCompletion:
@@ -164,6 +165,14 @@ def _build_docs_patches() -> ExitStack:
         },
     )
 
+    fake_video_job = VideoJob(
+        id="vid_123",
+        model="ByteDance/Seedance-2.0",
+        status="completed",
+        outputs=[VideoOutput(url="https://example.com/vid_123.mp4")],
+    )
+    fake_video = b"video"
+
     fake_response = Mock(output_text="Paris", id="resp_123")
     fake_message_response = Mock(content=[Mock(text="Hello!")])
     fake_models = [
@@ -203,6 +212,7 @@ def _build_docs_patches() -> ExitStack:
     provider_mock.list_models.return_value = fake_models
     provider_mock.decide.return_value = fake_decide
     provider_mock.get_provider_metadata.return_value = fake_metadata
+    provider_mock.download_file.return_value = MagicMock()
 
     def mock_completion_side_effect(*args, **kwargs):  # type: ignore[no-untyped-def]
         if kwargs.get("stream", False):
@@ -235,6 +245,12 @@ def _build_docs_patches() -> ExitStack:
     stack.enter_context(patch("any_llm.arerank", new=AsyncMock(return_value=fake_rerank)))
     stack.enter_context(patch("any_llm.decide", return_value=fake_decide))
     stack.enter_context(patch("any_llm.adecide", new=AsyncMock(return_value=fake_decide)))
+    stack.enter_context(patch("any_llm.video_generation", return_value=fake_video_job))
+    stack.enter_context(patch("any_llm.avideo_generation", new=AsyncMock(return_value=fake_video_job)))
+    stack.enter_context(patch("any_llm.poll_video", return_value=fake_video_job))
+    stack.enter_context(patch("any_llm.apoll_video", new=AsyncMock(return_value=fake_video_job)))
+    stack.enter_context(patch("any_llm.download_video", return_value=fake_video))
+    stack.enter_context(patch("any_llm.adownload_video", new=AsyncMock(return_value=fake_video)))
     stack.enter_context(patch("any_llm.create_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.retrieve_batch", return_value=fake_batch))
     stack.enter_context(patch("any_llm.list_batches", return_value=[fake_batch]))

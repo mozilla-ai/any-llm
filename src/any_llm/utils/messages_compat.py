@@ -47,10 +47,7 @@ def _output_config_to_response_format(output_config: dict[str, Any]) -> dict[str
     Both dict shapes ``normalize_output_config`` accepts are handled. ``None`` means the config
     asked for no structured output, so the caller leaves ``response_format`` unset.
 
-    ``output_config.effort`` is never translated: chat completions has no equivalent, and the
-    nearest field, ``reasoning_effort``, governs reasoning rather than output. It is ignored
-    whether or not a schema sits beside it, so an effort-only config is not rejected in one
-    shape while being dropped in the other.
+    ``output_config.effort`` is not part of the format; ``output_config_effort`` reads it.
 
     Raises:
         InvalidRequestError: when the config names a format but no usable schema. The caller
@@ -186,12 +183,15 @@ def messages_params_to_completion_params(params: MessagesParams, *, cache_breakp
         if params.tool_choice.get("disable_parallel_tool_use") is True:
             result["parallel_tool_calls"] = False
 
-    if params.thinking:
-        if params.thinking.get("type") == "enabled":
-            budget = params.thinking.get("budget_tokens", 8192)
-            result["reasoning_effort"] = _budget_to_reasoning_effort(budget)
-        elif params.thinking.get("type") == "disabled":
-            result["reasoning_effort"] = "none"
+    thinking_type = (params.thinking or {}).get("type")
+    effort = output_config_effort(params)
+    if thinking_type == "disabled":
+        result["reasoning_effort"] = "none"
+    elif effort is not None:
+        result["reasoning_effort"] = effort
+    elif thinking_type == "enabled":
+        budget = cast("dict[str, Any]", params.thinking).get("budget_tokens", 8192)
+        result["reasoning_effort"] = _budget_to_reasoning_effort(budget)
 
     return result
 
@@ -298,10 +298,9 @@ def _convert_assistant_blocks_to_openai(blocks: list[dict[str, Any]]) -> list[di
             code_execution.append(_code_execution_tool_result_to_item(block))
 
     result: dict[str, Any] = {"role": "assistant"}
-    if text_parts:
-        result["content"] = "".join(text_parts)
-    else:
-        result["content"] = None
+    text = "".join(text_parts)
+    # Empty text beside tool calls carries nothing, and some backends reject "" with tool_calls.
+    result["content"] = text if text_parts and (text or not tool_calls) else None
     if tool_calls:
         result["tool_calls"] = tool_calls
     reasoning_content = "".join(thinking_parts)
@@ -601,6 +600,32 @@ def _convert_tool_choice_to_openai(tool_choice: dict[str, Any]) -> str | dict[st
     return "auto"
 
 
+# The levels Anthropic's output_config.effort takes, each also a ReasoningEffort value.
+_OUTPUT_CONFIG_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def output_config_effort(params: MessagesParams) -> str | None:
+    """Return ``output_config.effort`` as a completion ``reasoning_effort``, or None if unset.
+
+    Each of Anthropic's effort levels is a ``ReasoningEffort`` value, so it carries over as
+    is, and each provider maps ``reasoning_effort`` to what its API takes.
+
+    Raises:
+        InvalidRequestError: when effort is not one of Anthropic's levels. Dropping it would
+            leave the caller believing a level is in force.
+
+    """
+    if not isinstance(params.output_format, dict):
+        return None
+    effort = params.output_format.get("effort")
+    if effort is None:
+        return None
+    if effort not in _OUTPUT_CONFIG_EFFORTS:
+        msg = f"output_config effort {effort!r} is not one of {', '.join(_OUTPUT_CONFIG_EFFORTS)}."
+        raise InvalidRequestError(msg)
+    return cast("str", effort)
+
+
 def _budget_to_reasoning_effort(budget: int) -> str:
     """Map thinking budget tokens to a reasoning_effort level."""
     if budget <= 1024:
@@ -881,6 +906,10 @@ class StreamingState:
         self.tool_call_name: str | None = None
         self.tool_block_indexes: dict[int, int] = {}
         """Content block index of each open tool_use block, keyed by OpenAI ``tool_calls[].index``."""
+        self.tool_call_blocks: dict[int, int] = {}
+        """Content block index of every tool_use block of the message, open or closed, by the same key."""
+        self.pending_text = ""
+        """Text that arrived while tool_use blocks were open, emitted as a text block once they close."""
         self.pending_code_result: tuple[dict[str, Any], list[dict[str, Any]]] | None = None
         """Held-back ``code_execution_result`` item and the inline outputs folded into it so far."""
         self.code_result_ids: set[str] = set()
@@ -909,6 +938,10 @@ def chat_completion_chunk_to_message_stream_events(
     time the signature arrives that text block has already started, so no Anthropic event can
     attach it. Google makes text-part signatures optional; the mandatory function-call
     signatures travel on the tool_use blocks.
+
+    Text that arrives while tool_use blocks are open is held back and becomes a text block after
+    them (see ``close_open_blocks``): opening it would stop the tool blocks while their arguments
+    may still be streaming, and every delta of a block has to come before its stop.
     """
     events: list[MessageStartEvent | ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent] = []
     state.model = chunk.model
@@ -1004,7 +1037,10 @@ def chat_completion_chunk_to_message_stream_events(
             state.pending_code_result = (item, [])
             state.code_result_ids.add(item_id)
 
-    if delta.content is not None:
+    # Providers such as DeepSeek send content="" beside tool call fragments, which must not open a block.
+    if delta.content and state.current_block_type == "tool_use":
+        state.pending_text += delta.content
+    elif delta.content:
         if state.current_block_type != "text":
             _close_current_block(state, events)
             state.current_block_index += 1
@@ -1016,14 +1052,13 @@ def chat_completion_chunk_to_message_stream_events(
                     content_block=TextBlock(type="text", text=""),
                 )
             )
-        if delta.content:
-            events.append(
-                ContentBlockDeltaEvent(
-                    type="content_block_delta",
-                    index=state.current_block_index,
-                    delta=TextDelta(type="text_delta", text=delta.content),
-                )
+        events.append(
+            ContentBlockDeltaEvent(
+                type="content_block_delta",
+                index=state.current_block_index,
+                delta=TextDelta(type="text_delta", text=delta.content),
             )
+        )
 
     if delta.refusal:
         state.stop_reason = "refusal"
@@ -1051,7 +1086,7 @@ def chat_completion_chunk_to_message_stream_events(
     if delta.tool_calls:
         for tc in delta.tool_calls:
             # An id repeated on later fragments of the same tool call must not open a second block.
-            if tc.id and tc.index not in state.tool_block_indexes:
+            if tc.id and tc.index not in state.tool_call_blocks:
                 # Parallel tool calls share one tool_use section: only a text or thinking block
                 # is closed here, so a block stays open for every call still receiving arguments.
                 if state.current_block_type != "tool_use":
@@ -1061,6 +1096,7 @@ def chat_completion_chunk_to_message_stream_events(
                 state.tool_call_id = tc.id
                 state.tool_call_name = tc.function.name if tc.function else ""
                 state.tool_block_indexes[tc.index] = state.current_block_index
+                state.tool_call_blocks[tc.index] = state.current_block_index
                 events.append(
                     ContentBlockStartEvent(
                         type="content_block_start",
@@ -1073,13 +1109,17 @@ def chat_completion_chunk_to_message_stream_events(
             if tc.function and tc.function.arguments:
                 # Providers may interleave the fragments of parallel calls, so the destination
                 # block comes from the tool call's own index rather than from the newest block.
-                events.append(
-                    ContentBlockDeltaEvent(
-                        type="content_block_delta",
-                        index=state.tool_block_indexes.get(tc.index, state.current_block_index),
-                        delta=InputJSONDelta(type="input_json_delta", partial_json=tc.function.arguments),
+                # A fragment for a call that was never announced has no block of its own, and
+                # filing it under another call's block would corrupt that call's input.
+                block_index = state.tool_call_blocks.get(tc.index)
+                if block_index is not None:
+                    events.append(
+                        ContentBlockDeltaEvent(
+                            type="content_block_delta",
+                            index=block_index,
+                            delta=InputJSONDelta(type="input_json_delta", partial_json=tc.function.arguments),
+                        )
                     )
-                )
 
     if choice.finish_reason:
         _close_current_block(state, events)
@@ -1090,19 +1130,41 @@ def chat_completion_chunk_to_message_stream_events(
     return events
 
 
-def close_open_blocks(state: StreamingState) -> list[ContentBlockStartEvent | ContentBlockStopEvent]:
+def close_open_blocks(
+    state: StreamingState,
+) -> list[ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent]:
     """Build a content_block_stop event for every block still open, in block order.
 
     A tool_use section can hold more than one open block, because each parallel tool call gets
-    its own block and stays open until the section ends. A held-back code execution result is
-    emitted after them, as a start and a stop, since nothing can be added to it any more.
+    its own block and stays open until the section ends. Text held back while the section was
+    open follows as a complete text block, and a held-back code execution result after that, as
+    a start and a stop, since nothing can be added to either any more.
     """
-    events: list[ContentBlockStartEvent | ContentBlockStopEvent] = []
+    events: list[ContentBlockStartEvent | ContentBlockDeltaEvent | ContentBlockStopEvent] = []
     if state.current_block_type is not None:
         open_indexes = sorted(state.tool_block_indexes.values()) or [state.current_block_index]
         state.tool_block_indexes.clear()
         state.current_block_type = None
         events.extend(ContentBlockStopEvent(type="content_block_stop", index=index) for index in open_indexes)
+    if state.pending_text:
+        text = state.pending_text
+        state.pending_text = ""
+        state.current_block_index += 1
+        events.append(
+            ContentBlockStartEvent(
+                type="content_block_start",
+                index=state.current_block_index,
+                content_block=TextBlock(type="text", text=""),
+            )
+        )
+        events.append(
+            ContentBlockDeltaEvent(
+                type="content_block_delta",
+                index=state.current_block_index,
+                delta=TextDelta(type="text_delta", text=text),
+            )
+        )
+        events.append(ContentBlockStopEvent(type="content_block_stop", index=state.current_block_index))
     if state.pending_code_result is not None:
         item, outputs = state.pending_code_result
         state.pending_code_result = None
@@ -1231,6 +1293,24 @@ def anthropic_client_kwargs(client_args: dict[str, Any]) -> dict[str, Any]:
     """
     accepted = inspect.signature(AsyncAnthropic.__init__).parameters
     return {key: value for key, value in client_args.items() if key in accepted}
+
+
+_ANTHROPIC_SAMPLING_PARAMS = frozenset({"temperature", "top_p", "top_k"})
+
+
+def sampling_params_in_extra_body(api_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return Anthropic SDK message-method kwargs with the sampling parameters moved into ``extra_body``.
+
+    Anthropic SDK 1.x removed ``temperature``, ``top_p`` and ``top_k`` from its message methods,
+    so passing them raises ``TypeError``, while the API still honours them on models that predate
+    the change. Keys the caller already set in ``extra_body`` win, as they would over typed arguments.
+    """
+    sampling = {key: value for key, value in api_kwargs.items() if key in _ANTHROPIC_SAMPLING_PARAMS}
+    if not sampling:
+        return api_kwargs
+    converted = {key: value for key, value in api_kwargs.items() if key not in _ANTHROPIC_SAMPLING_PARAMS}
+    converted["extra_body"] = {**sampling, **(api_kwargs.get("extra_body") or {})}
+    return converted
 
 
 async def stream_native_messages(client: AsyncAnthropic, **kwargs: Any) -> AsyncIterator[MessageStreamEvent]:

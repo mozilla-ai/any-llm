@@ -4,6 +4,7 @@ import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
+from pydantic import ValidationError
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
@@ -14,8 +15,9 @@ from any_llm.exceptions import (
     ProviderError,
     UnsupportedParameterError,
 )
-from any_llm.types.decide import DecideResponse, Noul, Question
+from any_llm.types.decide import DecideResponse, Question
 from any_llm.types.model import Model
+from any_llm.utils.decide import question_to_dict
 
 MISSING_PACKAGES_ERROR: ImportError | None = None
 try:
@@ -184,20 +186,23 @@ class TypesafeProvider(AnyLLM):
         The SDK sends a dict as is, so nested values its encoder accepts (dates, UUIDs, Decimals)
         survive, where its question classes would reject or coerce them.
         """
-        data = question.model_dump()
-        if isinstance(question, Noul) and question.criteria is not None:
-            # An undescribed outcome is left off rather than sent as null, as the dict form always did.
-            data["criteria"] = {side: value for side, value in data["criteria"].items() if value is not None}
-        return cast("TypeSafeQuestionModel", {field: value for field, value in data.items() if value is not None})
+        return cast("TypeSafeQuestionModel", question_to_dict(question))
 
     @staticmethod
     def _convert_decide_response(response: SystemOneResponse) -> DecideResponse:
+        # The SDK drops fields and answer types it does not model, so read the body it was built from.
+        body = response.raw_http_response.json()
         try:
-            request_id: str | None = response.request_id
+            body["id"] = response.request_id
         except TypeSafeError:
             # The SDK raises when the server sent no x-typesafe-request-id header.
-            request_id = None
-        return DecideResponse.model_validate({**response.model_dump(), "id": request_id})
+            pass
+        try:
+            return DecideResponse.model_validate(body)
+        except ValidationError as error:
+            # The validation error can quote the answers, so it stays on the cause.
+            msg = "TypeSafe returned a System One response that is not valid"
+            raise ProviderError(msg, provider_name=TypesafeProvider.PROVIDER_NAME) from error
 
     @override
     async def _adecide(

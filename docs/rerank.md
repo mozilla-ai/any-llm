@@ -12,7 +12,7 @@ The rerank API lets you reorder a list of documents by their relevance to a quer
 | Provider | `SUPPORTS_RERANK` | Notes |
 |----------|-------------------|-------|
 | Cohere | Yes | Native rerank via the Cohere V2 SDK |
-| Fireworks | Yes | `POST /rerank` on the Fireworks inference API through the OpenAI client. `top_n` and `task` are passed through; `return_documents` defaults to `false` because `RerankResponse` carries no document text. The response has no ID, so `RerankResponse.id` is `None`. `max_tokens_per_doc` is not supported and raises `UnsupportedParameterError`. |
+| Fireworks | Yes | `POST /rerank` on the Fireworks inference API through the Fireworks SDK client. `top_n` and `task` are passed through; `return_documents` defaults to `false` because `RerankResponse` carries no document text. The response has no ID, so `RerankResponse.id` is `None`. `max_tokens_per_doc` is not supported and raises `UnsupportedParameterError`. |
 | Otari | Yes | Proxies to `/v1/rerank` on an upstream server |
 | Together | Yes | Native rerank via the Together SDK. Together serves no rerank model on its serverless tier, so this requires a [dedicated endpoint](https://docs.together.ai/docs/serverless-models). `max_tokens_per_doc` and `rank_fields` are not supported and raise `UnsupportedParameterError`. |
 | Voyage | Yes | Native rerank via the Voyage SDK. `top_n` maps to Voyage's `top_k`, and `truncation` is passed through; the response has no ID, so `RerankResponse.id` is `None`. `max_tokens_per_doc` is not supported and raises `UnsupportedParameterError`. |

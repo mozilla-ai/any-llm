@@ -31,6 +31,7 @@ from any_llm.types.messages import (
     MessageStreamEvent,
 )
 from any_llm.types.model import Model
+from any_llm.utils.structured_output import normalize_output_config
 
 # Outside the guarded block below: it needs no AWS SDK, and the per-model Messages answer must
 # work on the class even when boto3 is not installed.
@@ -146,6 +147,32 @@ def _place_cache_breakpoint(body: dict[str, Any], cache_control: dict[str, Any])
     for holder, key in [*holders, (body, "system"), (body, "tools")]:
         if _mark_last_cacheable(holder, key, cache_control):
             return
+
+
+def _formatless_output_config(params: MessagesParams) -> dict[str, Any] | None:
+    """Return an `output_format` dict that names no format (`effort` alone), else None."""
+    if not isinstance(params.output_format, dict):
+        return None
+    output_config = normalize_output_config(params.output_format)
+    return None if "format" in output_config else output_config
+
+
+def _without_effort_beside_a_format(params: MessagesParams) -> MessagesParams:
+    """Drop `effort` from an `output_format` dict that also names a format.
+
+    Converse emulates the format with a forced tool call, and the bridge would send effort as
+    `reasoning_effort`, which Converse can only express as extended thinking, which Claude
+    refuses beside a forced tool call. Effort alone (no format) is kept.
+    """
+    if not isinstance(params.output_format, dict) or "effort" not in params.output_format:
+        return params
+    output_config = normalize_output_config(params.output_format)
+    if "format" not in output_config:
+        return params
+    logger.debug("Dropping output_config effort, which Converse cannot apply beside a structured output format")
+    return params.model_copy(
+        update={"output_format": {key: value for key, value in output_config.items() if key != "effort"}}
+    )
 
 
 class BedrockProvider(AnyLLM):
@@ -467,14 +494,20 @@ class BedrockProvider(AnyLLM):
         """Send a Claude model's request to Bedrock as an Anthropic Messages body via InvokeModel.
 
         This keeps `cache_control`, thinking blocks with their signatures, and the betas Bedrock
-        supports, which the Converse bridge drops. Other models, and `output_format` (which
-        Converse emulates with a forced tool call), still use the bridge. Extra keyword arguments
-        go to InvokeModel, as they go to Converse on the bridge.
+        supports, which the Converse bridge drops. Other models, and an `output_format` that names
+        a format (which Converse emulates with a forced tool call), still use the bridge. An
+        `output_config` that sets only `effort` is sent natively. Extra keyword arguments go to
+        InvokeModel, as they go to Converse on the bridge.
         """
-        if params.output_format is not None or not self.serves_messages_natively(params.model):
-            return await super()._amessages(params, **kwargs)
+        output_config = _formatless_output_config(params)
+        if (params.output_format is not None and output_config is None) or not self.serves_messages_natively(
+            params.model
+        ):
+            return await super()._amessages(_without_effort_beside_a_format(params), **kwargs)
 
         body = self._native_messages_body(params)
+        if output_config:
+            body["output_config"] = output_config
         client = self._client_for_timeout(kwargs.pop("timeout", None))
         request = {
             "modelId": params.model,

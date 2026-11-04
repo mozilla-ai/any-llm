@@ -34,6 +34,7 @@ from any_llm.utils.messages_compat import (
     _convert_tool_choice_to_openai,
     _convert_tools_to_openai,
     _output_config_to_response_format,
+    output_config_effort,
     split_cached_input_tokens,
 )
 from any_llm.utils.structured_output import is_structured_output_type
@@ -92,14 +93,18 @@ def messages_params_to_responses_params(params: MessagesParams) -> ResponsesPara
         if params.tool_choice.get("disable_parallel_tool_use") is True:
             result["parallel_tool_calls"] = False
 
-    if params.thinking and params.thinking.get("type") == "enabled":
-        budget = params.thinking.get("budget_tokens", 8192)
+    thinking_type = (params.thinking or {}).get("type")
+    effort = output_config_effort(params)
+    if thinking_type == "enabled":
+        budget = cast("dict[str, Any]", params.thinking).get("budget_tokens", 8192)
         # Without summary=auto the API returns a reasoning item with an empty summary,
         # so response_to_message_response never emits a ThinkingBlock (#1432 QA).
         result["reasoning"] = {
-            "effort": _budget_to_reasoning_effort(budget),
+            "effort": effort or _budget_to_reasoning_effort(budget),
             "summary": "auto",
         }
+    elif effort is not None and thinking_type != "disabled":
+        result["reasoning"] = {"effort": effort}
 
     if params.output_format is not None:
         if is_structured_output_type(params.output_format):
