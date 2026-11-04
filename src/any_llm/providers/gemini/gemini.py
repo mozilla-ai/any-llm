@@ -1,3 +1,4 @@
+import asyncio
 import os
 from collections.abc import AsyncIterator
 from typing import Any, ClassVar, cast
@@ -9,12 +10,14 @@ from typing_extensions import override
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.types.files import FileOperation
+from any_llm.types.image import ImageEditParams, ImageGenerationParams, ImagesResponse
 from any_llm.types.responses import Response, ResponsesParams, ResponseStreamEvent
 from any_llm.types.video import VideoGenerationParams, VideoJob
 from any_llm.utils.aio import aclose_quietly
 
 from .base import GoogleProvider
 from .files import GeminiFileMethods
+from .image import convert_responses_to_images, edit_request, generation_request
 
 _FILES_API_HOST = "generativelanguage.googleapis.com"
 
@@ -28,6 +31,8 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
     ENV_API_BASE_NAME = "GOOGLE_GEMINI_BASE_URL"
     SUPPORTS_RESPONSES = True
     SUPPORTS_VIDEO_GENERATION = True
+    SUPPORTS_IMAGE_GENERATION = True
+    SUPPORTS_IMAGE_EDIT = True
     SUPPORTED_FILE_OPERATIONS: ClassVar[frozenset[FileOperation]] = frozenset({"upload", "list", "retrieve", "delete"})
 
     _interactions_api_version: str | None
@@ -116,6 +121,28 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
                 yield event
         finally:
             await aclose_quietly(converted_stream)
+
+    @override
+    async def _aimage_generation(self, params: ImageGenerationParams, **kwargs: Any) -> ImagesResponse:
+        request, count = generation_request(params, self.PROVIDER_NAME, **kwargs)
+        return await self._generate_images(request, count)
+
+    @override
+    async def _aimage_edit(self, params: ImageEditParams, **kwargs: Any) -> ImagesResponse:
+        request, count = edit_request(params, self.PROVIDER_NAME, **kwargs)
+        return await self._generate_images(request, count)
+
+    async def _generate_images(self, request: dict[str, Any], count: int) -> ImagesResponse:
+        # The image models answer one candidate per request, so n images are n concurrent requests.
+        tasks = [asyncio.ensure_future(self.client.aio.models.generate_content(**request)) for _ in range(count)]
+        try:
+            responses = await asyncio.gather(*tasks)
+        except BaseException:
+            # gather leaves the other requests running when one fails; their images would be billed and dropped.
+            for task in tasks:
+                task.cancel()
+            raise
+        return convert_responses_to_images(list(responses), self.PROVIDER_NAME)
 
     @override
     async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:

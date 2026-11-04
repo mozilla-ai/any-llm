@@ -248,11 +248,11 @@ async def test_azure_image_edit_uses_the_preview_api_version() -> None:
     assert requests[0].url.params["api-version"] == "preview"
 
 
-def test_only_openai_supports_image_edit() -> None:
+def test_supports_image_edit_only_on_expected_providers() -> None:
     for provider_enum in LLMProvider:
         try:
             cls = AnyLLM.get_provider_class(provider_enum)
         except ImportError:
             continue
-        expected = provider_enum is LLMProvider.OPENAI
+        expected = provider_enum in {LLMProvider.GEMINI, LLMProvider.OPENAI}
         assert cls.get_provider_metadata().image_edit is expected, f"{provider_enum.value} image_edit != {expected}"
