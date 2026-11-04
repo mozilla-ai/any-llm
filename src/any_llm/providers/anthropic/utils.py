@@ -241,7 +241,10 @@ def _append_system_content(
         return f"{system}\n{content}"
 
     def as_blocks(value: str | list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [{"type": "text", "text": value}] if isinstance(value, str) else list(value)
+        if isinstance(value, str):
+            # Anthropic rejects a system text block with empty text.
+            return [{"type": "text", "text": value}] if value else []
+        return list(value)
 
     return as_blocks(system) + as_blocks(content)
 
@@ -251,7 +254,7 @@ def _convert_messages_for_anthropic(
 ) -> tuple[str | list[dict[str, Any]] | None, list[dict[str, Any]]]:
     """Convert messages to Anthropic format.
 
-    - Extract messages with `role=system`.
+    - Extract messages with `role=system` or `role=developer` into the system prompt.
     - Replace `role=tool` with `role=user`, according to examples in https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/.
     - Handle multiple tool calls in a single assistant message.
     - Merge consecutive tool results into a single user message.

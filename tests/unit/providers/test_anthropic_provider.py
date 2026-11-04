@@ -160,6 +160,13 @@ async def test_completion_with_multiple_system_messages() -> None:
             [{"role": "system", "content": [{"type": "text", "text": "Only part."}]}],
             [{"type": "text", "text": "Only part."}],
         ),
+        (
+            [
+                {"role": "system", "content": ""},
+                {"role": "developer", "content": [{"type": "text", "text": "Second part."}]},
+            ],
+            [{"type": "text", "text": "Second part."}],
+        ),
     ],
 )
 def test_convert_messages_combines_system_messages_given_as_text_blocks(
