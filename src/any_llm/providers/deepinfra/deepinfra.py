@@ -1,11 +1,17 @@
-"""Import shim: this provider migrated to the config registry.
+"""DeepInfra: OpenAI-compatible chat and embeddings."""
 
-The provider is now a row in ``any_llm.providers.registry``; this module keeps
-the historical deep-import path working.
-"""
+from any_llm.providers.openai.base import BaseOpenAIProvider
 
-from any_llm.providers.registry import get_registry_provider_class
 
-DeepinfraProvider = get_registry_provider_class("deepinfra")
+class DeepinfraProvider(BaseOpenAIProvider):
+    API_BASE = "https://api.deepinfra.com/v1/openai"
+    ENV_API_KEY_NAME = "DEEPINFRA_API_KEY"
+    ENV_API_BASE_NAME = "DEEPINFRA_API_BASE"
+    PROVIDER_NAME = "deepinfra"
+    PROVIDER_DOCUMENTATION_URL = "https://deepinfra.com/docs/openai_api"
 
-__all__ = ["DeepinfraProvider"]
+    SUPPORTS_COMPLETION_REASONING = True
+    SUPPORTS_COMPLETION_IMAGE = True
+    SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_EMBEDDING = True
+    SUPPORTS_MODERATION = True
