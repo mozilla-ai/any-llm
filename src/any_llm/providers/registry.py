@@ -225,6 +225,13 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_completion_image=True,
         supports_moderation=True,
     ),
+    "tokenhub": OpenAICompatibleProviderConfig(
+        name="tokenhub",
+        api_base="https://us-api.tokenhub.com/v1",
+        env_api_key_name="TOKENHUB_API_KEY",
+        env_api_base_name="TOKENHUB_API_BASE",
+        provider_documentation_url="https://tokenhub.com/docs",
+    ),
     "vllm": OpenAICompatibleProviderConfig(
         name="vllm",
         api_base="http://localhost:8000/v1",
