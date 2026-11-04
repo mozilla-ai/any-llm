@@ -3,12 +3,16 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from azure.ai.inference.models import JsonSchemaFormat, ModelInfo
+from azure.ai.inference.models import JsonSchemaFormat, ModelInfo, StreamingChatCompletionsUpdate
 from azure.core.exceptions import HttpResponseError
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.azure.azure import AzureProvider
-from any_llm.providers.azure.utils import _convert_model_info_to_list, _convert_response_format
+from any_llm.providers.azure.utils import (
+    _convert_model_info_to_list,
+    _convert_response_format,
+    _create_openai_chunk_from_azure_chunk,
+)
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 
@@ -305,3 +309,23 @@ async def test_alist_models_propagates_http_response_error_for_unsupported_endpo
 
         with pytest.raises(HttpResponseError):
             await provider._alist_models()
+
+
+def test_streamed_finish_reason_on_an_empty_delta_is_kept() -> None:
+    """Azure ends a stream with a chunk whose delta is empty and which carries the finish_reason."""
+    azure_chunk = StreamingChatCompletionsUpdate._deserialize(
+        {
+            "id": "chatcmpl-1",
+            "created": 1,
+            "model": "gpt-4.1-nano",
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop", "content_filter_results": {}}],
+        },
+        [],
+    )
+
+    chunk = _create_openai_chunk_from_azure_chunk(azure_chunk)
+
+    assert len(chunk.choices) == 1
+    assert chunk.choices[0].finish_reason == "stop"
+    assert chunk.choices[0].delta.content is None

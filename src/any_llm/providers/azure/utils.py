@@ -135,7 +135,9 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
 
     for choice in choices:
         delta = choice.delta
-        if not delta:
+        # The last chunk of a stream carries the finish_reason with an empty delta ({}), which the
+        # SDK model treats as falsy, so only a missing delta is skipped.
+        if delta is None:
             continue
 
         delta_content = delta.content
