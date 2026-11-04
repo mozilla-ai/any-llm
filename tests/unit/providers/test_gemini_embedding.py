@@ -1,6 +1,8 @@
 import base64
 import json
 import struct
+from collections.abc import AsyncIterator, Callable, Coroutine
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -13,6 +15,27 @@ from any_llm.providers.vertexai import VertexaiProvider
 
 if TYPE_CHECKING:
     from any_llm.providers.gemini import GeminiProvider
+
+
+@asynccontextmanager
+async def _gemini_provider(
+    handler: Callable[[httpx.Request], Coroutine[Any, Any, httpx.Response]],
+) -> AsyncIterator["GeminiProvider"]:
+    """Build a Developer API provider whose real SDK sends requests to ``handler``."""
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = cast(
+            "GeminiProvider",
+            AnyLLM.create(
+                "gemini",
+                api_key="test-api-key",
+                vertexai=False,
+                http_options=types.HttpOptions(httpx_async_client=client),
+            ),
+        )
+        try:
+            yield provider
+        finally:
+            await provider.client.aio.aclose()
 
 
 @pytest.mark.parametrize("model", ["gemini-embedding-2", "gemini-embedding-001"])
@@ -35,25 +58,13 @@ async def test_gemini_embedding_text_elements_reach_official_sdk_wire(
             json={"embeddings": [{"values": [float(index), 0.5]} for index in range(len(body["requests"]))]},
         )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        provider = cast(
-            "GeminiProvider",
-            AnyLLM.create(
-                "gemini",
-                api_key="test-api-key",
-                vertexai=False,
-                http_options=types.HttpOptions(httpx_async_client=client),
-            ),
+    async with _gemini_provider(handler) as provider:
+        result = await provider.aembedding(
+            model=model,
+            inputs=inputs,
+            encoding_format=encoding_format,
+            config=types.EmbedContentConfig(output_dimensionality=2),
         )
-        try:
-            result = await provider.aembedding(
-                model=model,
-                inputs=inputs,
-                encoding_format=encoding_format,
-                config=types.EmbedContentConfig(output_dimensionality=2),
-            )
-        finally:
-            await provider.client.aio.aclose()
 
     texts = [inputs] if isinstance(inputs, str) else inputs
     assert [request["content"]["parts"] for request in requests] == [[{"text": text}] for text in texts]
@@ -77,21 +88,9 @@ async def test_gemini_embedding_empty_batch_is_rejected_before_http() -> None:
         """Fail if invalid empty inputs escape the SDK's local validation."""
         pytest.fail(f"Empty batch must not make a request: {request.url}")
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        provider = cast(
-            "GeminiProvider",
-            AnyLLM.create(
-                "gemini",
-                api_key="test-api-key",
-                vertexai=False,
-                http_options=types.HttpOptions(httpx_async_client=client),
-            ),
-        )
-        try:
-            with pytest.raises(ValueError, match=r"contents.*required"):
-                await provider.aembedding(model="gemini-embedding-2", inputs=[])
-        finally:
-            await provider.client.aio.aclose()
+    async with _gemini_provider(handler) as provider:
+        with pytest.raises(ValueError, match=r"contents.*required"):
+            await provider.aembedding(model="gemini-embedding-2", inputs=[])
 
 
 @pytest.mark.asyncio
@@ -104,21 +103,9 @@ async def test_gemini_embedding_preserves_sdk_error() -> None:
             400, json={"error": {"code": 400, "message": "invalid text", "status": "INVALID_ARGUMENT"}}
         )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        provider = cast(
-            "GeminiProvider",
-            AnyLLM.create(
-                "gemini",
-                api_key="test-api-key",
-                vertexai=False,
-                http_options=types.HttpOptions(httpx_async_client=client),
-            ),
-        )
-        try:
-            with pytest.raises(ClientError, match="invalid text"):
-                await provider.aembedding(model="gemini-embedding-2", inputs=["hello"])
-        finally:
-            await provider.client.aio.aclose()
+    async with _gemini_provider(handler) as provider:
+        with pytest.raises(ClientError, match="invalid text"):
+            await provider.aembedding(model="gemini-embedding-2", inputs=["hello"])
 
 
 @pytest.mark.parametrize("inputs", ["hello", ["first", "second"]])

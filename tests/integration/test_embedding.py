@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 import httpx
 import pytest
@@ -8,9 +8,6 @@ from any_llm import AnyLLM, LLMProvider
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.types.completion import CreateEmbeddingResponse
 from tests.constants import EXPECTED_PROVIDERS
-
-if TYPE_CHECKING:
-    from any_llm.providers.gemini import GeminiProvider
 
 
 @pytest.mark.asyncio
@@ -51,16 +48,11 @@ async def test_embedding_providers_async(
 async def test_gemini_embedding_2_text_batch() -> None:
     """Exercise separate text embeddings against the real Gemini Developer API."""
     try:
-        provider = cast("GeminiProvider", AnyLLM.create(LLMProvider.GEMINI))
+        llm = AnyLLM.create(LLMProvider.GEMINI)
     except MissingApiKeyError:
         pytest.skip("Gemini API key not provided, skipping live embedding-2 batch test")
 
-    try:
-        result = await provider.aembedding(
-            model="gemini-embedding-2", inputs=["A quiet forest", "A busy city", "An open sea"]
-        )
-    finally:
-        await provider.client.aio.aclose()
+    result = await llm.aembedding(model="gemini-embedding-2", inputs=["A quiet forest", "A busy city", "An open sea"])
 
     assert len(result.data) == 3
     assert [entry.index for entry in result.data] == [0, 1, 2]
