@@ -221,6 +221,7 @@ async def test_request_targets_api_base(api_base: str | None) -> None:
     body = json.loads(requests[0].content)
     assert body["model"] == "MiniMax-M3.1-Flash"
     assert body["messages"] == [{"role": "user", "content": "Hello"}]
+    assert "reasoning_effort" not in body
 
 
 @pytest.mark.asyncio
@@ -240,7 +241,10 @@ async def test_reasoning_effort_reaches_request(effort: ReasoningEffort, expecte
         await provider.client.close()
 
     body = json.loads(requests[0].content)
-    assert body.get("reasoning_effort") == expected
+    if expected is None:
+        assert "reasoning_effort" not in body
+    else:
+        assert body["reasoning_effort"] == expected
 
 
 @pytest.mark.asyncio
