@@ -1849,6 +1849,36 @@ def test_convert_messages_sends_tool_result_text_parts_as_text_blocks() -> None:
     }
 
 
+def test_convert_params_sends_tool_result_image_part_as_image_block() -> None:
+    image_bytes = b"chart bytes"
+    data_uri = f"data:image/png;base64,{base64.b64encode(image_bytes).decode()}"
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "plot it"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "plot", "arguments": "{}"}}],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "t1",
+            "content": [{"type": "text", "text": "done"}, {"type": "image_url", "image_url": {"url": data_uri}}],
+        },
+    ]
+    result = _convert_params(CompletionParams(model_id="anthropic.claude-sonnet-4", messages=messages), {})
+
+    assert result["messages"][-1]["content"] == [
+        {
+            "toolResult": {
+                "toolUseId": "t1",
+                "content": [{"text": "done"}, {"image": {"format": "png", "source": {"bytes": image_bytes}}}],
+            }
+        }
+    ]
+    service_model = botocore.session.get_session().get_service_model("bedrock-runtime")  # type: ignore[no-untyped-call]
+    validate_parameters(result, service_model.operation_model("Converse").input_shape)  # type: ignore[no-untyped-call]
+
+
 def _bedrock_stop_reasons() -> tuple[str, ...]:
     """Every stopReason the Converse API can return, read from the installed botocore service model.
 
