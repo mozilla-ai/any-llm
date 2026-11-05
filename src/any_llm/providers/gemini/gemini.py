@@ -52,8 +52,9 @@ def _inline_audio(response: types.GenerateContentResponse) -> types.Blob | None:
     for candidate in response.candidates or []:
         parts = candidate.content.parts if candidate.content is not None else None
         for part in parts or []:
-            if part.inline_data is not None and part.inline_data.data:
-                return part.inline_data
+            blob = part.inline_data
+            if blob is not None and blob.data and (blob.mime_type or "").startswith("audio/"):
+                return blob
     return None
 
 
@@ -259,6 +260,8 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
             ),
         }
         config.update(kwargs)
+        if (timeout := config.pop("timeout", None)) is not None:
+            self._merge_timeout_into_http_options(timeout, config)
         response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
             model=params.model_id,
             contents=params.input,

@@ -4588,13 +4588,14 @@ async def test_speech_rejects_instructions_and_speed(field: str, value: Any) -> 
     "response",
     [
         _audio_response(data=None),
+        _audio_response(mime_type="image/png"),
         types.GenerateContentResponse(candidates=[]),
         types.GenerateContentResponse(
             candidates=[types.Candidate(content=None, finish_reason=types.FinishReason.SAFETY)],
             prompt_feedback=types.GenerateContentResponsePromptFeedback(block_reason=types.BlockedReason.SAFETY),
         ),
     ],
-    ids=["text-part-only", "no-candidates", "blocked"],
+    ids=["text-part-only", "non-audio-blob", "no-candidates", "blocked"],
 )
 async def test_speech_raises_when_the_reply_carries_no_audio(response: Any) -> None:
     with _mock_speech_client(response):
@@ -4603,3 +4604,16 @@ async def test_speech_raises_when_the_reply_carries_no_audio(response: Any) -> N
             await provider._aspeech(
                 AudioSpeechParams(model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore")
             )
+
+
+@pytest.mark.asyncio
+async def test_speech_moves_timeout_onto_http_options() -> None:
+    with _mock_speech_client(_audio_response()) as generate:
+        provider = GeminiProvider(api_key="test-key")
+        await provider._aspeech(
+            AudioSpeechParams(model_id="gemini-2.5-flash-preview-tts", input="hello", voice="Kore"), timeout=2.5
+        )
+
+    config = generate.call_args.kwargs["config"]
+    assert config.http_options is not None
+    assert config.http_options.timeout == 2500
