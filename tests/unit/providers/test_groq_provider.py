@@ -1,4 +1,3 @@
-from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -738,11 +737,7 @@ async def test_speech_rejects_formats_groq_does_not_offer(response_format: str) 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [("instructions", "Speak slowly"), ("speed", 1.5)],
-)
-async def test_speech_rejects_instructions_and_speed(field: str, value: Any) -> None:
+async def test_speech_forwards_speed() -> None:
     from any_llm.providers.groq.groq import GroqProvider
     from any_llm.types.audio import AudioSpeechParams
 
@@ -750,10 +745,26 @@ async def test_speech_rejects_instructions_and_speed(field: str, value: Any) -> 
         create = _mock_speech_client(mocked_groq)
         provider = GroqProvider(api_key="test-api-key")
 
-        with pytest.raises(UnsupportedParameterError, match=field):
+        await provider._aspeech(
+            AudioSpeechParams(model_id="canopylabs/orpheus-v1-english", input="Hello", voice="autumn", speed=1.5)
+        )
+
+    assert create.call_args.kwargs["speed"] == 1.5
+
+
+@pytest.mark.asyncio
+async def test_speech_rejects_instructions() -> None:
+    from any_llm.providers.groq.groq import GroqProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq:
+        create = _mock_speech_client(mocked_groq)
+        provider = GroqProvider(api_key="test-api-key")
+
+        with pytest.raises(UnsupportedParameterError, match="instructions"):
             await provider._aspeech(
                 AudioSpeechParams(
-                    model_id="canopylabs/orpheus-v1-english", input="Hello", voice="autumn", **{field: value}
+                    model_id="canopylabs/orpheus-v1-english", input="Hello", voice="autumn", instructions="Speak slowly"
                 )
             )
 

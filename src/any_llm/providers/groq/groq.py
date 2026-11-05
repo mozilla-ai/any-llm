@@ -232,11 +232,10 @@ class GroqProvider(AnyLLM):
         """Generate speech through Groq's OpenAI-compatible ``/audio/speech`` endpoint.
 
         Groq's TTS models (``canopylabs/orpheus-v1-english`` and ``canopylabs/orpheus-arabic-saudi``)
-        take ``model``, ``input``, ``voice`` and ``response_format``. Delivery is steered with
-        bracketed direction tags inside ``input`` such as ``[cheerful]``, so there is no
-        ``instructions`` field, and the endpoint has no working ``speed``; both raise
-        ``UnsupportedParameterError`` instead of being dropped. See
-        https://console.groq.com/docs/text-to-speech.
+        take ``model``, ``input``, ``voice``, ``response_format`` and ``speed``. Delivery is steered
+        with bracketed direction tags inside ``input`` such as ``[cheerful]``, so there is no
+        ``instructions`` field and it raises ``UnsupportedParameterError`` instead of being dropped.
+        See https://console.groq.com/docs/text-to-speech.
         """
         if params.instructions is not None:
             parameter_name = "instructions"
@@ -245,9 +244,6 @@ class GroqProvider(AnyLLM):
                 self.PROVIDER_NAME,
                 "Groq steers delivery with bracketed direction tags inside `input`, such as `[cheerful]`.",
             )
-        if params.speed is not None:
-            parameter_name = "speed"
-            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
         if params.response_format is not None and params.response_format not in _SPEECH_RESPONSE_FORMATS:
             parameter_name = "response_format"
             raise UnsupportedParameterError(
