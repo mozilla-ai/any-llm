@@ -80,6 +80,16 @@ def _is_anthropic_model(model_id: str) -> bool:
     return "anthropic." in model_id
 
 
+def _is_gpt_oss_model(model_id: str) -> bool:
+    """Return True if the Bedrock model id refers to one of OpenAI's gpt-oss models, safeguard included."""
+    return "openai.gpt-oss" in model_id
+
+
+# gpt-oss takes OpenAI's own `reasoning_effort` field, which Converse forwards from
+# `additionalModelRequestFields`. https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-openai.html
+_GPT_OSS_REASONING_EFFORTS = ("low", "medium", "high")
+
+
 def _convert_response_format_to_tool_spec(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:
     """Convert an any-llm response_format into a synthetic Bedrock toolSpec.
 
@@ -156,6 +166,7 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
             "toolChoice" in tool_config
             and params.reasoning_effort is not None
             and params.reasoning_effort not in ("auto", "none")
+            and not _is_gpt_oss_model(params.model_id)
         ):
             msg = "tool_choice with reasoning_effort"
             raise UnsupportedParameterError(
@@ -166,6 +177,13 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
             )
         return tool_config if params.tools else None
 
+    if _is_gpt_oss_model(params.model_id):
+        # Converse accepts `outputConfig` for gpt-oss but does not hold the model to the schema:
+        # live runs answered prose before the JSON ("2+2 equals {...}") or stopped mid-object.
+        msg = "response_format"
+        raise UnsupportedParameterError(
+            msg, "bedrock", "Bedrock does not constrain gpt-oss output to a schema, so the answer may not be JSON."
+        )
     if not _is_anthropic_model(params.model_id):
         msg = "response_format"
         raise UnsupportedParameterError(
@@ -231,7 +249,13 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     # An ARN (application inference profile, provisioned throughput, custom or imported model)
     # may front a Claude model without naming it, so it keeps the Claude shape rather than being refused.
     opaque_arn = params.model_id.startswith("arn:")
-    if reasoning_enabled and not _is_anthropic_model(params.model_id) and not opaque_arn:
+    gpt_oss = _is_gpt_oss_model(params.model_id)
+    if reasoning_enabled and gpt_oss and params.reasoning_effort not in _GPT_OSS_REASONING_EFFORTS:
+        msg = f"reasoning_effort '{params.reasoning_effort}'"
+        raise UnsupportedParameterError(
+            msg, "bedrock", f"gpt-oss on Bedrock takes one of: {', '.join(_GPT_OSS_REASONING_EFFORTS)}."
+        )
+    if reasoning_enabled and not gpt_oss and not _is_anthropic_model(params.model_id) and not opaque_arn:
         # `reasoning_config` with `budget_tokens` is Claude's extended thinking; other model
         # families on Bedrock each take their own reasoning field, and reject this object.
         msg = "reasoning_effort"
@@ -256,7 +280,12 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     if inference_config:
         result_kwargs["inferenceConfig"] = inference_config
 
-    if reasoning_enabled:
+    if reasoning_enabled and gpt_oss:
+        result_kwargs["additionalModelRequestFields"] = {
+            **result_kwargs.get("additionalModelRequestFields", {}),
+            "reasoning_effort": params.reasoning_effort,
+        }
+    elif reasoning_enabled:
         additional_fields: dict[str, Any] = result_kwargs.get("additionalModelRequestFields", {})
         reasoning_config: dict[str, Any] = {"type": "enabled"}
         if params.reasoning_effort in REASONING_EFFORT_TO_THINKING_BUDGETS:
