@@ -19,13 +19,14 @@ repos:
         exclude: (\.md|\.ambr)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.15.20"
+    rev: "v0.17.3"
     hooks:
-      - id: ruff
+      - id: ruff-check
         args:
           - "--fix"
           - "--exit-non-zero-on-fix"
       - id: ruff-format
+        types_or: [python, pyi, jupyter]
 
   - repo: local
     hooks:
@@ -40,7 +41,7 @@ repos:
         exclude: demos|scripts
 
   - repo: https://github.com/codespell-project/codespell
-    rev: "v2.4.2"
+    rev: "v2.4.3"
     hooks:
       - id: codespell
         exclude: CODE_OF_CONDUCT.md|tests/assets|package-lock\.json
