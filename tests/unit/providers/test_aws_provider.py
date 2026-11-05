@@ -1885,70 +1885,15 @@ def test_convert_params_gpt_oss_keeps_a_forced_tool_with_reasoning_effort() -> N
 
 
 @pytest.mark.parametrize("model_id", GPT_OSS_MODEL_IDS)
-@pytest.mark.parametrize("stream", [False, True])
-def test_convert_params_gpt_oss_sends_a_pydantic_response_format_natively(model_id: str, stream: bool) -> None:
-    result = _convert_params(
-        CompletionParams(
-            model_id=model_id, messages=[{"role": "user", "content": "hi"}], response_format=_City, stream=stream
-        ),
-        {},
-    )
-
-    assert "toolConfig" not in result
-    json_schema = result["outputConfig"]["textFormat"]["structure"]["jsonSchema"]
-    assert result["outputConfig"]["textFormat"]["type"] == "json_schema"
-    assert json_schema["name"] == "_City"
-    assert json.loads(json_schema["schema"]) == {
-        "properties": {"name": {"title": "Name", "type": "string"}},
-        "required": ["name"],
-        "title": "_City",
-        "type": "object",
-        "additionalProperties": False,
-    }
-    _validate_converse(result, stream=stream)
-
-
-def test_convert_params_gpt_oss_closes_nested_objects_in_a_pydantic_schema() -> None:
-    class _Trip(BaseModel):
-        cities: list[_City]
-
-    result = _convert_params(
-        CompletionParams(
-            model_id="openai.gpt-oss-20b-1:0", messages=[{"role": "user", "content": "hi"}], response_format=_Trip
-        ),
-        {},
-    )
-
-    schema = json.loads(result["outputConfig"]["textFormat"]["structure"]["jsonSchema"]["schema"])
-    assert schema["additionalProperties"] is False
-    assert schema["$defs"]["_City"]["additionalProperties"] is False
-
-
-def test_convert_params_gpt_oss_sends_a_json_schema_dict_as_given() -> None:
-    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
-
-    result = _convert_params(
-        CompletionParams(
-            model_id="openai.gpt-oss-20b-1:0",
-            messages=[{"role": "user", "content": "hi"}],
-            response_format={"type": "json_schema", "json_schema": {"name": "answer", "schema": schema}},
-        ),
-        {},
-    )
-
-    json_schema = result["outputConfig"]["textFormat"]["structure"]["jsonSchema"]
-    assert json_schema["name"] == "answer"
-    assert json.loads(json_schema["schema"]) == schema
-
-
-def test_convert_params_gpt_oss_refuses_json_object() -> None:
-    """Converse has no schema-less JSON mode."""
-    with pytest.raises(UnsupportedParameterError, match="json_object"):
+@pytest.mark.parametrize(
+    "response_format", [_City, {"type": "json_schema", "json_schema": {"name": "city", "schema": {"type": "object"}}}]
+)
+def test_convert_params_gpt_oss_refuses_response_format(model_id: str, response_format: Any) -> None:
+    """Bedrock does not hold gpt-oss to a schema, so a request for one is refused rather than answered in prose."""
+    with pytest.raises(UnsupportedParameterError, match="response_format"):
         _convert_params(
             CompletionParams(
-                model_id="openai.gpt-oss-20b-1:0",
-                messages=[{"role": "user", "content": "hi"}],
-                response_format={"type": "json_object"},
+                model_id=model_id, messages=[{"role": "user", "content": "hi"}], response_format=response_format
             ),
             {},
         )

@@ -90,53 +90,6 @@ def _is_gpt_oss_model(model_id: str) -> bool:
 _GPT_OSS_REASONING_EFFORTS = ("low", "medium", "high")
 
 
-def _convert_response_format_to_output_config(response_format: dict[str, Any] | type) -> dict[str, Any]:
-    """Convert an any-llm response_format into Converse's native `outputConfig`.
-
-    Converse takes a JSON schema only, as a string, and refuses one whose objects allow
-    additional properties. https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html
-    """
-    if is_structured_output_type(response_format):
-        name = response_format.__name__
-        schema = _closed_schema(get_json_schema(response_format))
-    elif isinstance(response_format, dict) and response_format.get("type") == "json_schema":
-        json_schema = response_format.get("json_schema")
-        if not isinstance(json_schema, dict) or not isinstance(json_schema.get("schema"), dict):
-            msg = "response_format with type 'json_schema' must include a dict-valued 'json_schema.schema'"
-            raise ValueError(msg)
-        name = json_schema.get("name") or "response"
-        schema = json_schema["schema"]
-    elif isinstance(response_format, dict) and response_format.get("type") == "json_object":
-        msg = "response_format with type 'json_object'"
-        raise UnsupportedParameterError(
-            msg,
-            "bedrock",
-            "Bedrock structured output takes a JSON schema. Use a Pydantic model or json_schema format instead.",
-        )
-    else:
-        msg = f"Unsupported response_format: {response_format}"
-        raise ValueError(msg)
-    return {
-        "textFormat": {"type": "json_schema", "structure": {"jsonSchema": {"schema": json.dumps(schema), "name": name}}}
-    }
-
-
-def _closed_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Return ``schema`` with ``additionalProperties: false`` on every object that declares properties."""
-
-    def close(node: Any) -> Any:
-        if isinstance(node, dict):
-            closed = {key: close(value) for key, value in node.items()}
-            if closed.get("type") == "object" and "properties" in closed:
-                closed["additionalProperties"] = False
-            return closed
-        if isinstance(node, list):
-            return [close(item) for item in node]
-        return node
-
-    return cast("dict[str, Any]", close(schema))
-
-
 def _convert_response_format_to_tool_spec(response_format: dict[str, Any] | type, provider_name: str) -> dict[str, Any]:
     """Convert an any-llm response_format into a synthetic Bedrock toolSpec.
 
@@ -203,8 +156,7 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
     """
     _check_no_reserved_tool_name_collision(params.tools)
 
-    if params.response_format is None or _is_gpt_oss_model(params.model_id):
-        # gpt-oss takes response_format natively, in `outputConfig` (see `_convert_params`).
+    if params.response_format is None:
         if params.tool_choice == "none":
             # Converse has no "none" choice, so the tools are withheld; `_replayed_tool_config`
             # still declares the ones the history called, which Converse requires.
@@ -225,6 +177,13 @@ def _build_tool_config(params: CompletionParams) -> dict[str, Any] | None:
             )
         return tool_config if params.tools else None
 
+    if _is_gpt_oss_model(params.model_id):
+        # Converse accepts `outputConfig` for gpt-oss but does not hold the model to the schema:
+        # live runs answered prose before the JSON ("2+2 equals {...}") or stopped mid-object.
+        msg = "response_format"
+        raise UnsupportedParameterError(
+            msg, "bedrock", "Bedrock does not constrain gpt-oss output to a schema, so the answer may not be JSON."
+        )
     if not _is_anthropic_model(params.model_id):
         msg = "response_format"
         raise UnsupportedParameterError(
@@ -320,9 +279,6 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
 
     if inference_config:
         result_kwargs["inferenceConfig"] = inference_config
-
-    if params.response_format is not None and gpt_oss:
-        result_kwargs["outputConfig"] = _convert_response_format_to_output_config(params.response_format)
 
     if reasoning_enabled and gpt_oss:
         result_kwargs["additionalModelRequestFields"] = {
