@@ -10,7 +10,7 @@ import pytest
 from openai import APIConnectionError, OpenAIError
 
 from any_llm import AnyLLM, LLMProvider
-from any_llm.exceptions import MissingApiKeyError
+from any_llm.exceptions import MissingApiKeyError, ModelNotFoundError
 from any_llm.types.audio import Transcription
 
 
@@ -20,6 +20,15 @@ def transcription_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.OPENAI: "whisper-1",
         LLMProvider.AZUREOPENAI: "whisper",
         LLMProvider.OTARI: "openai:whisper-1",
+    }
+
+
+@pytest.fixture
+def speech_provider_model_map() -> dict[LLMProvider, tuple[str, str]]:
+    """``(model, voice)`` per provider. Each pair is a documented TTS model with one of its stock voices."""
+    return {
+        LLMProvider.OPENAI: ("tts-1", "alloy"),
+        LLMProvider.GROQ: ("canopylabs/orpheus-v1-english", "troy"),
     }
 
 
@@ -39,13 +48,9 @@ def tone_wav() -> bytes:
     return buffer.getvalue()
 
 
-def _create_transcription_provider(
-    provider: LLMProvider,
-    provider_client_config: dict[LLMProvider, dict[str, Any]],
-    model_map: dict[LLMProvider, str],
-) -> tuple[AnyLLM, str]:
+def _create_provider(provider: LLMProvider, provider_client_config: dict[LLMProvider, dict[str, Any]]) -> AnyLLM:
     try:
-        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        return AnyLLM.create(provider, **provider_client_config.get(provider, {}))
     except ImportError:
         pytest.skip(f"{provider.value} optional dependency missing, skipping")
     except MissingApiKeyError:
@@ -64,6 +69,13 @@ def _create_transcription_provider(
             pytest.skip(f"{provider.value} requires additional config to instantiate: {exc}")
         raise
 
+
+def _create_transcription_provider(
+    provider: LLMProvider,
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+    model_map: dict[LLMProvider, str],
+) -> tuple[AnyLLM, str]:
+    llm = _create_provider(provider, provider_client_config)
     if not llm.SUPPORTS_AUDIO_TRANSCRIPTION:
         pytest.skip(f"{provider.value} does not support audio transcription, skipping")
 
@@ -71,6 +83,22 @@ def _create_transcription_provider(
     if model_id is None:
         pytest.skip(f"No transcription model mapped for {provider.value}, skipping")
     return llm, model_id
+
+
+def _create_speech_provider(
+    provider: LLMProvider,
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+    model_map: dict[LLMProvider, tuple[str, str]],
+) -> tuple[AnyLLM, str, str]:
+    llm = _create_provider(provider, provider_client_config)
+    if not llm.SUPPORTS_AUDIO_SPEECH:
+        pytest.skip(f"{provider.value} does not support audio speech, skipping")
+
+    mapped = model_map.get(provider)
+    if mapped is None:
+        pytest.skip(f"No speech model mapped for {provider.value}, skipping")
+    model_id, voice = mapped
+    return llm, model_id, voice
 
 
 async def _transcribe(llm: AnyLLM, provider: LLMProvider, model_id: str, file: Any, **kwargs: Any) -> Transcription:
@@ -136,3 +164,46 @@ async def test_transcription_path(
 
     assert isinstance(result, Transcription)
     assert isinstance(result.text, str)
+
+
+async def _speak(llm: AnyLLM, provider: LLMProvider, model_id: str, voice: str, **kwargs: Any) -> bytes:
+    try:
+        return await llm.aspeech(model_id, "The quick brown fox jumps over the lazy dog.", voice, **kwargs)
+    except MissingApiKeyError:
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        pytest.skip(f"{provider.value} connection failed, skipping")
+    except ModelNotFoundError as exc:
+        pytest.skip(f"{provider.value} speech model not available: {exc}")
+
+
+@pytest.mark.asyncio
+async def test_speech_returns_audio_bytes(
+    provider: LLMProvider,
+    speech_provider_model_map: dict[LLMProvider, tuple[str, str]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """With no format asked for, the provider's default container comes back as non-empty bytes."""
+    llm, model_id, voice = _create_speech_provider(provider, provider_client_config, speech_provider_model_map)
+
+    result = await _speak(llm, provider, model_id, voice)
+
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+
+
+@pytest.mark.asyncio
+async def test_speech_wav_is_a_playable_container(
+    provider: LLMProvider,
+    speech_provider_model_map: dict[LLMProvider, tuple[str, str]],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+) -> None:
+    """``wav`` is the one format every speech provider serves, so its header is checked, not just its size."""
+    llm, model_id, voice = _create_speech_provider(provider, provider_client_config, speech_provider_model_map)
+
+    result = await _speak(llm, provider, model_id, voice, response_format="wav")
+
+    with wave.open(io.BytesIO(result), "rb") as handle:
+        assert handle.getnframes() > 0
+        assert handle.getnchannels() >= 1
+        assert handle.getframerate() > 0

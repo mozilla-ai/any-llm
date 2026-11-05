@@ -74,7 +74,7 @@ fireworks = [
 ]
 
 groq = [
-  "groq"
+  "groq>=0.26.0"
 ]
 
 bedrock = [
