@@ -1670,7 +1670,7 @@ def test_convert_params_response_format_json_schema_non_dict_schema_raises() -> 
         )
 
 
-@pytest.mark.parametrize("model_id", ["xai.grok-4-fast", "deepseek.v3-v1:0", "openai.gpt-oss-120b-1:0"])
+@pytest.mark.parametrize("model_id", ["xai.grok-4-fast", "deepseek.v3-v1:0"])
 def test_convert_params_reasoning_effort_on_non_claude_model_raises(model_id: str) -> None:
     """Non-Claude models reject Claude's `reasoning_config` object, so it is never sent to them."""
     with pytest.raises(UnsupportedParameterError, match="reasoning_effort"):
@@ -1831,6 +1831,127 @@ def test_convert_response_format_to_tool_spec_non_dict_non_type_raises() -> None
     """A response_format that is neither a structured-output type nor a dict is rejected."""
     with pytest.raises(ValueError, match="Unsupported response_format"):
         _convert_response_format_to_tool_spec("invalid", "bedrock")  # type: ignore[arg-type]
+
+
+GPT_OSS_MODEL_IDS = ["openai.gpt-oss-20b-1:0", "us.openai.gpt-oss-120b-1:0", "openai.gpt-oss-safeguard-120b"]
+
+
+def _validate_converse(result: dict[str, Any], *, stream: bool = False) -> None:
+    service_model = botocore.session.get_session().get_service_model("bedrock-runtime")  # type: ignore[no-untyped-call]
+    operation_model = service_model.operation_model("ConverseStream" if stream else "Converse")
+    validate_parameters(result, operation_model.input_shape)  # type: ignore[no-untyped-call]
+
+
+@pytest.mark.parametrize("model_id", GPT_OSS_MODEL_IDS)
+@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+def test_convert_params_gpt_oss_sends_reasoning_effort_as_its_own_field(model_id: str, effort: str) -> None:
+    result = _convert_params(
+        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "hi"}], reasoning_effort=effort),  # type: ignore[arg-type]
+        {},
+    )
+
+    assert result["additionalModelRequestFields"] == {"reasoning_effort": effort}
+    _validate_converse(result)
+
+
+@pytest.mark.parametrize("effort", ["minimal", "xhigh"])
+def test_convert_params_gpt_oss_refuses_an_effort_it_has_no_level_for(effort: str) -> None:
+    with pytest.raises(UnsupportedParameterError, match=f"reasoning_effort '{effort}'"):
+        _convert_params(
+            CompletionParams(
+                model_id="openai.gpt-oss-20b-1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                reasoning_effort=effort,  # type: ignore[arg-type]
+            ),
+            {},
+        )
+
+
+def test_convert_params_gpt_oss_keeps_a_forced_tool_with_reasoning_effort() -> None:
+    """The forced-tool refusal is Claude's extended thinking; gpt-oss has no such rule."""
+    result = _convert_params(
+        CompletionParams(
+            model_id="openai.gpt-oss-20b-1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}}],
+            tool_choice="required",
+            reasoning_effort="low",
+        ),
+        {},
+    )
+
+    assert result["toolConfig"]["toolChoice"] == {"any": {}}
+    assert result["additionalModelRequestFields"] == {"reasoning_effort": "low"}
+
+
+@pytest.mark.parametrize("model_id", GPT_OSS_MODEL_IDS)
+@pytest.mark.parametrize("stream", [False, True])
+def test_convert_params_gpt_oss_sends_a_pydantic_response_format_natively(model_id: str, stream: bool) -> None:
+    result = _convert_params(
+        CompletionParams(
+            model_id=model_id, messages=[{"role": "user", "content": "hi"}], response_format=_City, stream=stream
+        ),
+        {},
+    )
+
+    assert "toolConfig" not in result
+    json_schema = result["outputConfig"]["textFormat"]["structure"]["jsonSchema"]
+    assert result["outputConfig"]["textFormat"]["type"] == "json_schema"
+    assert json_schema["name"] == "_City"
+    assert json.loads(json_schema["schema"]) == {
+        "properties": {"name": {"title": "Name", "type": "string"}},
+        "required": ["name"],
+        "title": "_City",
+        "type": "object",
+        "additionalProperties": False,
+    }
+    _validate_converse(result, stream=stream)
+
+
+def test_convert_params_gpt_oss_closes_nested_objects_in_a_pydantic_schema() -> None:
+    class _Trip(BaseModel):
+        cities: list[_City]
+
+    result = _convert_params(
+        CompletionParams(
+            model_id="openai.gpt-oss-20b-1:0", messages=[{"role": "user", "content": "hi"}], response_format=_Trip
+        ),
+        {},
+    )
+
+    schema = json.loads(result["outputConfig"]["textFormat"]["structure"]["jsonSchema"]["schema"])
+    assert schema["additionalProperties"] is False
+    assert schema["$defs"]["_City"]["additionalProperties"] is False
+
+
+def test_convert_params_gpt_oss_sends_a_json_schema_dict_as_given() -> None:
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
+
+    result = _convert_params(
+        CompletionParams(
+            model_id="openai.gpt-oss-20b-1:0",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format={"type": "json_schema", "json_schema": {"name": "answer", "schema": schema}},
+        ),
+        {},
+    )
+
+    json_schema = result["outputConfig"]["textFormat"]["structure"]["jsonSchema"]
+    assert json_schema["name"] == "answer"
+    assert json.loads(json_schema["schema"]) == schema
+
+
+def test_convert_params_gpt_oss_refuses_json_object() -> None:
+    """Converse has no schema-less JSON mode."""
+    with pytest.raises(UnsupportedParameterError, match="json_object"):
+        _convert_params(
+            CompletionParams(
+                model_id="openai.gpt-oss-20b-1:0",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_object"},
+            ),
+            {},
+        )
 
 
 def test_convert_params_response_format_non_anthropic_model_raises() -> None:
