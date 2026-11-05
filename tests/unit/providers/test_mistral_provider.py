@@ -1900,6 +1900,24 @@ async def test_speech_forwards_extra_kwargs_to_sdk() -> None:
 
 
 @pytest.mark.asyncio
+async def test_speech_translates_timeout_to_timeout_ms() -> None:
+    from any_llm.providers.mistral.mistral import MistralProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        complete = _mock_speech_client(mocked_mistral)
+        provider = MistralProvider(api_key="test-api-key")
+
+        await provider._aspeech(
+            AudioSpeechParams(model_id="voxtral-mini-tts-2603", input="Hello", voice="en_paul_neutral"),
+            timeout=2.5,
+        )
+
+    assert complete.call_args.kwargs["timeout_ms"] == 2500
+    assert "timeout" not in complete.call_args.kwargs
+
+
+@pytest.mark.asyncio
 async def test_speech_rejects_aac() -> None:
     from any_llm.providers.mistral.mistral import MistralProvider
     from any_llm.types.audio import AudioSpeechParams

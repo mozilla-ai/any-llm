@@ -284,6 +284,8 @@ class MistralProvider(AnyLLM):
 
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
+        if (timeout := api_kwargs.pop("timeout", None)) is not None:
+            api_kwargs["timeout_ms"] = int(timeout * 1000)
         response = await self.client.audio.speech.complete_async(
             model=params.model_id,
             input=params.input,
