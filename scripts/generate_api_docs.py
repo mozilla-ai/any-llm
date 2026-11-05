@@ -1908,22 +1908,34 @@ def generate_types_messages_page() -> str:
             "",
             "### `MessageStreamEvent`",
             "",
-            "Union of stream event types. Each one subclasses the matching Anthropic SDK `Raw*` event and "
-            "widens it so beta responses (context management, compaction) round-trip without loss:",
+            (
+                "Union of stream event types. Each one subclasses the matching Anthropic SDK `Raw*` event and "
+                "widens it so beta responses (context management, compaction) round-trip without loss:"
+            ),
             "",
             "- `MessageStartEvent`: `type: 'message_start'`, `message: MessageResponse`",
-            "- `MessageDeltaEvent`: `type: 'message_delta'`, `delta: MessageDelta`, `usage: MessageDeltaUsage`, "
-            "`context_management: BetaContextManagementResponse | None`",
+            (
+                "- `MessageDeltaEvent`: `type: 'message_delta'`, `delta: MessageDelta`, `usage: MessageDeltaUsage`, "
+                "`context_management: BetaContextManagementResponse | None`"
+            ),
             "- `MessageStopEvent`: `type: 'message_stop'`, `message: MessageResponse | None`",
-            "- `ContentBlockStartEvent`: `type: 'content_block_start'`, `index: int`, "
-            "`content_block: MessageContentBlock`",
-            "- `ContentBlockDeltaEvent`: `type: 'content_block_delta'`, `index: int`, "
-            "`delta: RawContentBlockDelta | CompactionDelta`",
-            "- `ContentBlockStopEvent`: `type: 'content_block_stop'`, `index: int`, "
-            "`content_block: MessageContentBlock | None`",
+            (
+                "- `ContentBlockStartEvent`: `type: 'content_block_start'`, `index: int`, "
+                "`content_block: MessageContentBlock`"
+            ),
+            (
+                "- `ContentBlockDeltaEvent`: `type: 'content_block_delta'`, `index: int`, "
+                "`delta: RawContentBlockDelta | CompactionDelta`"
+            ),
+            (
+                "- `ContentBlockStopEvent`: `type: 'content_block_stop'`, `index: int`, "
+                "`content_block: MessageContentBlock | None`"
+            ),
             "",
-            "`message` on `MessageStopEvent` and `content_block` on `ContentBlockStopEvent` are populated only by "
-            "providers with a native Anthropic Messages API; the Chat Completions bridge leaves them unset.",
+            (
+                "`message` on `MessageStopEvent` and `content_block` on `ContentBlockStopEvent` are populated only by "
+                "providers with a native Anthropic Messages API; the Chat Completions bridge leaves them unset."
+            ),
             "",
             "**Import:** `from any_llm.types.messages import MessageStreamEvent`",
             "",
@@ -2208,9 +2220,11 @@ def generate_video_page() -> str:
         "description: Start, poll and download video generation jobs",
         "---",
         "",
-        "Video generation is slow, so `video_generation` returns a `VideoJob` rather than a video. "
-        "`retrieve_video` reads the job again, `poll_video` waits for it, and `download_video` fetches the result. "
-        "See [Video Generation](../video.md) for the providers and what each one takes.",
+        (
+            "Video generation is slow, so `video_generation` returns a `VideoJob` rather than a video. "
+            "`retrieve_video` reads the job again, `poll_video` waits for it, and `download_video` fetches the result. "
+            "See [Video Generation](../video.md) for the providers and what each one takes."
+        ),
     ]
     for sync_fn, async_fn, heading in (
         (api_module.video_generation, api_module.avideo_generation, "Start a job"),
@@ -2270,8 +2284,10 @@ def generate_types_video_page() -> str:
         "description: Job, output and parameter models for the video API",
         "---",
         "",
-        "The job returned by `any_llm.video_generation()`, `any_llm.retrieve_video()` and `any_llm.poll_video()`, "
-        "and the parameters a provider receives.",
+        (
+            "The job returned by `any_llm.video_generation()`, `any_llm.retrieve_video()` and `any_llm.poll_video()`, "
+            "and the parameters a provider receives."
+        ),
         "",
         "**Import:** `from any_llm.types.video import VideoJob, VideoOutput, VideoError`",
         "",

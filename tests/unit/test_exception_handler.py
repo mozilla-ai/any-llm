@@ -655,13 +655,17 @@ def test_rejected_request_falls_back_to_invalid_request(status_code: int) -> Non
     [
         (
             "anthropic",
-            "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
-            "'message': 'prompt is too long: 208310 tokens > 200000 maximum'}}",
+            (
+                "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+                "'message': 'prompt is too long: 208310 tokens > 200000 maximum'}}"
+            ),
         ),
         (
             "gemini",
-            "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'The input token count (1200000) "
-            "exceeds the maximum number of tokens allowed (1048576).', 'status': 'INVALID_ARGUMENT'}}",
+            (
+                "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'The input token count (1200000) "
+                "exceeds the maximum number of tokens allowed (1048576).', 'status': 'INVALID_ARGUMENT'}}"
+            ),
         ),
     ],
 )
