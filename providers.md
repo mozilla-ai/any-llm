@@ -64,7 +64,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`sagemaker`](https://aws.amazon.com/sagemaker/) | 🤝 Community | AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY | SAGEMAKER_ENDPOINT_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`sambanova`](https://sambanova.ai/) | ✅ Verified | SAMBANOVA_API_KEY | SAMBANOVA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`telnyx`](https://developers.telnyx.com/docs/inference/getting-started) | 🤝 Community | TELNYX_API_KEY | TELNYX_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| [`together`](https://together.ai/) | ✅ Verified | TOGETHER_API_KEY | TOGETHER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| [`together`](https://together.ai/) | ✅ Verified | TOGETHER_API_KEY | TOGETHER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
 | [`tokenhub`](https://tokenhub.com/docs) | 🤝 Community | TOKENHUB_API_KEY | TOKENHUB_API_BASE | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`typesafe`](https://docs.typesafe.ai/sdk/python) | ✅ Verified | TYPESAFE_API_KEY | TYPESAFE_BASE_URL | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | [`vertexai`](https://cloud.google.com/vertex-ai/docs) | 🤝 Community |  | VERTEXAI_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
