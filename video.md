@@ -17,8 +17,9 @@ Each function has an async twin with an `a` prefix: `avideo_generation()`, `aret
 
 | Provider | `SUPPORTS_VIDEO_GENERATION` | Notes |
 |----------|-----------------------------|-------|
-| Gemini | Yes | Gemini Omni Flash (`gemini-omni-1.1-flash`) through the Interactions API, created with `background=True` and read back with `interactions.get`. `size` maps to Omni's `16:9`/`9:16` aspect ratio and `360p`/`720p`/`1080p`/`4k` resolution, so the short side must be 360, 720, 1080 or 2160 pixels and the video cannot be square. `first_frame` and `last_frame` go in as image parts before the prompt, in that order, which is how Omni assigns their roles; `reference_images` follow them. `seed` passes through. `seconds` and `negative_prompt` raise `UnsupportedParameterError`; put what to avoid in the prompt. The finished video arrives inline (base64) or as a Files API URI, which `download_video` fetches with your API key. |
-| Together | Yes | `POST /v2/videos` and `GET /v2/videos/{id}` through the Together SDK, for models such as `ByteDance/Seedance-2.0`. `size` maps to `width`/`height`, `seconds` to the string Together expects, and `first_frame`/`last_frame` to `frame_images`. Together-only options such as `fps`, `steps`, `guidance_scale` and `output_format` pass through as keyword arguments. Seedance renders fixed resolutions only (for example `864x496`, `1280x720`, `1920x1080`, and their portrait twins); a `size` that is not `WIDTHxHEIGHT` raises `InvalidRequestError` before any request is sent, and any other `WIDTHxHEIGHT` is accepted, but the job then fails with code `unsupportedModelResolution` and the full list in `error.message`. The finished video is a public URL. |
+| DeepInfra | Yes | `POST /v1/inference/{model}` on DeepInfra's native API, for models such as `ByteDance/Seedance-2.0` and `Wan-AI/Wan3.0-Video`. DeepInfra renders inside the request and has no endpoint to look a request up afterwards, so `video_generation` blocks for the whole render (up to 900 seconds by default; pass `timeout` to change it) and returns a job that is already `completed` or `failed`. `retrieve_video` and `poll_video` read that job back from memory, which keeps the newest 1000 jobs started in the same process; any other id raises `InvalidRequestError`. DeepInfra's `webhook` option is refused for the same reason, since the queued job it returns could never be read back. Every DeepInfra video model has its own request fields, so the provider fetches the model's input schema from `GET /models/{model}` once per process and maps each any-llm field to whatever name that schema gives it: `seconds` to `duration`, `size` to a `resolution` tier (by short side, `720p` or `720P`) plus the nearest listed `aspect_ratio`/`ratio`, or to an exact `size` such as `1280*720`; `first_frame`/`last_frame` to `first_frame_image`/`first_frame` fields or to typed `media` items; `reference_images` to `reference_images` or to `media` items; `reference_audios` to `reference_audios`, to `media` items, or (one clip only) to a single-clip field such as Wan 2.6's `audio_url`; `seed` and `negative_prompt` to the same names. A field the schema has no name for raises `UnsupportedParameterError`, and a `size` the model does not render, or whose shape it has no field for, raises `InvalidRequestError`, both before any render is billed. Model-only fields such as Seedance's `generate_audio` or Wan's `media` and `audio` pass through as keyword arguments (`media` items merge with the ones any-llm produces). The finished video is a public URL. |
+| Gemini | Yes | Gemini Omni Flash (`gemini-omni-1.1-flash`) through the Interactions API, created with `background=True` and read back with `interactions.get`. `size` maps to Omni's `16:9`/`9:16` aspect ratio and `360p`/`720p`/`1080p`/`4k` resolution, so the short side must be 360, 720, 1080 or 2160 pixels and the shape must be exactly 16:9 or 9:16; anything else raises `InvalidRequestError` before a render is billed. `first_frame` and `last_frame` go in as image parts before the prompt, in that order, which is how Omni assigns their roles; `reference_images` follow them. `seed` passes through. `seconds`, `negative_prompt` and `reference_audios` raise `UnsupportedParameterError`: put what to avoid in the prompt, and describe the sound track there too, since Omni generates its own audio and documents audio references as unsupported. The finished video arrives inline (base64) or as a Files API URI, which `download_video` fetches with your API key. |
+| Together | Yes | `POST /v2/videos` and `GET /v2/videos/{id}` through the Together SDK, for models such as `ByteDance/Seedance-2.0`. `size` maps to `width`/`height`, `seconds` to the string Together expects, `first_frame`/`last_frame` to `frame_images`, and `reference_audios` to `media.audio_inputs` (sent through `extra_body`, merged with any `media` you pass there, since the pinned SDK has no argument for it). Together-only options such as `fps`, `steps`, `guidance_scale` and `output_format` pass through as keyword arguments. Seedance renders fixed resolutions only (for example `864x496`, `1280x720`, `1920x1080`, and their portrait twins); a `size` that is not `WIDTHxHEIGHT` raises `InvalidRequestError` before any request is sent, and any other `WIDTHxHEIGHT` is accepted, but the job then fails with code `unsupportedModelResolution` and the full list in `error.message`. The finished video is a public URL. |
 
 All other providers return `SUPPORTS_VIDEO_GENERATION = False` and raise `NotImplementedError` if called. OpenAI is among them: OpenAI removed the Sora 2 models and the Videos API on September 24, 2026, with no replacement.
 
@@ -27,6 +28,7 @@ All other providers return `SUPPORTS_VIDEO_GENERATION = False` and raise `NotImp
 Each video provider needs its own extra:
 
 ```bash
+pip install any-llm-sdk[deepinfra]
 pip install any-llm-sdk[gemini]
 pip install any-llm-sdk[together]
 ```
@@ -60,6 +62,17 @@ The same call works against Gemini by changing the model string and dropping `se
 job = video_generation("gemini:gemini-omni-1.1-flash", prompt="...", size="1280x720")
 ```
 
+### Shape
+
+A video's shape is two facts: how sharp, and landscape or portrait. Pass them as one `size`, or as a `resolution` tier plus an `aspect_ratio`:
+
+```python
+job = video_generation("together:ByteDance/Seedance-2.5", prompt="...", size="854x480")
+job = video_generation("together:ByteDance/Seedance-2.5", prompt="...", resolution="480p", aspect_ratio="16:9")
+```
+
+Each provider turns either form into its own fields. The tier form is what most models bill by; the exact form is for models such as Wan 2.6 that list fixed sizes. Passing `size` together with either of the other two raises `InvalidRequestError`.
+
 ### Frames and references
 
 ```python
@@ -73,6 +86,19 @@ job = video_generation(
 ```
 
 Images are URLs, provider file URIs, or `data:` URLs with base64 content. A provider that cannot take one of them says so with `UnsupportedParameterError`.
+
+### Audio
+
+```python
+job = video_generation(
+    "deepinfra:ByteDance/Seedance-2.0",
+    prompt="@Image1 dances to the beat of @Audio1.",
+    reference_images=["https://example.com/dancer.png"],
+    reference_audios=["https://example.com/beat.mp3"],
+)
+```
+
+Audio must be a hosted URL the provider can download; no provider documents base64 audio. The same call works against Together by changing the model string. How a model refers to its references inside the prompt is the model's own convention: Seedance 2.0 uses `@Image1` and `@Audio1`, Wan 3.0 uses `Image 1`, and Seedance 2.5 takes plain prose.
 
 ### Async
 
@@ -99,10 +125,13 @@ asyncio.run(main())
 | `model` | `str` | required | Provider-prefixed model ID (e.g. `"together:ByteDance/Seedance-2.0"`) |
 | `prompt` | `str` | required | What the video shows |
 | `seconds` | `int \| None` | `None` | Length of the video in seconds |
-| `size` | `str \| None` | `None` | `WIDTHxHEIGHT`, such as `"1280x720"` |
+| `size` | `str \| None` | `None` | `WIDTHxHEIGHT`, such as `"1280x720"`. Says both how sharp and what shape; not combined with the next two |
+| `resolution` | `str \| None` | `None` | How sharp, by short side: `"480p"`, `"720p"`, `"1080p"` or `"4k"` |
+| `aspect_ratio` | `str \| None` | `None` | What shape, as `WIDTH:HEIGHT` such as `"16:9"` or `"9:16"` |
 | `seed` | `int \| None` | `None` | Seed for reproducible generation |
 | `negative_prompt` | `str \| None` | `None` | What the video should not contain |
 | `reference_images` | `list[str] \| None` | `None` | Images the video takes its subjects or style from |
+| `reference_audios` | `list[str] \| None` | `None` | Audio URLs the video follows, for lip sync, beat-matched motion or a sound track |
 | `first_frame` | `str \| None` | `None` | Image the video starts from |
 | `last_frame` | `str \| None` | `None` | Image the video ends on |
 | `provider` | `str \| None` | `None` | Explicit provider name. Inferred from `model` if omitted. |

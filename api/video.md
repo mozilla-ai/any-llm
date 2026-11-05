@@ -17,9 +17,12 @@ def video_generation(
     provider: str | LLMProvider | None = None,
     seconds: int | None = None,
     size: str | None = None,
+    resolution: str | None = None,
+    aspect_ratio: str | None = None,
     seed: int | None = None,
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
+    reference_audios: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
     api_key: str | None = None,
@@ -41,9 +44,12 @@ async def avideo_generation(
     provider: str | LLMProvider | None = None,
     seconds: int | None = None,
     size: str | None = None,
+    resolution: str | None = None,
+    aspect_ratio: str | None = None,
     seed: int | None = None,
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
+    reference_audios: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
     api_key: str | None = None,
@@ -61,10 +67,13 @@ async def avideo_generation(
 | `prompt` | `str` | *required* | A text description of the desired video. |
 | `provider` | `str \| LLMProvider \| None` | None | Provider name to use for the request (e.g., 'together'). |
 | `seconds` | `int \| None` | None | Length of the video in seconds. |
-| `size` | `str \| None` | None | Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720'). |
+| `size` | `str \| None` | None | Size of the video as ``WIDTHxHEIGHT`` (e.g., '1280x720'). Not combined with the next two. |
+| `resolution` | `str \| None` | None | How sharp, by short side: '480p', '720p', '1080p' or '4k'. |
+| `aspect_ratio` | `str \| None` | None | What shape, as ``WIDTH:HEIGHT`` (e.g., '16:9'). |
 | `seed` | `int \| None` | None | Seed for reproducible generation. |
 | `negative_prompt` | `str \| None` | None | What the video should not contain. |
 | `reference_images` | `list[str] \| None` | None | Image URLs the video should take its subjects or style from. |
+| `reference_audios` | `list[str] \| None` | None | Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track. |
 | `first_frame` | `str \| None` | None | Image URL to start the video from. |
 | `last_frame` | `str \| None` | None | Image URL to end the video on. |
 | `api_key` | `str \| None` | None | API key for the provider. |
