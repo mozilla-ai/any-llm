@@ -47,7 +47,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`lmstudio`](https://lmstudio.ai/docs/python) | ✅ Verified | LM_STUDIO_API_KEY | LM_STUDIO_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`meta`](https://dev.meta.ai/docs) | 🤝 Community | MODEL_API_KEY | META_API_BASE | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`minimax`](https://www.minimax.io/platform_overview) | ✅ Verified | MINIMAX_API_KEY | MINIMAX_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| [`mistral`](https://docs.mistral.ai/) | ✅ Verified | MISTRAL_API_KEY | MISTRAL_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [`mistral`](https://docs.mistral.ai/) | ✅ Verified | MISTRAL_API_KEY | MISTRAL_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | [`moonshot`](https://platform.moonshot.ai/) | ✅ Verified | MOONSHOT_API_KEY | MOONSHOT_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`mzai`](https://any-llm.ai) | 🤝 Community | ANY_LLM_KEY | ANY_LLM_PLATFORM_URL | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`nebius`](https://studio.nebius.ai/) | ✅ Verified | NEBIUS_API_KEY | NEBIUS_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
