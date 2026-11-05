@@ -1938,6 +1938,41 @@ async def test_speech_rejects_aac() -> None:
 
 
 @pytest.mark.asyncio
+async def test_speech_rejects_stream() -> None:
+    from any_llm.providers.mistral.mistral import MistralProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        complete = _mock_speech_client(mocked_mistral)
+        provider = MistralProvider(api_key="test-api-key")
+
+        with pytest.raises(UnsupportedParameterError, match="stream"):
+            await provider._aspeech(
+                AudioSpeechParams(model_id="voxtral-mini-tts-2603", input="Hello", voice="en_paul_neutral"),
+                stream=True,
+            )
+
+    complete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_speech_forwards_stream_false() -> None:
+    from any_llm.providers.mistral.mistral import MistralProvider
+    from any_llm.types.audio import AudioSpeechParams
+
+    with patch("any_llm.providers.mistral.mistral.Mistral") as mocked_mistral:
+        complete = _mock_speech_client(mocked_mistral)
+        provider = MistralProvider(api_key="test-api-key")
+
+        await provider._aspeech(
+            AudioSpeechParams(model_id="voxtral-mini-tts-2603", input="Hello", voice="en_paul_neutral"),
+            stream=False,
+        )
+
+    assert complete.call_args.kwargs["stream"] is False
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("field", "value"), [("instructions", "Speak slowly"), ("speed", 1.5)])
 async def test_speech_rejects_instructions_and_speed(field: str, value: Any) -> None:
     from any_llm.providers.mistral.mistral import MistralProvider

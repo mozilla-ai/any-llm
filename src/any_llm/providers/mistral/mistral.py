@@ -263,7 +263,8 @@ class MistralProvider(AnyLLM):
         ``response_format``; any-llm's ``voice`` is sent as ``voice_id``. Mistral-only fields
         such as ``ref_audio`` pass through ``kwargs``. There is no ``instructions`` or ``speed``
         field, so both raise ``UnsupportedParameterError``, as does ``aac``, the one any-llm
-        format Mistral does not encode. Mistral's ``pcm`` is float32 little-endian samples rather
+        format Mistral does not encode, and ``stream=True``, which returns an event stream rather
+        than one audio payload. Mistral's ``pcm`` is float32 little-endian samples rather
         than the 16-bit samples OpenAI serves, and is returned as the provider encodes it. The
         audio arrives base64-encoded in ``audio_data`` and is decoded here.
         """
@@ -281,6 +282,10 @@ class MistralProvider(AnyLLM):
                 f"Mistral speech returns {', '.join(sorted(_SPEECH_RESPONSE_FORMATS))}, "
                 f"not {params.response_format!r}.",
             )
+
+        if kwargs.get("stream"):
+            parameter_name = "stream"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
 
         api_kwargs = params.to_api_kwargs()
         api_kwargs.update(kwargs)
