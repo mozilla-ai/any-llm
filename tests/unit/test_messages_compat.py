@@ -624,7 +624,13 @@ def test_cached_tokens_from_usage_preserves_presence() -> None:
     )
 
 
-def test_chat_completion_tool_calls_response_to_message() -> None:
+@pytest.mark.parametrize(
+    ("finish_reason", "stop_reason"),
+    [("tool_calls", "tool_use"), ("stop", "tool_use"), ("length", "max_tokens"), ("content_filter", "refusal")],
+)
+def test_chat_completion_tool_calls_response_to_message(
+    finish_reason: Literal["tool_calls", "stop", "length", "content_filter"], stop_reason: str
+) -> None:
     """Test converting a tool_calls ChatCompletion to MessageResponse with tool_use blocks."""
     completion = ChatCompletion(
         id="chatcmpl-456",
@@ -634,7 +640,7 @@ def test_chat_completion_tool_calls_response_to_message() -> None:
         choices=[
             Choice(
                 index=0,
-                finish_reason="tool_calls",
+                finish_reason=finish_reason,
                 message=ChatCompletionMessage(
                     role="assistant",
                     content=None,
@@ -653,7 +659,7 @@ def test_chat_completion_tool_calls_response_to_message() -> None:
     from any_llm.types.messages import ToolUseBlock
 
     result = chat_completion_to_message_response(completion)
-    assert result.stop_reason == "tool_use"
+    assert result.stop_reason == stop_reason
     assert len(result.content) == 1
     block = result.content[0]
     assert isinstance(block, ToolUseBlock)
@@ -3910,3 +3916,32 @@ def test_cache_breakpoints_stay_out_of_the_conversion_unless_asked_for() -> None
         {"role": "system", "content": "Sys"},
         {"role": "user", "content": [{"type": "text", "text": "Hi"}]},
     ]
+
+
+@pytest.mark.parametrize("separate_finish", [False, True])
+@pytest.mark.parametrize(
+    ("finish_reason", "stop_reason"),
+    [("tool_calls", "tool_use"), ("stop", "tool_use"), ("length", "max_tokens"), ("content_filter", "refusal")],
+)
+def test_streaming_tool_use_stop_reason(
+    separate_finish: bool,
+    finish_reason: Literal["tool_calls", "stop", "length", "content_filter"],
+    stop_reason: str,
+) -> None:
+    state = StreamingState()
+    chunk = _tool_calls_chunk(
+        ChoiceDeltaToolCall(
+            index=0,
+            id="call_weather",
+            type="function",
+            function=ChoiceDeltaToolCallFunction(name="get_weather", arguments='{"city":"London"}'),
+        )
+    )
+    if separate_finish:
+        chat_completion_chunk_to_message_stream_events(chunk, state)
+        # Tool blocks may already be closed when the terminal finish reason arrives.
+        close_open_blocks(state)
+        chunk.choices[0].delta = ChoiceDelta()
+    chunk.choices[0].finish_reason = finish_reason
+    chat_completion_chunk_to_message_stream_events(chunk, state)
+    assert state.stop_reason == stop_reason
