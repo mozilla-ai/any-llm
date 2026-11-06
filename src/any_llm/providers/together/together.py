@@ -364,19 +364,18 @@ class TogetherProvider(AnyLLM):
     def _convert_video_params(params: VideoGenerationParams, **kwargs: Any) -> dict[str, Any]:
         """Convert VideoGenerationParams to kwargs for ``client.videos.create``.
 
-        Together takes the size as ``width``/``height``, the length as a string, and the first
-        and last frames as ``frame_images`` entries, which merge with any the caller passes.
-        ``resolution``, ``ratio``, ``generate_audio``, ``media.audio_inputs`` and
-        ``media.reference_videos`` are fields the pinned SDK has no argument for, so they ride in
-        ``extra_body`` and merge with whatever the caller passes there.
+        Together takes the size as ``width``/``height`` (or ``resolution`` and ``ratio``) and the
+        length as a string. Image, audio and video inputs go in ``media``: the first and last
+        frames as ``frame_images`` entries, and ``reference_images``, ``audio_inputs`` and
+        ``reference_videos``. A caller's ``media``, passed as a keyword argument or in
+        ``extra_body``, merges with these.
 
         Raises:
-            InvalidRequestError: If a keyword argument, ``extra_body``, its ``media`` or a
+            InvalidRequestError: If a keyword argument, ``extra_body``, ``media`` or a
                 ``frame_images`` entry sets a field a shared field set, to another value.
 
         """
         fields: dict[str, tuple[str, Any]] = {"prompt": ("prompt", params.prompt)}
-        body_fields: dict[str, tuple[str, Any]] = {}
         media_fields: dict[str, tuple[str, Any]] = {}
         if params.seconds is not None:
             fields["seconds"] = ("seconds", str(params.seconds))
@@ -385,17 +384,17 @@ class TogetherProvider(AnyLLM):
                 width, height = shape.dimensions
                 fields["width"], fields["height"] = ("size", width), ("size", height)
             if params.resolution is not None:
-                body_fields["resolution"] = ("resolution", f"{shape.short_side}p")
+                fields["resolution"] = ("resolution", f"{shape.short_side}p")
             if params.aspect_ratio is not None:
-                body_fields["ratio"] = ("aspect_ratio", params.aspect_ratio)
+                fields["ratio"] = ("aspect_ratio", params.aspect_ratio)
         if params.generate_audio is not None:
-            body_fields["generate_audio"] = ("generate_audio", params.generate_audio)
+            fields["generate_audio"] = ("generate_audio", params.generate_audio)
         if params.seed is not None:
             fields["seed"] = ("seed", params.seed)
         if params.negative_prompt is not None:
             fields["negative_prompt"] = ("negative_prompt", params.negative_prompt)
         if params.reference_images is not None:
-            fields["reference_images"] = ("reference_images", params.reference_images)
+            media_fields["reference_images"] = ("reference_images", params.reference_images)
         if params.reference_audios is not None:
             media_fields["audio_inputs"] = ("reference_audios", params.reference_audios)
         if params.reference_videos is not None:
@@ -404,9 +403,10 @@ class TogetherProvider(AnyLLM):
 
         caller_body = dict(kwargs.pop("extra_body", None) or {})
         # The SDK merges extra_body over the top-level arguments, so it can change them too, and
-        # frame_images there would replace the list below rather than add to it.
+        # media there would replace the media below rather than add to it.
         params.check_provider_options(fields, caller_body)
-        frame_images = [*(kwargs.pop("frame_images", None) or []), *(caller_body.pop("frame_images", None) or [])]
+        caller_media = {**(caller_body.pop("media", None) or {}), **(kwargs.pop("media", None) or {})}
+        frame_images = list(caller_media.pop("frame_images", None) or [])
         # A video has one first and one last frame, so a caller's entries for either must be the one any-llm sends.
         for role, parameter_name, image in (
             ("first", "first_frame", params.first_frame),
@@ -419,16 +419,15 @@ class TogetherProvider(AnyLLM):
             params.check_provider_options({field: (parameter_name, [image])}, {field: passed} if passed else {})
             if not passed:
                 frame_images.append({"input_image": image, "frame": role})
-        media = params.merge_provider_options(media_fields, dict(caller_body.pop("media", None) or {}))
-        extra_body = params.merge_provider_options(body_fields, caller_body)
-        if media:
-            extra_body["media"] = media
+        media = params.merge_provider_options(media_fields, caller_media)
+        if frame_images:
+            media["frame_images"] = frame_images
 
         create_kwargs: dict[str, Any] = {"model": params.model_id}
-        if frame_images:
-            create_kwargs["frame_images"] = frame_images
-        if extra_body:
-            create_kwargs["extra_body"] = extra_body
+        if media:
+            create_kwargs["media"] = media
+        if caller_body:
+            create_kwargs["extra_body"] = caller_body
         return create_kwargs | params.merge_provider_options(fields, kwargs)
 
     @override
