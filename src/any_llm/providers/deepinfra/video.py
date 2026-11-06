@@ -26,7 +26,6 @@ _FRAME_FIELDS: dict[str, tuple[str, ...]] = {
     "first_frame": ("first_frame_image", "first_frame"),
     "last_frame": ("last_frame_image", "last_frame"),
 }
-_REFERENCE_IMAGES_FIELD = "reference_images"
 _REFERENCE_AUDIOS_FIELD = "reference_audios"
 # Wan 2.6 and 2.7 take a single clip under a field of their own.
 _SINGLE_AUDIO_FIELDS = ("audio_url", "driving_audio")
@@ -112,14 +111,14 @@ class _BodyBuilder:
         else:
             self.reject(parameter_name)
 
-    def reference_images(self, images: list[str]) -> None:
-        """Reference images as the model's list field, or as typed ``media`` items."""
-        if _REFERENCE_IMAGES_FIELD in self.schema.fields:
-            self.body[_REFERENCE_IMAGES_FIELD] = list(images)
-        elif "reference_image" in self.schema.media_types():
-            self.media.extend({"type": "reference_image", "url": image} for image in images)
+    def references(self, parameter_name: str, urls: list[str], media_type: str) -> None:
+        """References as the model's list field of the same name, or as typed ``media`` items."""
+        if parameter_name in self.schema.fields:
+            self.body[parameter_name] = list(urls)
+        elif media_type in self.schema.media_types():
+            self.media.extend({"type": media_type, "url": url} for url in urls)
         else:
-            self.reject("reference_images")
+            self.reject(parameter_name)
 
     def reference_audios(self, audios: list[str]) -> None:
         """Audio as the model's list field, as ``media`` items, or as its single-clip field when there is one clip."""
@@ -200,11 +199,11 @@ class _BodyBuilder:
             if (value := getattr(params, parameter_name)) is not None:
                 self.image(parameter_name, value, field_names, parameter_name)
         if params.reference_images:
-            self.reference_images(params.reference_images)
+            self.references("reference_images", params.reference_images, "reference_image")
         if params.reference_audios:
             self.reference_audios(params.reference_audios)
         if params.reference_videos:
-            self.reject("reference_videos")
+            self.references("reference_videos", params.reference_videos, "reference_video")
         # Caller-provided media items merge with the ones any-llm's fields produced.
         self.media.extend(kwargs.pop("media", None) or [])
         if self.media:
