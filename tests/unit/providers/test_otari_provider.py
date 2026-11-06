@@ -931,6 +931,23 @@ async def test_otari_amessages_delegates_to_native_endpoint_preserving_anthropic
 
 
 @pytest.mark.asyncio
+async def test_otari_amessages_forwards_inference_geo() -> None:
+    client = _mock_otari_client()
+    client.message.return_value = SimpleNamespace(data=_message_response_payload(), request_id=None)
+    provider = _build_provider(client)
+
+    result = await provider.amessages(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        inference_geo="us",
+    )
+
+    assert isinstance(result, MessageResponse)
+    assert client.message.call_args.kwargs["inference_geo"] == "us"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("stream", [False, True])
 async def test_otari_amessages_forwards_container(stream: bool) -> None:
     client = _mock_otari_client()

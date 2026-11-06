@@ -96,6 +96,18 @@ def test_messages_params_exposes_service_tier_in_schema() -> None:
     assert "service_tier" in MessagesParams.model_json_schema()["properties"]
 
 
+def test_messages_params_exposes_inference_geo_in_schema() -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        inference_geo="us",
+    )
+
+    assert params.inference_geo == "us"
+    assert "inference_geo" in MessagesParams.model_json_schema()["properties"]
+
+
 def test_messages_params_exposes_container_in_schema() -> None:
     params = MessagesParams(
         model="claude-3-5-sonnet",
@@ -272,6 +284,33 @@ async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> 
         )
 
     client.converse.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_name", "create_kwargs"),
+    [
+        ("openai", {"api_key": "sk-test"}),
+        ("azureanthropic", {"api_key": "test-key", "api_base": "https://example.services.ai.azure.com/anthropic"}),
+    ],
+)
+async def test_amessages_rejects_inference_geo_for_unsupported_provider(
+    provider_name: str, create_kwargs: dict[str, Any]
+) -> None:
+    provider = AnyLLM.create(provider_name, **create_kwargs)
+
+    with (
+        patch.object(provider, "_amessages", new=AsyncMock()) as mock_amessages,
+        pytest.raises(UnsupportedParameterError, match="inference_geo"),
+    ):
+        await provider.amessages(
+            model="claude-opus-5",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            inference_geo="us",
+        )
+
+    mock_amessages.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -815,12 +854,14 @@ async def test_amessages_forwards_typed_messages_params() -> None:
     assert "context_management" in signature(amessages).parameters
     assert "betas" in signature(amessages).parameters
     assert "container" in signature(amessages).parameters
+    assert "inference_geo" in signature(amessages).parameters
     assert "timeout" in signature(amessages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.amessages).parameters
     assert "service_tier" in signature(AnyLLM.amessages).parameters
     assert "context_management" in signature(AnyLLM.amessages).parameters
     assert "betas" in signature(AnyLLM.amessages).parameters
     assert "container" in signature(AnyLLM.amessages).parameters
+    assert "inference_geo" in signature(AnyLLM.amessages).parameters
     assert "timeout" in signature(AnyLLM.amessages).parameters
 
     mock_provider = Mock()
@@ -839,6 +880,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
             context_management=context_management,
             betas=betas,
             container="container_123",
+            inference_geo="us",
             timeout=30,
         )
 
@@ -848,6 +890,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
     assert call_kwargs["container"] == "container_123"
+    assert call_kwargs["inference_geo"] == "us"
     assert call_kwargs["timeout"] == 30
 
 
@@ -892,12 +935,14 @@ def test_messages_forwards_typed_messages_params() -> None:
     assert "context_management" in signature(messages).parameters
     assert "betas" in signature(messages).parameters
     assert "container" in signature(messages).parameters
+    assert "inference_geo" in signature(messages).parameters
     assert "timeout" in signature(messages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.messages).parameters
     assert "service_tier" in signature(AnyLLM.messages).parameters
     assert "context_management" in signature(AnyLLM.messages).parameters
     assert "betas" in signature(AnyLLM.messages).parameters
     assert "container" in signature(AnyLLM.messages).parameters
+    assert "inference_geo" in signature(AnyLLM.messages).parameters
     assert "timeout" in signature(AnyLLM.messages).parameters
 
     mock_provider = Mock()
@@ -916,6 +961,7 @@ def test_messages_forwards_typed_messages_params() -> None:
             context_management=context_management,
             betas=betas,
             container="container_123",
+            inference_geo="us",
             timeout=30,
         )
 
@@ -925,6 +971,7 @@ def test_messages_forwards_typed_messages_params() -> None:
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
     assert call_kwargs["container"] == "container_123"
+    assert call_kwargs["inference_geo"] == "us"
     assert call_kwargs["timeout"] == 30
 
 

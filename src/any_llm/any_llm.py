@@ -177,6 +177,9 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
     """Whether a Messages `output_format` type can be streamed by this provider."""
 
+    SUPPORTS_MESSAGES_INFERENCE_GEO: bool = False
+    """Whether the Messages API accepts Anthropic's `inference_geo`; other providers reject it."""
+
     SUPPORTS_COMPLETION_N: bool = False
     """Whether the provider can return more than one choice per request (OpenAI's ``n``).
 
@@ -1021,6 +1024,7 @@ class AnyLLM(FilesMixin, ABC):
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
         container: str | dict[str, Any] | None = None,
+        inference_geo: str | None = None,
         timeout: float | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
@@ -1048,6 +1052,7 @@ class AnyLLM(FilesMixin, ABC):
                         context_management=context_management,
                         betas=betas,
                         container=container,
+                        inference_geo=inference_geo,
                         timeout=timeout,
                         **kwargs,
                     ),
@@ -1062,6 +1067,7 @@ class AnyLLM(FilesMixin, ABC):
                 context_management=context_management,
                 betas=betas,
                 container=container,
+                inference_geo=inference_geo,
                 timeout=timeout,
                 **kwargs,
             ),
@@ -1094,6 +1100,7 @@ class AnyLLM(FilesMixin, ABC):
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
         container: str | dict[str, Any] | None = None,
+        inference_geo: str | None = None,
         output_format: type | dict[str, Any] | None = None,
         timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
@@ -1129,6 +1136,10 @@ class AnyLLM(FilesMixin, ABC):
                 A string reuses an existing container. An object selects Skills for a fresh
                 container or reuses one while attaching Skills. See
                 [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
+            inference_geo: Anthropic's region to run the request in, such as ``us``. When omitted,
+                Anthropic uses the workspace's ``default_inference_geo``. The response reports where
+                the request ran in ``usage.inference_geo``. Providers without a matching option raise
+                `UnsupportedParameterError`.
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
@@ -1151,6 +1162,8 @@ class AnyLLM(FilesMixin, ABC):
             Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
+            UnsupportedParameterError: If `inference_geo` is used with a provider that has no
+                matching option.
             ValueError: If an `output_format` type is combined with `stream=True` for a provider
                 that does not support streaming typed structured output.
             NotImplementedError: If `container`, `context_management`, or `betas` is used
@@ -1188,9 +1201,13 @@ class AnyLLM(FilesMixin, ABC):
             context_management=context_management,
             betas=betas,
             container=container,
+            inference_geo=inference_geo,
             output_format=output_format,
         )
         self._validate_prompt_cache_key(prompt_cache_key)
+        if inference_geo is not None and not self.SUPPORTS_MESSAGES_INFERENCE_GEO:
+            parameter_name = "inference_geo"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
         # The bridged path forwards these kwargs to _acompletion, so route timeout through the same
         # capability check the completion API uses rather than letting it reach the provider SDK raw.
         self._validate_and_forward_timeout(timeout, kwargs)
