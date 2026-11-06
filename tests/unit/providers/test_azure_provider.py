@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from azure.ai.inference.models import JsonSchemaFormat, ModelInfo
+from azure.ai.inference.models import JsonSchemaFormat, ModelInfo, StreamingChatCompletionsUpdate
 from azure.core.exceptions import HttpResponseError
 
 from any_llm.exceptions import MissingApiKeyError
@@ -305,3 +305,50 @@ async def test_alist_models_propagates_http_response_error_for_unsupported_endpo
 
         with pytest.raises(HttpResponseError):
             await provider._alist_models()
+
+
+def _tool_call_update(tool_call_id: str | None, name: str | None, arguments: str) -> StreamingChatCompletionsUpdate:
+    return StreamingChatCompletionsUpdate(
+        {
+            "id": "chatcmpl-1",
+            "created": 1_700_000_000,
+            "model": "model-id",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": None,
+                    "delta": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": tool_call_id or "",
+                                "type": "function",
+                                "function": {"name": name or "", "arguments": arguments},
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_azure_streaming_parallel_tool_calls_get_distinct_indexes() -> None:
+    provider = AzureProvider(api_key="test-api-key", api_base="https://test.eu.models.ai.azure.com")
+    updates = [
+        _tool_call_update("call_a", "get_weather", ""),
+        _tool_call_update(None, None, '{"city": "Paris"}'),
+        _tool_call_update("call_b", "get_time", ""),
+        _tool_call_update(None, None, '{"tz": "CET"}'),
+    ]
+
+    async def azure_stream():  # type: ignore[no-untyped-def]
+        for update in updates:
+            yield update
+
+    with patch.object(provider.chat_client, "complete", AsyncMock(return_value=azure_stream())):
+        chunks = [chunk async for chunk in provider._stream_completion_async("model-id", [])]
+
+    deltas = [tc for chunk in chunks for tc in (chunk.choices[0].delta.tool_calls or [])]
+    assert [tc.index for tc in deltas] == [0, 0, 1, 1]
