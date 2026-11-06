@@ -9,6 +9,7 @@ from any_llm.api import (
     apoll_video,
     aretrieve_video,
     avideo_generation,
+    complete_video_job,
     download_video,
     poll_video,
     retrieve_video,
@@ -178,6 +179,42 @@ async def test_base_methods_raise_when_a_supporting_provider_has_no_implementati
         await AnyLLM._avideo_generation(base, VideoGenerationParams(model_id="some-model", prompt="A cat"))
     with pytest.raises(NotImplementedError, match="Subclasses must implement _aretrieve_video"):
         await AnyLLM._aretrieve_video(base, "vid-1")
+
+
+def test_complete_video_job_unsupported_provider_raises_not_implemented() -> None:
+    base = _base(supports=False)
+    with pytest.raises(NotImplementedError, match="doesn't support video generation"):
+        AnyLLM.complete_video_job(base, {"request_id": "vid-1"})
+    base._complete_video_job.assert_not_called()
+
+
+def test_complete_video_job_forwards_to_the_provider() -> None:
+    base = _base()
+    base._complete_video_job = Mock(return_value=_job("completed"))
+
+    result = AnyLLM.complete_video_job(base, {"request_id": "vid-1"}, model="some-model")
+
+    base._complete_video_job.assert_called_once_with({"request_id": "vid-1"}, model="some-model")
+    assert result.done
+
+
+def test_base_complete_video_job_raises_for_a_provider_without_webhooks() -> None:
+    with pytest.raises(NotImplementedError, match="does not deliver video jobs to a webhook"):
+        AnyLLM._complete_video_job(_base(), {"request_id": "vid-1"}, model=None)
+
+
+def test_complete_video_job_dispatches() -> None:
+    provider = Mock()
+    provider.complete_video_job = Mock(return_value=_job("completed"))
+    payload = {"request_id": "vid-1", "inference_status": {"status": "succeeded"}}
+
+    with patch("any_llm.any_llm.AnyLLM.create", return_value=provider) as mock_create:
+        result = complete_video_job("deepinfra", payload, model="some-model", api_key="k", api_base="https://x")
+
+    assert mock_create.call_args.args[0] == LLMProvider.DEEPINFRA
+    assert mock_create.call_args.kwargs == {"api_key": "k", "api_base": "https://x"}
+    provider.complete_video_job.assert_called_once_with(payload, model="some-model")
+    assert result.status == "completed"
 
 
 @pytest.mark.asyncio

@@ -2327,6 +2327,31 @@ class AnyLLM(FilesMixin, ABC):
         msg = "Subclasses must implement _aretrieve_video method"
         raise NotImplementedError(msg)
 
+    def complete_video_job(self, payload: dict[str, Any], *, model: str | None = None) -> VideoJob:
+        """Finish a video job from the callback its provider posted to the caller's webhook.
+
+        Some providers can deliver a video job to a webhook instead of holding the request open.
+        The caller serves that webhook and passes the body it receives here. The finished job is
+        returned, and ``retrieve_video`` reads it back in the same process. Nothing is sent to the
+        provider, so there is no async twin.
+
+        Args:
+            payload: The JSON body the provider posted to the webhook.
+            model: The model that rendered the job, for a callback that does not name it.
+
+        Returns:
+            The job the callback describes, usually `completed` or `failed`.
+
+        """
+        if not self.SUPPORTS_VIDEO_GENERATION:
+            msg = "Provider doesn't support video generation."
+            raise NotImplementedError(msg)
+        return self._complete_video_job(payload, model=model)
+
+    def _complete_video_job(self, payload: dict[str, Any], *, model: str | None) -> VideoJob:
+        msg = "Provider does not deliver video jobs to a webhook."
+        raise NotImplementedError(msg)
+
     def poll_video(
         self, video_id: str, *, poll_interval: float = 5.0, timeout: float | None = 600.0, **kwargs: Any
     ) -> VideoJob:

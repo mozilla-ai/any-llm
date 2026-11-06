@@ -624,6 +624,21 @@ async def adownload_video(self, output, **kwargs) -> bytes
 ```"""
     )
 
+    # complete_video_job
+    parts.append("")
+    parts.append("### `complete_video_job()`")
+    parts.append("")
+    parts.append(
+        "Finish a video job from the callback its provider posted to the caller's webhook. "
+        "Nothing is sent to the provider, so there is no async twin."
+    )
+    parts.append("")
+    parts.append(
+        """```
+def complete_video_job(self, payload, *, model=None) -> VideoJob
+```"""
+    )
+
     # create_batch / acreate_batch
     parts.append("")
     parts.append("### `create_batch()` / `acreate_batch()`")
@@ -2223,6 +2238,7 @@ def generate_video_page() -> str:
         (
             "Video generation is slow, so `video_generation` returns a `VideoJob` rather than a video. "
             "`retrieve_video` reads the job again, `poll_video` waits for it, and `download_video` fetches the result. "
+            "`complete_video_job` finishes a job from the callback a provider posted to your webhook. "
             "See [Video Generation](../video.md) for the providers and what each one takes."
         ),
     ]
@@ -2253,6 +2269,23 @@ def generate_video_page() -> str:
                 _param_table(sync_fn, parsed),
             ]
         )
+    complete = api_module.complete_video_job
+    parts.extend(
+        [
+            "",
+            "## Finish a webhook job",
+            "",
+            f"### `any_llm.{complete.__name__}()`",
+            "",
+            "Nothing is sent to the provider, so there is no async variant.",
+            "",
+            _get_signature_block(complete),
+            "",
+            "### Parameters",
+            "",
+            _param_table(complete, _parse_docstring(complete.__doc__)),
+        ]
+    )
     parts.extend(
         [
             "",

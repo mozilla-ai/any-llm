@@ -2124,6 +2124,36 @@ async def aretrieve_video(
     return await llm.aretrieve_video(video_id, **kwargs)
 
 
+def complete_video_job(
+    provider: str | LLMProvider,
+    payload: dict[str, Any],
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+) -> VideoJob:
+    """Finish a video job from the callback its provider posted to the caller's webhook.
+
+    The caller serves the webhook and passes the body it receives here. Nothing is sent to the
+    provider, so there is no async twin.
+
+    Args:
+        provider: Provider that runs the job (e.g., 'deepinfra')
+        payload: The JSON body the provider posted to the webhook
+        model: The model that rendered the job, for a callback that does not name it
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+
+    Returns:
+        The job the callback describes, usually `completed` or `failed`.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.complete_video_job(payload, model=model)
+
+
 def poll_video(
     provider: str | LLMProvider,
     video_id: str,

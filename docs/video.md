@@ -155,6 +155,10 @@ Take `provider` and `video_id`, retrieve the job every `poll_interval` seconds (
 
 Take `provider` and one entry of `VideoJob.outputs` and return the video as bytes. Inline data is decoded; a URL is fetched, with the provider's credentials where its URLs need them.
 
+### `complete_video_job()`
+
+Take `provider` and the JSON body the provider posted to your webhook, and return the job it describes, usually `completed` or `failed`. Pass `model` when the callback does not name the model. `retrieve_video` then reads the job back in the same process. Nothing is sent to the provider, so there is no async variant. Providers that do not deliver video jobs to a webhook raise `NotImplementedError`.
+
 ### `VideoJob`
 
 | Field | Type | Description |
