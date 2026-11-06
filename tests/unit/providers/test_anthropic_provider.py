@@ -1281,11 +1281,13 @@ def test_convert_response_includes_cache_tokens_in_usage() -> None:
     mock_response.content = [MagicMock(type="text", text="Hello!")]
     mock_response.created_at = datetime.now(UTC)
 
-    mock_response.usage.input_tokens = 3
-    mock_response.usage.output_tokens = 122
-    mock_response.usage.cache_read_input_tokens = 13332
-    mock_response.usage.cache_creation_input_tokens = 0
-    mock_response.usage.cache_creation = None
+    mock_response.usage = Usage(
+        input_tokens=3,
+        output_tokens=122,
+        cache_read_input_tokens=13332,
+        cache_creation_input_tokens=0,
+        cache_creation=None,
+    )
 
     result = _convert_response(mock_response)
 
@@ -1312,13 +1314,15 @@ def test_convert_response_includes_cache_creation_tokens() -> None:
     mock_response.content = [MagicMock(type="text", text="Hello!")]
     mock_response.created_at = datetime.now(UTC)
 
-    mock_response.usage.input_tokens = 3
-    mock_response.usage.output_tokens = 122
-    mock_response.usage.cache_read_input_tokens = 0
-    mock_response.usage.cache_creation_input_tokens = 13332
-    mock_response.usage.cache_creation = CacheCreation(
-        ephemeral_5m_input_tokens=12000,
-        ephemeral_1h_input_tokens=1332,
+    mock_response.usage = Usage(
+        input_tokens=3,
+        output_tokens=122,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=13332,
+        cache_creation=CacheCreation(
+            ephemeral_5m_input_tokens=12000,
+            ephemeral_1h_input_tokens=1332,
+        ),
     )
 
     result = _convert_response(mock_response)
@@ -1349,11 +1353,13 @@ def test_convert_response_without_cache_tokens() -> None:
     mock_response.content = [MagicMock(type="text", text="Hello!")]
     mock_response.created_at = datetime.now(UTC)
 
-    mock_response.usage.input_tokens = 100
-    mock_response.usage.output_tokens = 50
-    mock_response.usage.cache_read_input_tokens = None
-    mock_response.usage.cache_creation_input_tokens = None
-    mock_response.usage.cache_creation = None
+    mock_response.usage = Usage(
+        input_tokens=100,
+        output_tokens=50,
+        cache_read_input_tokens=None,
+        cache_creation_input_tokens=None,
+        cache_creation=None,
+    )
 
     result = _convert_response(mock_response)
 
@@ -1372,11 +1378,13 @@ def test_convert_response_preserves_zero_cache_read_tokens() -> None:
     mock_response.stop_reason = "end_turn"
     mock_response.content = [MagicMock(type="text", text="Hello!")]
     mock_response.created_at = datetime.now(UTC)
-    mock_response.usage.input_tokens = 3
-    mock_response.usage.output_tokens = 1
-    mock_response.usage.cache_read_input_tokens = 0
-    mock_response.usage.cache_creation_input_tokens = None
-    mock_response.usage.cache_creation = None
+    mock_response.usage = Usage(
+        input_tokens=3,
+        output_tokens=1,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=None,
+        cache_creation=None,
+    )
 
     result = _convert_response(mock_response)
 

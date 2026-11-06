@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.base import BaseAnthropicProvider, _messages_betas, _pop_anthropic_beta_header
-from any_llm.types.completion import CompletionParams, ReasoningEffort
+from any_llm.types.completion import ChatCompletion, CompletionParams, ReasoningEffort
 from any_llm.types.messages import (
     CompactionDelta,
     ContentBlockDeltaEvent,
@@ -589,6 +589,88 @@ async def test_anthropic_sdk_caller_extra_body_overrides_inference_geo_on_typed_
     request_body = json.loads(requests[0].content)
     assert request_body["inference_geo"] == "global"
     assert request_body["custom_field"] == "kept"
+
+
+@pytest.mark.parametrize(
+    ("reported", "expected_geo", "expected_tier"),
+    [({"inference_geo": "us", "service_tier": "priority"}, "us", "priority"), ({}, None, None)],
+    ids=["reported", "absent"],
+)
+@pytest.mark.asyncio
+async def test_anthropic_completion_reports_inference_geo_and_service_tier(
+    reported: dict[str, str], expected_geo: str | None, expected_tier: str | None
+) -> None:
+    message = _sdk_message_response()
+    message["usage"] = {**message["usage"], **reported}
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=message)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        completion = await provider.acompletion(
+            model="claude-opus-5", messages=[{"role": "user", "content": "Hello"}], max_tokens=1024
+        )
+
+    assert isinstance(completion, ChatCompletion)
+    assert completion.usage is not None
+    assert completion.usage.inference_geo == expected_geo
+    assert completion.service_tier == expected_tier
+
+
+@pytest.mark.asyncio
+async def test_anthropic_completion_stream_reports_inference_geo_from_message_start() -> None:
+    start_message = {**_sdk_message_response(), "content": [], "stop_reason": None}
+    start_message["usage"] = {
+        "input_tokens": 10,
+        "output_tokens": 1,
+        "inference_geo": "us",
+        "service_tier": "standard",
+    }
+    events = [
+        ("message_start", {"type": "message_start", "message": start_message}),
+        (
+            "content_block_start",
+            {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        ),
+        (
+            "content_block_delta",
+            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hi"}},
+        ),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        (
+            "message_delta",
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": {"output_tokens": 5},
+            },
+        ),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text="".join(f"event: {event}\ndata: {json.dumps(data)}\n\n" for event, data in events),
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        stream = await provider.acompletion(
+            model="claude-opus-5", messages=[{"role": "user", "content": "Hello"}], max_tokens=1024, stream=True
+        )
+        assert isinstance(stream, AsyncIterator)
+        chunks = [chunk async for chunk in stream]
+
+    usage_chunks = [chunk for chunk in chunks if chunk.usage is not None]
+    assert len(usage_chunks) == 1
+    usage_chunk = usage_chunks[0]
+    assert usage_chunk.usage is not None
+    assert usage_chunk.usage.completion_tokens == 5
+    assert usage_chunk.usage.inference_geo == "us"
+    assert usage_chunk.service_tier == "standard"
 
 
 @pytest.mark.asyncio
