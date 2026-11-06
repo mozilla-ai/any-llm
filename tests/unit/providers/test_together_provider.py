@@ -927,3 +927,32 @@ async def test_speech_rejects_instructions_and_speed(field: str, value: Any) -> 
             )
 
     create.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("api_base", "expected_url"),
+    [
+        ("https://api.together.ai/v1", "https://api.together.ai/v1/models"),
+        ("https://api.together.ai/v1/", "https://api.together.ai/v1/models"),
+        ("https://proxy.example/together", "https://proxy.example/together/v1/models"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_together_api_base_does_not_repeat_the_api_version(api_base: str, expected_url: str) -> None:
+    from any_llm.providers.together.together import TogetherProvider
+
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=[])
+
+    provider = TogetherProvider(
+        api_key="test-api-key",
+        api_base=api_base,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    await provider.alist_models()
+
+    assert requests[0].url == expected_url
