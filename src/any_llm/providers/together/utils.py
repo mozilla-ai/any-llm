@@ -63,8 +63,9 @@ def _create_openai_chunk_from_together_chunk(together_chunk: TogetherChatComplet
             content = getattr(delta_content, "content", None)
             if getattr(delta_content, "role", None):
                 role = cast("Literal['assistant', 'user', 'system']", delta_content.role)
-            if hasattr(delta_content, "reasoning") and delta_content.reasoning:
-                reasoning = Reasoning(content=delta_content.reasoning)
+            reasoning_text = delta_content.reasoning or delta_content.reasoning_content
+            if reasoning_text:
+                reasoning = Reasoning(content=reasoning_text)
 
         delta = ChoiceDelta(content=content, role=role, reasoning=reasoning)
 
@@ -164,13 +165,12 @@ def _convert_together_response_to_chat_completion(response_data: dict[str, Any],
     )
 
 
-def _convert_models_list(response: Any) -> list[Model]:
-    """Convert Together model listing response to OpenAI-compatible Model objects."""
-    raw_models = response.data if hasattr(response, "data") else response
+def _convert_models_list(response: list[dict[str, Any]]) -> list[Model]:
+    """Convert Together's ``GET /v1/models`` response to OpenAI-compatible Model objects."""
     converted_models: list[Model] = []
 
-    for model in raw_models:
-        data = model.model_dump() if hasattr(model, "model_dump") else dict(vars(model))
+    for model in response:
+        data = dict(model)
         if data.get("object") is None:
             data["object"] = "model"
         if data.get("created") is None:
