@@ -512,6 +512,85 @@ async def test_anthropic_sdk_accepts_native_messages_parameters() -> None:
     assert request_body["service_tier"] == "standard_only"
 
 
+class _Region(BaseModel):
+    name: str
+
+
+def _sdk_sse_response(message: dict[str, Any]) -> httpx2.Response:
+    events = [
+        ("message_start", {"type": "message_start", "message": message}),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+    return httpx2.Response(
+        200,
+        headers={"content-type": "text/event-stream"},
+        text="".join(f"event: {event}\ndata: {json.dumps(data)}\n\n" for event, data in events),
+    )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "output_format",
+    [None, _Region, {"format": {"type": "json_schema", "schema": {"type": "object"}}}],
+    ids=["plain", "typed", "raw"],
+)
+@pytest.mark.parametrize("betas", [None, ["compact-2026-01-12"]], ids=["ga", "beta"])
+@pytest.mark.asyncio
+async def test_anthropic_sdk_sends_inference_geo(
+    stream: bool, output_format: type | dict[str, Any] | None, betas: list[str] | None
+) -> None:
+    requests: list[httpx2.Request] = []
+    message = {**_sdk_message_response(), "content": [{"type": "text", "text": '{"name": "us"}'}]}
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return _sdk_sse_response(message) if stream else httpx2.Response(200, json=message)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        result = await provider.amessages(
+            model="claude-opus-5",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            stream=stream,
+            output_format=output_format,
+            betas=betas,
+            inference_geo="us",
+        )
+        if stream:
+            assert isinstance(result, AsyncIterator)
+            async for _ in result:
+                pass
+
+    assert len(requests) == 1
+    assert json.loads(requests[0].content)["inference_geo"] == "us"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_sdk_caller_extra_body_overrides_inference_geo_on_typed_parse() -> None:
+    requests: list[httpx2.Request] = []
+    message = {**_sdk_message_response(), "content": [{"type": "text", "text": '{"name": "us"}'}]}
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json=message)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        provider = AnthropicProvider(api_key="test-key", http_client=http_client)
+        await provider.amessages(
+            model="claude-opus-5",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=1024,
+            output_format=_Region,
+            inference_geo="us",
+            extra_body={"inference_geo": "global", "custom_field": "kept"},
+        )
+
+    request_body = json.loads(requests[0].content)
+    assert request_body["inference_geo"] == "global"
+    assert request_body["custom_field"] == "kept"
+
+
 @pytest.mark.asyncio
 async def test_anthropic_sdk_caller_extra_body_overrides_sampling_parameters() -> None:
     requests: list[httpx2.Request] = []

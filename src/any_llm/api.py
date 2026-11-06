@@ -602,6 +602,7 @@ def messages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     container: str | dict[str, Any] | None = None,
+    inference_geo: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,
     api_key: str | None = None,
@@ -638,6 +639,10 @@ def messages(
             A string reuses an existing container. An object selects Skills for a fresh
             container or reuses one while attaching Skills. See
             [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
+        inference_geo: Anthropic's region to run the request in, such as ``us``. When omitted,
+            Anthropic uses the workspace's ``default_inference_geo``. The response reports where
+            the request ran in ``usage.inference_geo``. Providers without a matching option raise
+            `UnsupportedParameterError`.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -690,6 +695,7 @@ def messages(
         context_management=context_management,
         betas=betas,
         container=container,
+        inference_geo=inference_geo,
         output_format=output_format,
         timeout=timeout,
         **kwargs,
@@ -718,6 +724,7 @@ async def amessages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     container: str | dict[str, Any] | None = None,
+    inference_geo: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     api_key: str | None = None,
@@ -754,6 +761,10 @@ async def amessages(
             A string reuses an existing container. An object selects Skills for a fresh
             container or reuses one while attaching Skills. See
             [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
+        inference_geo: Anthropic's region to run the request in, such as ``us``. When omitted,
+            Anthropic uses the workspace's ``default_inference_geo``. The response reports where
+            the request ran in ``usage.inference_geo``. Providers without a matching option raise
+            `UnsupportedParameterError`.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -806,6 +817,7 @@ async def amessages(
         context_management=context_management,
         betas=betas,
         container=container,
+        inference_geo=inference_geo,
         output_format=output_format,
         timeout=timeout,
         **kwargs,
