@@ -71,3 +71,4 @@ Parameters for video generation requests.
 | `reference_videos` | `list[str] \| None` | Video URLs or provider file URIs the video takes its motion, subjects or style from. |
 | `first_frame` | `str \| None` | Image the video starts from, in the same forms as `reference_images`. |
 | `last_frame` | `str \| None` | Image the video ends on, in the same forms as `reference_images`. |
+| `generate_audio` | `bool \| None` | Whether the video carries a sound track. ``None`` leaves the provider's default. |

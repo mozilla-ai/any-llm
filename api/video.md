@@ -26,6 +26,7 @@ def video_generation(
     reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
+    generate_audio: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -54,6 +55,7 @@ async def avideo_generation(
     reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
+    generate_audio: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -79,6 +81,7 @@ async def avideo_generation(
 | `reference_videos` | `list[str] \| None` | None | Video URLs the video should take its motion, subjects or style from. |
 | `first_frame` | `str \| None` | None | Image URL to start the video from. |
 | `last_frame` | `str \| None` | None | Image URL to end the video on. |
+| `generate_audio` | `bool \| None` | None | Whether the video carries a sound track. None leaves the provider's default. |
 | `api_key` | `str \| None` | None | API key for the provider. |
 | `api_base` | `str \| None` | None | Base URL for the provider API. |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation. |
