@@ -538,11 +538,72 @@ def test_convert_inference_response_fails_a_success_without_a_video() -> None:
     assert job.error.message == "DeepInfra returned no video."
 
 
+def test_convert_inference_response_reports_the_provider_charge() -> None:
+    inference_status = {"status": "succeeded", "cost": 0.38991, "tokens_input": 13, "tokens_generated": 50625}
+    job = convert_inference_response(_response(inference_status=inference_status), model=SEEDANCE, api_base=API_BASE)
+
+    assert job.cost == 0.38991
+    assert job.tokens == 50638
+
+
+def test_convert_inference_response_counts_only_the_tokens_reported() -> None:
+    inference_status = {"status": "succeeded", "tokens_generated": 50625}
+    job = convert_inference_response(_response(inference_status=inference_status), model=SEEDANCE, api_base=API_BASE)
+
+    assert job.cost is None
+    assert job.tokens == 50625
+
+
+def test_convert_inference_response_reports_a_whole_dollar_cost_as_a_float() -> None:
+    job = convert_inference_response(
+        _response(inference_status={"status": "succeeded", "cost": 1}), model=SEEDANCE, api_base=API_BASE
+    )
+
+    assert job.cost == 1.0
+    assert isinstance(job.cost, float)
+
+
+def test_convert_inference_response_reports_no_charge_without_an_inference_status() -> None:
+    job = convert_inference_response(_response(inference_status=None), model=SEEDANCE, api_base=API_BASE)
+
+    assert job.cost is None
+    assert job.tokens is None
+
+
+@pytest.mark.parametrize("value", [None, "0.5", True])
+def test_convert_inference_response_ignores_a_charge_that_is_not_a_number(value: object) -> None:
+    inference_status = {"status": "succeeded", "cost": value, "tokens_input": value, "tokens_generated": value}
+    job = convert_inference_response(_response(inference_status=inference_status), model=SEEDANCE, api_base=API_BASE)
+
+    assert job.cost is None
+    assert job.tokens is None
+
+
+def test_convert_inference_response_reports_the_charge_of_a_failed_render() -> None:
+    inference_status = {"status": "failed", "cost": 0.0, "tokens_input": 0, "tokens_generated": 0}
+    job = convert_inference_response(
+        _response(video_url=None, inference_status=inference_status), model=SEEDANCE, api_base=API_BASE
+    )
+
+    assert job.status == "failed"
+    assert job.cost == 0.0
+    assert job.tokens == 0
+
+
 def test_convert_inference_response_rejects_an_unknown_status() -> None:
     with pytest.raises(ProviderError, match="unknown inference status 'exploded'"):
         convert_inference_response(
             _response(inference_status={"status": "exploded"}), model=SEEDANCE, api_base=API_BASE
         )
+
+
+@pytest.mark.parametrize("cost", [float("nan"), float("inf"), float("-inf")])
+def test_convert_inference_response_ignores_a_cost_that_is_not_finite(cost: float) -> None:
+    job = convert_inference_response(
+        _response(inference_status={"status": "succeeded", "cost": cost}), model=SEEDANCE, api_base=API_BASE
+    )
+
+    assert job.cost is None
 
 
 def test_provider_supports_video_generation(provider: DeepinfraProvider) -> None:
@@ -744,6 +805,7 @@ async def test_retrieve_video_returns_a_job_started_in_this_process(provider: De
         job = await provider.avideo_generation(SEEDANCE, "a rubber duck")
 
     assert await provider.aretrieve_video(job.id) is job
+    assert (await provider.aretrieve_video(job.id)).cost == 0.5
     # The store is class-wide, so the module-level functions reach it through a fresh instance.
     assert await DeepinfraProvider(api_key="other-key").aretrieve_video(job.id) is job
 

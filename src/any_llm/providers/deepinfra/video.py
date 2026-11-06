@@ -8,6 +8,7 @@ image as a typed ``media`` item and spells it ``720P``, Wan 2.6 takes a ``size``
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, NoReturn
 from uuid import uuid4
 
@@ -272,6 +273,24 @@ def _absolute_url(url: str, api_base: str) -> str:
     return f"{scheme}://{host}/{url.lstrip('/')}"
 
 
+def _number(value: object) -> int | float | None:
+    """``value`` when it is a finite JSON number, else None (``bool`` is an ``int`` in Python, so it is excluded)."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        return None
+    return value
+
+
+def _billed_tokens(inference_status: dict[str, Any]) -> int | None:
+    """The tokens DeepInfra billed, or None when it reported no count."""
+    # A video model has one per-token price on DeepInfra, so the prompt and the rendered frames bill alike.
+    counts = [
+        count
+        for field in ("tokens_input", "tokens_generated")
+        if isinstance(count := _number(inference_status.get(field)), int)
+    ]
+    return sum(counts) if counts else None
+
+
 def convert_inference_response(response: dict[str, Any], *, model: str, api_base: str) -> VideoJob:
     """Read a synchronous inference reply as a finished VideoJob.
 
@@ -300,10 +319,13 @@ def convert_inference_response(response: dict[str, Any], *, model: str, api_base
         detail = response.get("detail") or response.get("error") or "DeepInfra returned no video."
         error = VideoError(message=str(detail))
 
+    cost = _number(inference_status.get("cost"))
     return VideoJob(
         id=str(response.get("request_id") or f"deepinfra-{uuid4().hex}"),
         model=model,
         status=status,
+        cost=None if cost is None else float(cost),
+        tokens=_billed_tokens(inference_status),
         error=error,
         outputs=outputs,
     )
