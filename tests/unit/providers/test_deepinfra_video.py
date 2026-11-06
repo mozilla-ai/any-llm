@@ -28,6 +28,7 @@ SEEDANCE_SCHEMA: dict[str, Any] = {
         "last_frame_image": {"type": "string", "format": "binary"},
         "reference_images": {"type": "array", "items": {"type": "string"}},
         "reference_audios": {"type": "array", "items": {"type": "string"}},
+        "reference_videos": {"type": "array", "items": {"type": "string"}},
         "resolution": {"type": "string", "enum": ["480p", "720p", "1080p"]},
         "aspect_ratio": {"type": "string", "enum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"]},
         "duration": {"type": "integer"},
@@ -140,6 +141,7 @@ def test_convert_video_params_maps_every_field_to_seedances_names() -> None:
         seed=7,
         reference_images=["https://img/ref.png"],
         reference_audios=["https://a/beat.mp3"],
+        reference_videos=["https://v/moves.mp4", "https://v/turn.mp4"],
         first_frame="data:image/png;base64,Zmlyc3Q=",
         last_frame="data:image/png;base64,bGFzdA==",
     )
@@ -151,6 +153,7 @@ def test_convert_video_params_maps_every_field_to_seedances_names() -> None:
         "seed": 7,
         "reference_images": ["https://img/ref.png"],
         "reference_audios": ["https://a/beat.mp3"],
+        "reference_videos": ["https://v/moves.mp4", "https://v/turn.mp4"],
         "first_frame_image": "data:image/png;base64,Zmlyc3Q=",
         "last_frame_image": "data:image/png;base64,bGFzdA==",
     }
@@ -164,6 +167,7 @@ def test_convert_video_params_maps_every_field_to_wan3s_media_items() -> None:
         seed=7,
         reference_images=["https://img/ref.png"],
         reference_audios=["https://a/beat.mp3"],
+        reference_videos=["https://v/moves.mp4", "https://v/turn.mp4"],
         first_frame="https://img/first.png",
         last_frame="https://img/last.png",
     )
@@ -180,6 +184,8 @@ def test_convert_video_params_maps_every_field_to_wan3s_media_items() -> None:
             {"type": "last_frame", "url": "https://img/last.png"},
             {"type": "reference_image", "url": "https://img/ref.png"},
             {"type": "reference_audio", "url": "https://a/beat.mp3"},
+            {"type": "reference_video", "url": "https://v/moves.mp4"},
+            {"type": "reference_video", "url": "https://v/turn.mp4"},
             {"type": "reference_video", "url": "https://v.mp4"},
         ],
     }
