@@ -117,6 +117,40 @@ class VideoGenerationParams(BaseModel):
         """Convert to kwargs for the provider API call, excluding None values."""
         return {k: v for k, v in self.model_dump(exclude={"model_id"}).items() if v is not None}
 
+    def merge_provider_options(self, fields: dict[str, tuple[str, Any]], options: dict[str, Any]) -> dict[str, Any]:
+        """Return the request fields the shared parameters set, with provider ``options`` laid over them.
+
+        A gateway prices a render from the shared parameters, so an option may repeat a field one
+        of them set but not change it.
+
+        Args:
+            fields: Each request field a shared parameter set, mapped to that parameter's name and the value it set.
+            options: Provider options for the same level of the request.
+
+        Raises:
+            InvalidRequestError: If an option sets one of ``fields`` to another value.
+
+        """
+        self.check_provider_options(fields, options)
+        return {field: value for field, (_, value) in fields.items()} | options
+
+    def check_provider_options(self, fields: dict[str, tuple[str, Any]], options: dict[str, Any]) -> None:
+        """Raise when provider ``options`` set one of ``fields`` to another value than its shared parameter did.
+
+        Args:
+            fields: Each request field a shared parameter set, mapped to that parameter's name and the value it set.
+            options: Provider options that can reach the same request fields.
+
+        Raises:
+            InvalidRequestError: If an option sets one of ``fields`` to another value.
+
+        """
+        for field, (parameter_name, value) in fields.items():
+            if field in options and options[field] != value:
+                shared = getattr(self, parameter_name)
+                msg = f"{parameter_name}={shared!r} conflicts with {field}={options[field]!r}; pass only one of them"
+                raise InvalidRequestError(msg)
+
     def parse_size(self) -> tuple[int, int] | None:
         """Return ``(width, height)`` from ``size``, or ``None`` when no size was given.
 

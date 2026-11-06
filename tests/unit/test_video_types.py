@@ -90,3 +90,31 @@ def test_parse_size_splits_width_and_height(size: str) -> None:
 def test_parse_size_rejects_malformed_sizes(size: str) -> None:
     with pytest.raises(InvalidRequestError, match="WIDTHxHEIGHT"):
         VideoGenerationParams(model_id="m", prompt="a cat", size=size).parse_size()
+
+
+def test_merge_provider_options_lays_options_over_the_shared_fields() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", seconds=5)
+    merged = params.merge_provider_options({"duration": ("seconds", 5)}, {"fps": 24})
+    assert merged == {"duration": 5, "fps": 24}
+
+
+def test_merge_provider_options_accepts_an_option_that_agrees_with_a_shared_field() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", seconds=5)
+    assert params.merge_provider_options({"duration": ("seconds", 5)}, {"duration": 5}) == {"duration": 5}
+
+
+def test_merge_provider_options_rejects_an_option_that_contradicts_a_shared_field() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", size="1280x720")
+    with pytest.raises(InvalidRequestError, match="size='1280x720' conflicts with width=1920; pass only one of them"):
+        params.merge_provider_options({"width": ("size", 1280), "height": ("size", 720)}, {"width": 1920})
+
+
+def test_check_provider_options_accepts_options_that_agree_or_set_other_fields() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", seconds=5)
+    params.check_provider_options({"duration": ("seconds", 5)}, {"duration": 5, "fps": 24})
+
+
+def test_check_provider_options_rejects_an_option_that_contradicts_a_shared_field() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", seconds=5)
+    with pytest.raises(InvalidRequestError, match="seconds=5 conflicts with duration=10"):
+        params.check_provider_options({"duration": ("seconds", 5)}, {"duration": 10})

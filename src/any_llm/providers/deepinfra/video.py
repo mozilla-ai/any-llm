@@ -30,6 +30,14 @@ _REFERENCE_AUDIOS_FIELD = "reference_audios"
 # Wan 2.6 and 2.7 take a single clip under a field of their own.
 _SINGLE_AUDIO_FIELDS = ("audio_url", "driving_audio")
 _RATIO_FIELDS = ("aspect_ratio", "ratio")
+# The any-llm field each typed ``media`` item comes from.
+_MEDIA_PARAMETERS = {
+    "first_frame": "first_frame",
+    "last_frame": "last_frame",
+    "reference_image": "reference_images",
+    "reference_video": "reference_videos",
+    "reference_audio": "reference_audios",
+}
 # Seedance and Veo, Pixverse 6, then Wan 3.0. p-video's ``audio`` is a clip URL, so only a boolean counts.
 _GENERATE_AUDIO_FIELDS = ("generate_audio", "generate_audio_switch", "audio")
 
@@ -87,7 +95,8 @@ class _BodyBuilder:
         self.params = params
         self.schema = schema
         self.provider_name = provider_name
-        self.body: dict[str, Any] = {"prompt": params.prompt}
+        # Each body field a shared parameter set, with that parameter's name, so kwargs cannot change it unseen.
+        self.fields: dict[str, tuple[str, Any]] = {"prompt": ("prompt", params.prompt)}
         self.media: list[dict[str, Any]] = []
 
     def reject(self, parameter_name: str) -> NoReturn:
@@ -101,26 +110,22 @@ class _BodyBuilder:
         """A field the schema has under one fixed name."""
         if field not in self.schema.fields:
             self.reject(parameter_name)
-        self.body[field] = value
+        self.fields[field] = (parameter_name, value)
 
-    def switch(self, parameter_name: str, field_names: tuple[str, ...], value: bool, kwargs: dict[str, Any]) -> None:
-        """A yes or no the model takes as one of its boolean fields, unless ``kwargs`` set that field the other way."""
+    def switch(self, parameter_name: str, field_names: tuple[str, ...], value: bool) -> None:
+        """A yes or no the model takes as one of its boolean fields."""
         field = next(
             (name for name in field_names if (self.schema.fields.get(name) or {}).get("type") == "boolean"), None
         )
         if field is None:
             self.reject(parameter_name)
-        # A gateway bills on the shared field, so the request must not render the opposite.
-        if field in kwargs and kwargs[field] != value:
-            msg = f"{parameter_name}={value} conflicts with {field}={kwargs[field]!r}; pass only one of them"
-            raise InvalidRequestError(msg)
-        self.body[field] = value
+        self.fields[field] = (parameter_name, value)
 
     def image(self, parameter_name: str, value: str, field_names: tuple[str, ...], media_type: str) -> None:
         """An image as the model's own field, or as a typed ``media`` item when that is how it takes images."""
         field = next((name for name in field_names if name in self.schema.fields), None)
         if field is not None:
-            self.body[field] = value
+            self.fields[field] = (parameter_name, value)
         elif media_type in self.schema.media_types():
             self.media.append({"type": media_type, "url": value})
         else:
@@ -129,7 +134,7 @@ class _BodyBuilder:
     def references(self, parameter_name: str, urls: list[str], media_type: str) -> None:
         """References as the model's list field of the same name, or as typed ``media`` items."""
         if parameter_name in self.schema.fields:
-            self.body[parameter_name] = list(urls)
+            self.fields[parameter_name] = (parameter_name, list(urls))
         elif media_type in self.schema.media_types():
             self.media.extend({"type": media_type, "url": url} for url in urls)
         else:
@@ -138,14 +143,14 @@ class _BodyBuilder:
     def reference_audios(self, audios: list[str]) -> None:
         """Audio as the model's list field, as ``media`` items, or as its single-clip field when there is one clip."""
         if _REFERENCE_AUDIOS_FIELD in self.schema.fields:
-            self.body[_REFERENCE_AUDIOS_FIELD] = list(audios)
+            self.fields[_REFERENCE_AUDIOS_FIELD] = ("reference_audios", list(audios))
         elif "reference_audio" in self.schema.media_types():
             self.media.extend({"type": "reference_audio", "url": audio} for audio in audios)
         elif (field := next((name for name in _SINGLE_AUDIO_FIELDS if name in self.schema.fields), None)) is not None:
             if len(audios) != 1:
                 msg = f"{self.schema.model} takes one audio clip as {field}, not {len(audios)}"
                 raise InvalidRequestError(msg)
-            self.body[field] = audios[0]
+            self.fields[field] = ("reference_audios", audios[0])
         else:
             self.reject("reference_audios")
 
@@ -163,7 +168,7 @@ class _BodyBuilder:
             if f"{width}*{height}" not in sizes:
                 msg = f"{self.schema.model} renders {', '.join(sizes)}, not {shape.described!r}"
                 raise InvalidRequestError(msg)
-            self.body["size"] = f"{width}*{height}"
+            self.fields["size"] = ("size", f"{width}*{height}")
             return
         if shape.short_side is not None:
             self.resolution_tier(shape.short_side, shape.described)
@@ -179,7 +184,7 @@ class _BodyBuilder:
         if resolution is None:
             msg = f"{self.schema.model} renders video with a resolution of {', '.join(resolutions)}, not {described!r}"
             raise InvalidRequestError(msg)
-        self.body["resolution"] = resolution
+        self.fields["resolution"] = ("size" if self.params.size is not None else "resolution", resolution)
 
     def ratio(self, ratio: float, described: str) -> None:
         """The width over height as the nearest ``W:H`` value the model lists."""
@@ -198,10 +203,15 @@ class _BodyBuilder:
         if nearest is None or abs(ratios[nearest] - ratio) / ratio > _ASPECT_RATIO_TOLERANCE:
             msg = f"{self.schema.model} renders video with an aspect ratio of {', '.join(ratios)}, not {described!r}"
             raise InvalidRequestError(msg)
-        self.body[ratio_field] = nearest
+        self.fields[ratio_field] = ("size" if self.params.size is not None else "aspect_ratio", nearest)
 
     def build(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """The request body: every set any-llm field under the model's name, then ``kwargs`` as is."""
+        """The request body: every set any-llm field under the model's name, then ``kwargs`` as is.
+
+        Raises:
+            InvalidRequestError: If ``kwargs`` set a field an any-llm field set, to another value.
+
+        """
         params = self.params
         if params.seconds is not None:
             self.plain("seconds", "duration", params.seconds)
@@ -220,12 +230,25 @@ class _BodyBuilder:
         if params.reference_videos:
             self.references("reference_videos", params.reference_videos, "reference_video")
         if params.generate_audio is not None:
-            self.switch("generate_audio", _GENERATE_AUDIO_FIELDS, params.generate_audio, kwargs)
-        # Caller-provided media items merge with the ones any-llm's fields produced.
-        self.media.extend(kwargs.pop("media", None) or [])
-        if self.media:
-            self.body["media"] = self.media
-        return self.body | kwargs
+            self.switch("generate_audio", _GENERATE_AUDIO_FIELDS, params.generate_audio)
+        # Each kind of media item any-llm produced stands for one of its fields, so a caller's items
+        # of that kind must be the same ones; items of any other kind are added.
+        caller_media = list(kwargs.pop("media", None) or [])
+        produced: dict[str, list[Any]] = {}
+        for item in self.media:
+            produced.setdefault(item["type"], []).append(item["url"])
+        passed: dict[str, list[Any]] = {}
+        for item in caller_media:
+            passed.setdefault(item.get("type"), []).append(item.get("url"))
+        params.check_provider_options(
+            {f"media[{kind}]": (_MEDIA_PARAMETERS[kind], urls) for kind, urls in produced.items()},
+            {f"media[{kind}]": urls for kind, urls in passed.items()},
+        )
+        media = [item for item in self.media if item["type"] not in passed] + caller_media
+        body = params.merge_provider_options(self.fields, kwargs)
+        if media:
+            body["media"] = media
+        return body
 
 
 def convert_video_params(
@@ -234,7 +257,8 @@ def convert_video_params(
     """Translate VideoGenerationParams, plus pass-through kwargs, into the body of ``POST /v1/inference/{model}``.
 
     Each any-llm field goes in under whatever name the model's schema gives it. A field the
-    schema has no name for raises ``UnsupportedParameterError``; keyword arguments go in as is.
+    schema has no name for raises ``UnsupportedParameterError``. Keyword arguments go in as is,
+    unless one sets a field an any-llm field set to another value, which raises ``InvalidRequestError``.
     """
     return _BodyBuilder(params, schema, provider_name).build(kwargs)
 

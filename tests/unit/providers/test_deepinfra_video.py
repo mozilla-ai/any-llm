@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -187,9 +188,7 @@ def test_convert_video_params_maps_every_field_to_wan3s_media_items() -> None:
         last_frame="https://img/last.png",
         generate_audio=True,
     )
-    assert _convert(
-        params, _schema(WAN3, WAN3_SCHEMA), media=[{"type": "reference_video", "url": "https://v.mp4"}]
-    ) == {
+    assert _convert(params, _schema(WAN3, WAN3_SCHEMA)) == {
         "prompt": "a rubber duck",
         "duration": 10,
         "resolution": "720P",
@@ -203,7 +202,6 @@ def test_convert_video_params_maps_every_field_to_wan3s_media_items() -> None:
             {"type": "reference_audio", "url": "https://a/beat.mp3"},
             {"type": "reference_video", "url": "https://v/moves.mp4"},
             {"type": "reference_video", "url": "https://v/turn.mp4"},
-            {"type": "reference_video", "url": "https://v.mp4"},
         ],
     }
 
@@ -252,6 +250,93 @@ def test_convert_video_params_rejects_a_keyword_argument_that_contradicts_genera
 def test_convert_video_params_accepts_a_keyword_argument_that_agrees_with_generate_audio() -> None:
     body = _convert(_params(WAN3, generate_audio=False), _schema(WAN3, WAN3_SCHEMA), audio=False)
     assert body == {"prompt": "a rubber duck", "audio": False}
+
+
+@pytest.mark.parametrize(
+    ("model", "in_schema", "shared", "option", "message"),
+    [
+        (SEEDANCE, SEEDANCE_SCHEMA, {"seconds": 5}, {"duration": 10}, "seconds=5 conflicts with duration=10"),
+        (SEEDANCE, SEEDANCE_SCHEMA, {"seed": 1}, {"seed": 2}, "seed=1 conflicts with seed=2"),
+        (WAN26, WAN26_SCHEMA, {"negative_prompt": "blur"}, {"negative_prompt": "rain"}, "negative_prompt='blur'"),
+        (SEEDANCE, SEEDANCE_SCHEMA, {"resolution": "720p"}, {"resolution": "1080p"}, "resolution='720p'"),
+        (WAN3, WAN3_SCHEMA, {"aspect_ratio": "16:9"}, {"ratio": "9:16"}, "aspect_ratio='16:9' conflicts with ratio"),
+        (SEEDANCE, SEEDANCE_SCHEMA, {"size": "1280x720"}, {"resolution": "1080p"}, "size='1280x720'"),
+        (WAN26, WAN26_SCHEMA, {"size": "1280x720"}, {"size": "720*1280"}, "size='1280x720' conflicts with size"),
+        (SEEDANCE, SEEDANCE_SCHEMA, {"first_frame": "a.png"}, {"first_frame_image": "b.png"}, "first_frame='a.png'"),
+        (SEEDANCE, SEEDANCE_SCHEMA, {"reference_images": ["a"]}, {"reference_images": ["b"]}, "reference_images"),
+        (SEEDANCE, SEEDANCE_SCHEMA, {"reference_audios": ["a"]}, {"reference_audios": ["b"]}, "reference_audios"),
+        (WAN26, WAN26_SCHEMA, {"reference_audios": ["a"]}, {"audio_url": "b"}, "conflicts with audio_url='b'"),
+        (SEEDANCE, SEEDANCE_SCHEMA, {"reference_videos": ["a"]}, {"reference_videos": ["b"]}, "reference_videos"),
+    ],
+)
+def test_convert_video_params_rejects_a_keyword_argument_that_contradicts_a_shared_field(
+    model: str, in_schema: dict[str, Any], shared: dict[str, Any], option: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(InvalidRequestError, match=re.escape(message)):
+        _convert(_params(model, **shared), _schema(model, in_schema), **option)
+
+
+def test_convert_video_params_accepts_a_keyword_argument_that_agrees_with_a_shared_field() -> None:
+    body = _convert(_params(seconds=5, resolution="720p"), _schema(), duration=5, resolution="720p", fps=24)
+    assert body == {"prompt": "a rubber duck", "duration": 5, "resolution": "720p", "fps": 24}
+
+
+def test_convert_video_params_rejects_a_keyword_argument_that_contradicts_the_prompt() -> None:
+    with pytest.raises(InvalidRequestError, match="prompt='a rubber duck' conflicts with prompt='a goose'"):
+        _convert(_params(), _schema(), prompt="a goose")
+
+
+def test_convert_video_params_accepts_a_keyword_argument_that_repeats_the_prompt() -> None:
+    assert _convert(_params(), _schema(), prompt="a rubber duck") == {"prompt": "a rubber duck"}
+
+
+@pytest.mark.parametrize(
+    ("shared", "media", "message"),
+    [
+        (
+            {"first_frame": "a.png"},
+            [{"type": "first_frame", "url": "b.png"}],
+            "first_frame='a.png' conflicts with media[first_frame]=['b.png']",
+        ),
+        (
+            {"first_frame": "a.png"},
+            [{"type": "first_frame", "url": "b.png"}, {"type": "first_frame", "url": "a.png"}],
+            "first_frame='a.png' conflicts with media[first_frame]=['b.png', 'a.png']",
+        ),
+        (
+            {"reference_images": ["r.png"]},
+            [{"type": "reference_image", "url": "s.png"}],
+            "reference_images=['r.png'] conflicts with media[reference_image]=['s.png']",
+        ),
+        (
+            {"reference_videos": ["v.mp4"]},
+            [{"type": "reference_video", "url": "v.mp4"}, {"type": "reference_video", "url": "w.mp4"}],
+            "reference_videos=['v.mp4'] conflicts with media[reference_video]=['v.mp4', 'w.mp4']",
+        ),
+    ],
+)
+def test_convert_video_params_rejects_media_items_that_contradict_a_shared_field(
+    shared: dict[str, Any], media: list[dict[str, str]], message: str
+) -> None:
+    with pytest.raises(InvalidRequestError, match=re.escape(message)):
+        _convert(_params(WAN3, **shared), _schema(WAN3, WAN3_SCHEMA), media=media)
+
+
+def test_convert_video_params_keeps_one_copy_of_media_items_the_caller_repeats() -> None:
+    body = _convert(
+        _params(WAN3, last_frame="a.png", reference_images=["r.png"]),
+        _schema(WAN3, WAN3_SCHEMA),
+        media=[
+            {"type": "last_frame", "url": "a.png"},
+            {"type": "reference_image", "url": "r.png"},
+            {"type": "reference_video", "url": "v.mp4"},
+        ],
+    )
+    assert body["media"] == [
+        {"type": "last_frame", "url": "a.png"},
+        {"type": "reference_image", "url": "r.png"},
+        {"type": "reference_video", "url": "v.mp4"},
+    ]
 
 
 def test_convert_video_params_rejects_generate_audio_where_audio_is_not_a_switch() -> None:
@@ -571,6 +656,36 @@ async def test_video_generation_rejects_extra_body_that_contradicts_generate_aud
         await provider.avideo_generation(
             SEEDANCE, "a rubber duck", generate_audio=False, extra_body={"generate_audio": True}
         )
+
+    assert post.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_video_generation_rejects_extra_body_that_contradicts_seconds_before_posting(
+    provider: DeepinfraProvider,
+) -> None:
+    post = AsyncMock(return_value=_response())
+    with (
+        patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": SEEDANCE_SCHEMA})),
+        patch.object(provider.client, "post", post),
+        pytest.raises(InvalidRequestError, match="seconds=5 conflicts with duration=10"),
+    ):
+        await provider.avideo_generation(SEEDANCE, "a rubber duck", seconds=5, extra_body={"duration": 10})
+
+    assert post.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_video_generation_rejects_extra_body_that_contradicts_the_prompt_before_posting(
+    provider: DeepinfraProvider,
+) -> None:
+    post = AsyncMock(return_value=_response())
+    with (
+        patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": SEEDANCE_SCHEMA})),
+        patch.object(provider.client, "post", post),
+        pytest.raises(InvalidRequestError, match="prompt='a rubber duck' conflicts with prompt='a goose'"),
+    ):
+        await provider.avideo_generation(SEEDANCE, "a rubber duck", extra_body={"prompt": "a goose"})
 
     assert post.await_count == 0
 
