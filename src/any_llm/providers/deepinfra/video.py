@@ -280,17 +280,6 @@ def _number(value: object) -> int | float | None:
     return value
 
 
-def _billed_tokens(inference_status: dict[str, Any]) -> int | None:
-    """The tokens DeepInfra billed, or None when it reported no count."""
-    # A video model has one per-token price on DeepInfra, so the prompt and the rendered frames bill alike.
-    counts = [
-        count
-        for field in ("tokens_input", "tokens_generated")
-        if isinstance(count := _number(inference_status.get(field)), int)
-    ]
-    return sum(counts) if counts else None
-
-
 def convert_inference_response(response: dict[str, Any], *, model: str, api_base: str) -> VideoJob:
     """Read a synchronous inference reply as a finished VideoJob.
 
@@ -320,12 +309,14 @@ def convert_inference_response(response: dict[str, Any], *, model: str, api_base
         error = VideoError(message=str(detail))
 
     cost = _number(inference_status.get("cost"))
+    # The billed token count sits beside inference_status, not in it: cost is out_tokens times the per-token price.
+    tokens = _number(response.get("out_tokens"))
     return VideoJob(
         id=str(response.get("request_id") or f"deepinfra-{uuid4().hex}"),
         model=model,
         status=status,
         cost=None if cost is None else float(cost),
-        tokens=_billed_tokens(inference_status),
+        tokens=tokens if isinstance(tokens, int) else None,
         error=error,
         outputs=outputs,
     )
