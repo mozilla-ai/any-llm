@@ -68,5 +68,6 @@ Parameters for video generation requests.
 | `negative_prompt` | `str \| None` | What the video should not contain. |
 | `reference_images` | `list[str] \| None` | Image URLs, provider file URIs or ``data:`` URLs the video takes its subjects or style from. |
 | `reference_audios` | `list[str] \| None` | Audio URLs the video follows, for lip sync, beat-matched motion or a sound track. |
+| `reference_videos` | `list[str] \| None` | Video URLs or provider file URIs the video takes its motion, subjects or style from. |
 | `first_frame` | `str \| None` | Image the video starts from, in the same forms as `reference_images`. |
 | `last_frame` | `str \| None` | Image the video ends on, in the same forms as `reference_images`. |

@@ -23,6 +23,7 @@ def video_generation(
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
     api_key: str | None = None,
@@ -50,6 +51,7 @@ async def avideo_generation(
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
     api_key: str | None = None,
@@ -74,6 +76,7 @@ async def avideo_generation(
 | `negative_prompt` | `str \| None` | None | What the video should not contain. |
 | `reference_images` | `list[str] \| None` | None | Image URLs the video should take its subjects or style from. |
 | `reference_audios` | `list[str] \| None` | None | Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track. |
+| `reference_videos` | `list[str] \| None` | None | Video URLs the video should take its motion, subjects or style from. |
 | `first_frame` | `str \| None` | None | Image URL to start the video from. |
 | `last_frame` | `str \| None` | None | Image URL to end the video on. |
 | `api_key` | `str \| None` | None | API key for the provider. |
