@@ -222,6 +222,10 @@ class TogetherProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        if api_base is not None:
+            # SDK 3.x puts the API version in each path (/v1/chat/completions, /v2/videos), so a
+            # base URL ending in /v1, as SDK 2.x expected, would request /v1/v1/chat/completions.
+            api_base = api_base.rstrip("/").removesuffix("/v1")
         self.client = together.AsyncTogether(
             api_key=api_key,
             base_url=api_base,
