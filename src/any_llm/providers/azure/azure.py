@@ -19,6 +19,7 @@ try:
         _convert_response_format,
         _create_openai_chunk_from_azure_chunk,
         _create_openai_embedding_response_from_azure,
+        _ToolCallIndexer,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -128,8 +129,9 @@ class AzureProvider(AnyLLM):
             ),
         )
 
+        indexer = _ToolCallIndexer()
         async for chunk in azure_stream:
-            yield self._convert_completion_chunk_response(chunk)
+            yield _create_openai_chunk_from_azure_chunk(chunk, indexer)
 
     @override
     async def _acompletion(
