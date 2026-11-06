@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import httpx
 import pytest
 from together.types.chat import ChatCompletionChunk as TogetherChatCompletionChunk
 from together.types.chat.chat_completion_usage import ChatCompletionUsage as TogetherChatCompletionUsage
@@ -601,14 +602,14 @@ def test_together_convert_models_list_maps_to_openai_model() -> None:
     from any_llm.providers.together.together import TogetherProvider
 
     response = [
-        SimpleNamespace(
-            id="meta-llama/Llama-3.3-70B-Instruct-Turbo",
-            object="model",
-            created=1735689600,
-            organization="meta-llama",
-            type="chat",
-            context_length=131072,
-        )
+        {
+            "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "object": "model",
+            "created": 1735689600,
+            "organization": "meta-llama",
+            "type": "chat",
+            "context_length": 131072,
+        }
     ]
 
     result = TogetherProvider._convert_list_models_response(response)
@@ -627,7 +628,7 @@ def test_together_convert_models_list_maps_to_openai_model() -> None:
 def test_together_convert_models_list_fills_missing_fields() -> None:
     from any_llm.providers.together.together import TogetherProvider
 
-    response = [SimpleNamespace(id="deepseek-ai/DeepSeek-V3", created=None, object=None, organization=None)]
+    response = [{"id": "deepseek-ai/DeepSeek-V3", "created": None, "object": None, "organization": None}]
 
     result = TogetherProvider._convert_list_models_response(response)
 
@@ -638,29 +639,54 @@ def test_together_convert_models_list_fills_missing_fields() -> None:
     assert result[0].owned_by == "together"
 
 
-@patch("any_llm.providers.together.together.together.AsyncTogether")
-def test_together_list_models_calls_client_and_passes_kwargs(mock_together_class: MagicMock) -> None:
+def make_list_models_provider(requests: list[httpx.Request]) -> Any:
     from any_llm.providers.together.together import TogetherProvider
 
-    mock_client = AsyncMock()
-    mock_client.models.list.return_value = [
-        SimpleNamespace(
-            id="Qwen/Qwen2.5-72B-Instruct-Turbo",
-            object="model",
-            created=1735689600,
-            organization="Qwen",
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "Qwen/Qwen2.5-72B-Instruct-Turbo",
+                    "object": "model",
+                    "created": 1735689600,
+                    "organization": "Qwen",
+                }
+            ],
         )
-    ]
-    mock_together_class.return_value = mock_client
 
-    provider = TogetherProvider(api_key="test-api-key")
-    result = provider.list_models(dedicated=True)
+    return TogetherProvider(
+        api_key="test-api-key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
 
-    mock_client.models.list.assert_called_once_with(dedicated=True)
+
+@pytest.mark.asyncio
+async def test_together_list_models_reads_the_serverless_catalog() -> None:
+    requests: list[httpx.Request] = []
+    provider = make_list_models_provider(requests)
+
+    result = await provider.alist_models()
+
+    assert len(requests) == 1
+    assert requests[0].method == "GET"
+    assert requests[0].url == "https://api.together.ai/v1/models"
     assert len(result) == 1
     assert isinstance(result[0], Model)
     assert result[0].id == "Qwen/Qwen2.5-72B-Instruct-Turbo"
     assert result[0].owned_by == "Qwen"
+
+
+@pytest.mark.asyncio
+async def test_together_list_models_sends_kwargs_as_query_and_request_options() -> None:
+    requests: list[httpx.Request] = []
+    provider = make_list_models_provider(requests)
+
+    await provider.alist_models(dedicated=True, extra_headers={"X-Trace": "abc"}, timeout=5.0)
+
+    assert requests[0].url.params["dedicated"] == "true"
+    assert requests[0].headers["X-Trace"] == "abc"
+    assert requests[0].extensions["timeout"]["read"] == 5.0
 
 
 @pytest.mark.asyncio
