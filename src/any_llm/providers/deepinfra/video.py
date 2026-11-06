@@ -280,6 +280,31 @@ def _number(value: object) -> int | float | None:
     return value
 
 
+def callback_response(payload: object) -> dict[str, Any]:
+    """Flatten the body DeepInfra posts to a webhook into the shape of a synchronous inference reply.
+
+    The callback carries ``request_id`` and ``inference_status`` beside a ``results`` object
+    that holds the model's output, which a synchronous reply has at its top level.
+
+    Raises:
+        InvalidRequestError: If the body is not a JSON object with a ``request_id``, or ``results`` is not an object.
+
+    """
+    if not isinstance(payload, dict):
+        msg = f"A DeepInfra webhook callback is a JSON object, not {type(payload).__name__}"
+        raise InvalidRequestError(msg)
+    if not payload.get("request_id"):
+        msg = "The DeepInfra webhook callback has no request_id, so it names no video job"
+        raise InvalidRequestError(msg)
+    results = payload.get("results")
+    if results is None:
+        results = {}
+    elif not isinstance(results, dict):
+        msg = f"The results of a DeepInfra webhook callback are a JSON object, not {type(results).__name__}"
+        raise InvalidRequestError(msg)
+    return {key: value for key, value in payload.items() if key != "results"} | results
+
+
 def convert_inference_response(response: dict[str, Any], *, model: str, api_base: str) -> VideoJob:
     """Read an inference reply as a VideoJob.
 

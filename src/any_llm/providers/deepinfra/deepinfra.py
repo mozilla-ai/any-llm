@@ -9,7 +9,7 @@ from typing_extensions import override
 from any_llm.exceptions import InvalidRequestError, ProviderError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
-from .video import VideoSchema, convert_inference_response, convert_video_params
+from .video import VideoSchema, callback_response, convert_inference_response, convert_video_params
 
 if TYPE_CHECKING:
     from openai._types import RequestOptions
@@ -41,6 +41,9 @@ class DeepinfraProvider(BaseOpenAIProvider):
     _video_jobs: ClassVar[dict[str, VideoJob]] = {}
     """The newest video jobs by id, finished or waiting on their webhook. DeepInfra has no endpoint to
     look a request up afterwards, so this is the only place ``retrieve_video`` can read from."""
+
+    _video_api_bases: ClassVar[dict[str, str]] = {}
+    """The API base each webhook job was started on, which a relative ``video_url`` in its callback resolves against."""
 
     _video_schemas: ClassVar[dict[tuple[str, str], VideoSchema]] = {}
     """Each video model's input schema by API root and model, fetched once per process from ``GET /models/{model}``."""
@@ -88,9 +91,41 @@ class DeepinfraProvider(BaseOpenAIProvider):
             msg = "DeepInfra queued the video job with no request_id, so its webhook callback cannot be matched to it"
             raise ProviderError(msg)
         job = convert_inference_response(response, model=params.model_id, api_base=str(self.client.base_url))
+        if "webhook" in body:
+            self._video_api_bases[job.id] = str(self.client.base_url)
+        return self._keep_video_job(job)
+
+    @override
+    def _complete_video_job(self, payload: dict[str, Any], *, model: str | None) -> VideoJob:
+        response = callback_response(payload)
+        request_id = str(response["request_id"])
+        if model is None:
+            queued = self._video_jobs.get(request_id)
+            if queued is None:
+                msg = (
+                    f"DeepInfra's webhook callback does not name the model, and {request_id!r} was not "
+                    "started in this process, so pass model."
+                )
+                raise InvalidRequestError(msg)
+            model = queued.model
+        api_base = self._video_api_bases.get(request_id, str(self.client.base_url))
+        job = convert_inference_response(response, model=model, api_base=api_base)
+        return self._keep_video_job(job)
+
+    def _keep_video_job(self, job: VideoJob) -> VideoJob:
+        """Store ``job`` for ``retrieve_video``, dropping the oldest jobs past the limit, and return the stored job.
+
+        A callback can land before the queued reply of its own request, so a job that is not done never
+        replaces a finished one; the finished one is returned instead.
+        """
+        stored = self._video_jobs.get(job.id)
+        if stored is not None and stored.done and not job.done:
+            return stored
         self._video_jobs[job.id] = job
         while len(self._video_jobs) > _VIDEO_JOBS_KEPT:
-            del self._video_jobs[next(iter(self._video_jobs))]
+            oldest = next(iter(self._video_jobs))
+            del self._video_jobs[oldest]
+            self._video_api_bases.pop(oldest, None)
         return job
 
     @override

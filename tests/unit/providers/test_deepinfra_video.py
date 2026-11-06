@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from any_llm import AnyLLM
+from any_llm import AnyLLM, complete_video_job
 from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.providers.deepinfra.deepinfra import DeepinfraProvider
 from any_llm.providers.deepinfra.video import (
@@ -115,6 +115,7 @@ def _response(**overrides: Any) -> dict[str, Any]:
 def provider(monkeypatch: pytest.MonkeyPatch) -> DeepinfraProvider:
     # Both stores are class-wide so module-level poll_video can see them; keep tests apart.
     monkeypatch.setattr(DeepinfraProvider, "_video_jobs", {})
+    monkeypatch.setattr(DeepinfraProvider, "_video_api_bases", {})
     monkeypatch.setattr(DeepinfraProvider, "_video_schemas", {})
     return DeepinfraProvider(api_key="test-key")
 
@@ -878,6 +879,145 @@ async def test_poll_video_finishes_at_once_for_a_synchronous_render(provider: De
         job = await provider.avideo_generation(SEEDANCE, "a rubber duck")
 
     assert await provider.apoll_video(job.id, poll_interval=0, timeout=1) is job
+
+
+def _callback(**overrides: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "request_id": "RqueuedIaF5GlVisBAi5xR3E",
+        "inference_status": {"status": "succeeded", "runtime_ms": 120000, "cost": 0.5},
+        "results": {"video_url": VIDEO_URL, "status": "ok", "out_tokens": 1000},
+    }
+    fields.update(overrides)
+    return fields
+
+
+async def _start_webhook_job(provider: DeepinfraProvider) -> VideoJob:
+    with (
+        patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": SEEDANCE_SCHEMA})),
+        patch.object(provider.client, "post", AsyncMock(return_value=_queued_response())),
+    ):
+        return await provider.avideo_generation(SEEDANCE, "a rubber duck", webhook="https://hooks.example/done")
+
+
+@pytest.mark.asyncio
+async def test_complete_video_job_finishes_a_queued_job_from_its_callback(provider: DeepinfraProvider) -> None:
+    queued = await _start_webhook_job(provider)
+    assert (await provider.aretrieve_video(queued.id)).status == "queued"
+
+    job = provider.complete_video_job(_callback())
+
+    assert (job.id, job.model, job.status) == (queued.id, SEEDANCE, "completed")
+    assert [output.url for output in job.outputs] == [VIDEO_URL]
+    assert (job.cost, job.tokens) == (0.5, 1000)
+    assert await provider.aretrieve_video(queued.id) is job
+
+
+@pytest.mark.asyncio
+async def test_complete_video_job_maps_a_failed_callback(provider: DeepinfraProvider) -> None:
+    await _start_webhook_job(provider)
+    payload = _callback(inference_status={"status": "failed", "runtime_ms": 0, "cost": 0.0})
+    del payload["results"]
+
+    job = provider.complete_video_job(payload)
+
+    assert job.status == "failed"
+    assert job.error is not None
+    assert job.error.message == "DeepInfra returned no video."
+    assert job.outputs == []
+    assert job.cost == 0.0
+
+
+def test_complete_video_job_reads_the_video_from_the_top_level_of_the_callback(provider: DeepinfraProvider) -> None:
+    payload = {"video_url": VIDEO_URL, "out_tokens": 1000} | _callback()
+    del payload["results"]
+
+    job = provider.complete_video_job(payload, model=SEEDANCE)
+
+    assert job.status == "completed"
+    assert (job.outputs[0].url, job.tokens) == (VIDEO_URL, 1000)
+
+
+def test_complete_video_job_takes_the_model_for_a_job_started_elsewhere(provider: DeepinfraProvider) -> None:
+    job = provider.complete_video_job(_callback(), model=WAN3)
+
+    assert (job.model, job.status) == (WAN3, "completed")
+    assert DeepinfraProvider._video_jobs == {job.id: job}
+
+
+def test_complete_video_job_needs_the_model_for_a_job_started_elsewhere(provider: DeepinfraProvider) -> None:
+    with pytest.raises(InvalidRequestError, match="pass model"):
+        provider.complete_video_job(_callback())
+
+
+@pytest.mark.parametrize("payload", [_callback(request_id=None), {"inference_status": {"status": "succeeded"}}])
+def test_complete_video_job_rejects_a_callback_without_a_request_id(
+    provider: DeepinfraProvider, payload: dict[str, Any]
+) -> None:
+    with pytest.raises(InvalidRequestError, match="no request_id"):
+        provider.complete_video_job(payload, model=SEEDANCE)
+
+
+def test_complete_video_job_rejects_a_callback_that_is_not_an_object(provider: DeepinfraProvider) -> None:
+    with pytest.raises(InvalidRequestError, match="JSON object"):
+        provider.complete_video_job(["not", "a", "callback"], model=SEEDANCE)  # type: ignore[arg-type]
+
+
+def test_complete_video_job_rejects_results_that_are_not_an_object(provider: DeepinfraProvider) -> None:
+    with pytest.raises(InvalidRequestError, match="results"):
+        provider.complete_video_job(_callback(results=["clip.mp4"]), model=SEEDANCE)
+
+
+@pytest.mark.asyncio
+async def test_video_generation_keeps_a_job_whose_callback_landed_before_the_queued_reply(
+    provider: DeepinfraProvider,
+) -> None:
+    finished = provider.complete_video_job(_callback(), model=SEEDANCE)
+
+    queued_reply = await _start_webhook_job(provider)
+
+    assert queued_reply is finished
+    assert await provider.aretrieve_video(finished.id) is finished
+
+
+@pytest.mark.asyncio
+async def test_complete_video_job_resolves_a_relative_url_against_the_api_base_that_started_the_job(
+    provider: DeepinfraProvider,
+) -> None:
+    proxied = DeepinfraProvider(api_key="test-key", api_base="https://proxy.example/v1/openai")
+    await _start_webhook_job(proxied)
+
+    job = provider.complete_video_job(_callback(results={"video_url": "/model/inference/clip.mp4"}))
+
+    assert job.outputs[0].url == "https://proxy.example/model/inference/clip.mp4"
+
+
+@pytest.mark.asyncio
+async def test_video_generation_forgets_the_api_base_of_a_job_past_the_store_limit(
+    provider: DeepinfraProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("any_llm.providers.deepinfra.deepinfra._VIDEO_JOBS_KEPT", 1)
+    post = AsyncMock(side_effect=[_queued_response(request_id=f"job-{index}") for index in range(2)])
+    with (
+        patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": SEEDANCE_SCHEMA})),
+        patch.object(provider.client, "post", post),
+    ):
+        for _ in range(2):
+            await provider.avideo_generation(SEEDANCE, "a rubber duck", webhook="https://hooks.example/done")
+
+    assert list(DeepinfraProvider._video_jobs) == ["job-1"]
+    assert list(DeepinfraProvider._video_api_bases) == ["job-1"]
+
+
+@pytest.mark.asyncio
+async def test_complete_video_job_from_the_module_function_reaches_retrieve_video(
+    provider: DeepinfraProvider,
+) -> None:
+    queued = await _start_webhook_job(provider)
+
+    job = complete_video_job("deepinfra", _callback(), api_key="other-key")
+
+    assert job.model == SEEDANCE
+    assert await provider.aretrieve_video(queued.id) is job
 
 
 def test_deepinfra_is_a_folder_provider_not_a_registry_row() -> None:
