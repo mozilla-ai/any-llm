@@ -193,6 +193,14 @@ def download_video(self, output, **kwargs) -> bytes
 async def adownload_video(self, output, **kwargs) -> bytes
 ```
 
+### `complete_video_job()`
+
+Finish a video job from the callback its provider posted to the caller's webhook. Nothing is sent to the provider, so there is no async twin.
+
+```
+def complete_video_job(self, payload, *, model=None) -> VideoJob
+```
+
 ### `create_batch()` / `acreate_batch()`
 
 Create a batch job. See the [Batch](batch.md) reference.

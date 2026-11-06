@@ -3,7 +3,7 @@ title: Video
 description: Start, poll and download video generation jobs
 ---
 
-Video generation is slow, so `video_generation` returns a `VideoJob` rather than a video. `retrieve_video` reads the job again, `poll_video` waits for it, and `download_video` fetches the result. See [Video Generation](../video.md) for the providers and what each one takes.
+Video generation is slow, so `video_generation` returns a `VideoJob` rather than a video. `retrieve_video` reads the job again, `poll_video` waits for it, and `download_video` fetches the result. `complete_video_job` finishes a job from the callback a provider posted to your webhook. See [Video Generation](../video.md) for the providers and what each one takes.
 
 ## Start a job
 
@@ -221,6 +221,35 @@ async def adownload_video(
 | `api_base` | `str \| None` | None | Base URL for the provider API |
 | `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation |
 | `**kwargs` | `Any` | *required* | Additional provider-specific arguments |
+
+## Finish a webhook job
+
+### `any_llm.complete_video_job()`
+
+Nothing is sent to the provider, so there is no async variant.
+
+```
+def complete_video_job(
+    provider: str | LLMProvider,
+    payload: dict[str, Any],
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+) -> VideoJob
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `provider` | `str \| LLMProvider` | *required* | Provider that runs the job (e.g., 'deepinfra') |
+| `payload` | `dict[str, Any]` | *required* | The JSON body the provider posted to the webhook |
+| `model` | `str \| None` | None | The model that rendered the job, for a callback that does not name it |
+| `api_key` | `str \| None` | None | API key for the provider |
+| `api_base` | `str \| None` | None | Base URL for the provider API |
+| `client_args` | `dict[str, Any] \| None` | None | Additional provider-specific arguments for client instantiation |
 
 ## Usage
 
