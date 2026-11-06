@@ -110,6 +110,8 @@ class VideoGenerationParams(BaseModel):
     """Image the video starts from, in the same forms as `reference_images`."""
     last_frame: str | None = None
     """Image the video ends on, in the same forms as `reference_images`."""
+    generate_audio: bool | None = None
+    """Whether the video carries a sound track. ``None`` leaves the provider's default."""
 
     def to_api_kwargs(self) -> dict[str, Any]:
         """Convert to kwargs for the provider API call, excluding None values."""

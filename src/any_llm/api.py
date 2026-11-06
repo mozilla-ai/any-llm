@@ -1916,6 +1916,7 @@ def video_generation(
     reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
+    generate_audio: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -1942,6 +1943,7 @@ def video_generation(
         reference_videos: Video URLs the video should take its motion, subjects or style from.
         first_frame: Image URL to start the video from.
         last_frame: Image URL to end the video on.
+        generate_audio: Whether the video carries a sound track. None leaves the provider's default.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -1972,6 +1974,7 @@ def video_generation(
         reference_videos=reference_videos,
         first_frame=first_frame,
         last_frame=last_frame,
+        generate_audio=generate_audio,
         **kwargs,
     )
 
@@ -1992,6 +1995,7 @@ async def avideo_generation(
     reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
+    generate_audio: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -2018,6 +2022,7 @@ async def avideo_generation(
         reference_videos: Video URLs the video should take its motion, subjects or style from.
         first_frame: Image URL to start the video from.
         last_frame: Image URL to end the video on.
+        generate_audio: Whether the video carries a sound track. None leaves the provider's default.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -2048,6 +2053,7 @@ async def avideo_generation(
         reference_videos=reference_videos,
         first_frame=first_frame,
         last_frame=last_frame,
+        generate_audio=generate_audio,
         **kwargs,
     )
 

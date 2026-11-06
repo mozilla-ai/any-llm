@@ -214,6 +214,24 @@ def test_convert_video_params_appends_reference_videos_to_the_callers_and_keeps_
     assert extra_body["media"] == {"reference_videos": [{"video": "https://v/theirs.mp4"}]}
 
 
+@pytest.mark.parametrize("generate_audio", [True, False])
+def test_convert_video_params_sends_generate_audio_through_extra_body(generate_audio: bool) -> None:
+    params = VideoGenerationParams(model_id="ByteDance/Seedance-2.0", prompt="a dancer", generate_audio=generate_audio)
+    assert TogetherProvider._convert_video_params(params) == {
+        "model": "ByteDance/Seedance-2.0",
+        "prompt": "a dancer",
+        "extra_body": {"generate_audio": generate_audio},
+    }
+
+
+def test_convert_video_params_generate_audio_overrides_the_callers_extra_body() -> None:
+    params = VideoGenerationParams(model_id="ByteDance/Seedance-2.0", prompt="a dancer", generate_audio=False)
+    extra_body = {"generate_audio": True, "fps": 24}
+    converted = TogetherProvider._convert_video_params(params, extra_body=extra_body)
+    assert converted["extra_body"] == {"generate_audio": False, "fps": 24}
+    assert extra_body == {"generate_audio": True, "fps": 24}
+
+
 def test_convert_video_params_merges_caller_frame_images_with_first_and_last_frames() -> None:
     params = VideoGenerationParams(model_id="m", prompt="p", last_frame="https://img/last.png")
     converted = TogetherProvider._convert_video_params(

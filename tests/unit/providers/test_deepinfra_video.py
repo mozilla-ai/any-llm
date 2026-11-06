@@ -68,6 +68,19 @@ WAN26_SCHEMA: dict[str, Any] = {
         "seed": {"type": "integer"},
     }
 }
+PIXVERSE6_SCHEMA: dict[str, Any] = {
+    "properties": {
+        "prompt": {"type": "string"},
+        "generate_audio_switch": {"type": "boolean"},
+    }
+}
+# p-video's ``audio`` is a clip to condition on, not a switch.
+P_VIDEO_SCHEMA: dict[str, Any] = {
+    "properties": {
+        "prompt": {"type": "string"},
+        "audio": {"type": "string"},
+    }
+}
 BARE_SCHEMA: dict[str, Any] = {"properties": {"prompt": {"type": "string"}}}
 
 
@@ -144,6 +157,7 @@ def test_convert_video_params_maps_every_field_to_seedances_names() -> None:
         reference_videos=["https://v/moves.mp4", "https://v/turn.mp4"],
         first_frame="data:image/png;base64,Zmlyc3Q=",
         last_frame="data:image/png;base64,bGFzdA==",
+        generate_audio=False,
     )
     assert _convert(params, _schema()) == {
         "prompt": "a rubber duck",
@@ -156,6 +170,7 @@ def test_convert_video_params_maps_every_field_to_seedances_names() -> None:
         "reference_videos": ["https://v/moves.mp4", "https://v/turn.mp4"],
         "first_frame_image": "data:image/png;base64,Zmlyc3Q=",
         "last_frame_image": "data:image/png;base64,bGFzdA==",
+        "generate_audio": False,
     }
 
 
@@ -170,6 +185,7 @@ def test_convert_video_params_maps_every_field_to_wan3s_media_items() -> None:
         reference_videos=["https://v/moves.mp4", "https://v/turn.mp4"],
         first_frame="https://img/first.png",
         last_frame="https://img/last.png",
+        generate_audio=True,
     )
     assert _convert(
         params, _schema(WAN3, WAN3_SCHEMA), media=[{"type": "reference_video", "url": "https://v.mp4"}]
@@ -179,6 +195,7 @@ def test_convert_video_params_maps_every_field_to_wan3s_media_items() -> None:
         "resolution": "720P",
         "ratio": "9:16",
         "seed": 7,
+        "audio": True,
         "media": [
             {"type": "first_frame", "url": "https://img/first.png"},
             {"type": "last_frame", "url": "https://img/last.png"},
@@ -219,6 +236,29 @@ def test_convert_video_params_rejects_a_size_wan26_does_not_list() -> None:
         _convert(_params(WAN26, size="854x480"), _schema(WAN26, WAN26_SCHEMA))
 
 
+def test_convert_video_params_maps_generate_audio_to_pixverses_switch() -> None:
+    params = _params("Pixverse/Pixverse-6-T2V", generate_audio=False)
+    assert _convert(params, _schema("Pixverse/Pixverse-6-T2V", PIXVERSE6_SCHEMA)) == {
+        "prompt": "a rubber duck",
+        "generate_audio_switch": False,
+    }
+
+
+def test_convert_video_params_rejects_a_keyword_argument_that_contradicts_generate_audio() -> None:
+    with pytest.raises(InvalidRequestError, match="generate_audio=False conflicts with audio=True"):
+        _convert(_params(WAN3, generate_audio=False), _schema(WAN3, WAN3_SCHEMA), audio=True)
+
+
+def test_convert_video_params_accepts_a_keyword_argument_that_agrees_with_generate_audio() -> None:
+    body = _convert(_params(WAN3, generate_audio=False), _schema(WAN3, WAN3_SCHEMA), audio=False)
+    assert body == {"prompt": "a rubber duck", "audio": False}
+
+
+def test_convert_video_params_rejects_generate_audio_where_audio_is_not_a_switch() -> None:
+    with pytest.raises(UnsupportedParameterError, match="'generate_audio' is not supported for deepinfra"):
+        _convert(_params("PrunaAI/p-video", generate_audio=True), _schema("PrunaAI/p-video", P_VIDEO_SCHEMA))
+
+
 def test_convert_video_params_passes_keyword_arguments_through_unchanged() -> None:
     body = _convert(_params(), _schema(), reference_audios=["https://a.mp3"], generate_audio=False)
     assert body == {"prompt": "a rubber duck", "reference_audios": ["https://a.mp3"], "generate_audio": False}
@@ -236,6 +276,7 @@ def test_convert_video_params_passes_keyword_arguments_through_unchanged() -> No
         "reference_images",
         "reference_audios",
         "reference_videos",
+        "generate_audio",
     ],
 )
 def test_convert_video_params_rejects_a_field_the_schema_has_no_name_for(parameter_name: str) -> None:
@@ -244,6 +285,8 @@ def test_convert_video_params_rejects_a_field_the_schema_has_no_name_for(paramet
         value = ["https://ref"]
     if parameter_name in {"seconds", "seed"}:
         value = 5
+    if parameter_name == "generate_audio":
+        value = True
     with pytest.raises(UnsupportedParameterError, match=f"'{parameter_name}' is not supported for deepinfra"):
         _convert(_params(**{parameter_name: value}), _schema(SEEDANCE, BARE_SCHEMA))
 
@@ -513,6 +556,43 @@ async def test_video_generation_rejects_a_webhook_before_posting(
         await provider.avideo_generation(SEEDANCE, "a rubber duck", **kwargs)
 
     assert post.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_video_generation_rejects_extra_body_that_contradicts_generate_audio_before_posting(
+    provider: DeepinfraProvider,
+) -> None:
+    post = AsyncMock(return_value=_response())
+    with (
+        patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": SEEDANCE_SCHEMA})),
+        patch.object(provider.client, "post", post),
+        pytest.raises(InvalidRequestError, match="generate_audio=False conflicts with generate_audio=True"),
+    ):
+        await provider.avideo_generation(
+            SEEDANCE, "a rubber duck", generate_audio=False, extra_body={"generate_audio": True}
+        )
+
+    assert post.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_video_generation_merges_extra_body_media_with_the_mapped_items(provider: DeepinfraProvider) -> None:
+    post = AsyncMock(return_value=_response())
+    with (
+        patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": WAN3_SCHEMA})),
+        patch.object(provider.client, "post", post),
+    ):
+        await provider.avideo_generation(
+            WAN3,
+            "a rubber duck",
+            first_frame="https://img/first.png",
+            extra_body={"media": [{"type": "reference_video", "url": "https://v.mp4"}]},
+        )
+
+    assert post.call_args.kwargs["body"]["media"] == [
+        {"type": "first_frame", "url": "https://img/first.png"},
+        {"type": "reference_video", "url": "https://v.mp4"},
+    ]
 
 
 @pytest.mark.asyncio

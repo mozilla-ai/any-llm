@@ -348,9 +348,9 @@ class TogetherProvider(AnyLLM):
 
         Together takes the size as ``width``/``height``, the length as a string, and the first
         and last frames as ``frame_images`` entries, which merge with any the caller passes.
-        ``resolution``, ``ratio``, ``media.audio_inputs`` and ``media.reference_videos`` are fields
-        the pinned SDK has no argument for, so they ride in ``extra_body`` and merge with whatever the
-        caller passes there.
+        ``resolution``, ``ratio``, ``generate_audio``, ``media.audio_inputs`` and
+        ``media.reference_videos`` are fields the pinned SDK has no argument for, so they ride in
+        ``extra_body`` and merge with whatever the caller passes there.
         """
         create_kwargs: dict[str, Any] = {"model": params.model_id, "prompt": params.prompt}
         if params.seconds is not None:
@@ -363,6 +363,8 @@ class TogetherProvider(AnyLLM):
                 extra_body["resolution"] = f"{shape.short_side}p"
             if params.aspect_ratio is not None:
                 extra_body["ratio"] = params.aspect_ratio
+        if params.generate_audio is not None:
+            extra_body["generate_audio"] = params.generate_audio
         if params.seed is not None:
             create_kwargs["seed"] = params.seed
         if params.negative_prompt is not None:
