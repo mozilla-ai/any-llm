@@ -348,8 +348,9 @@ class TogetherProvider(AnyLLM):
 
         Together takes the size as ``width``/``height``, the length as a string, and the first
         and last frames as ``frame_images`` entries, which merge with any the caller passes.
-        ``resolution``, ``ratio`` and ``media.audio_inputs`` are fields the pinned SDK has no
-        argument for, so they ride in ``extra_body`` and merge with whatever the caller passes there.
+        ``resolution``, ``ratio``, ``media.audio_inputs`` and ``media.reference_videos`` are fields
+        the pinned SDK has no argument for, so they ride in ``extra_body`` and merge with whatever the
+        caller passes there.
         """
         create_kwargs: dict[str, Any] = {"model": params.model_id, "prompt": params.prompt}
         if params.seconds is not None:
@@ -375,8 +376,16 @@ class TogetherProvider(AnyLLM):
             frame_images.append({"input_image": params.last_frame, "frame": "last"})
         if frame_images:
             create_kwargs["frame_images"] = frame_images
+        media = dict(extra_body.get("media") or {})
         if params.reference_audios is not None:
-            extra_body["media"] = {**(extra_body.get("media") or {}), "audio_inputs": params.reference_audios}
+            media["audio_inputs"] = params.reference_audios
+        if params.reference_videos is not None:
+            media["reference_videos"] = [
+                *(media.get("reference_videos") or []),
+                *({"video": video} for video in params.reference_videos),
+            ]
+        if media:
+            extra_body["media"] = media
         if extra_body:
             create_kwargs["extra_body"] = extra_body
         create_kwargs.update(kwargs)

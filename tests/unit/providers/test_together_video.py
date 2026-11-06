@@ -183,6 +183,37 @@ def test_convert_video_params_merges_reference_audio_into_the_callers_extra_body
     assert extra_body["media"] == {"reference_videos": [{"video": "https://v/ref.mp4"}]}
 
 
+def test_convert_video_params_sends_reference_videos_as_media_reference_videos() -> None:
+    params = VideoGenerationParams(
+        model_id="ByteDance/Seedance-2.0",
+        prompt="a dancer",
+        reference_videos=["https://v/one.mp4", "https://v/two.mp4"],
+    )
+    assert TogetherProvider._convert_video_params(params) == {
+        "model": "ByteDance/Seedance-2.0",
+        "prompt": "a dancer",
+        "extra_body": {"media": {"reference_videos": [{"video": "https://v/one.mp4"}, {"video": "https://v/two.mp4"}]}},
+    }
+
+
+def test_convert_video_params_appends_reference_videos_to_the_callers_and_keeps_audio() -> None:
+    params = VideoGenerationParams(
+        model_id="ByteDance/Seedance-2.0",
+        prompt="a dancer",
+        reference_audios=["https://audio/beat.mp3"],
+        reference_videos=["https://v/mine.mp4"],
+    )
+    extra_body = {"media": {"reference_videos": [{"video": "https://v/theirs.mp4"}]}}
+    converted = TogetherProvider._convert_video_params(params, extra_body=extra_body)
+    assert converted["extra_body"] == {
+        "media": {
+            "reference_videos": [{"video": "https://v/theirs.mp4"}, {"video": "https://v/mine.mp4"}],
+            "audio_inputs": ["https://audio/beat.mp3"],
+        },
+    }
+    assert extra_body["media"] == {"reference_videos": [{"video": "https://v/theirs.mp4"}]}
+
+
 def test_convert_video_params_merges_caller_frame_images_with_first_and_last_frames() -> None:
     params = VideoGenerationParams(model_id="m", prompt="p", last_frame="https://img/last.png")
     converted = TogetherProvider._convert_video_params(

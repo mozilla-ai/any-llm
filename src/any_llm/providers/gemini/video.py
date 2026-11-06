@@ -87,6 +87,11 @@ def convert_video_params(
         # Omni ignores audio in references and documents audio uploads as unsupported.
         parameter_name = "reference_audios"
         raise UnsupportedParameterError(parameter_name, provider_name)
+    if params.reference_videos is not None:
+        # Omni reads a video part as a clip to edit, extend or reference, by the prompt or its `task`
+        # field, so a reference role needs handling of its own before it can be mapped.
+        parameter_name = "reference_videos"
+        raise UnsupportedParameterError(parameter_name, provider_name)
 
     parts: list[dict[str, Any]] = []
     if params.first_frame is not None:

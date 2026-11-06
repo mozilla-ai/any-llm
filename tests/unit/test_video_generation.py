@@ -69,6 +69,7 @@ async def test_avideo_generation_with_explicit_provider_passes_all_params() -> N
             negative_prompt="blurry",
             reference_images=["https://img/1.png"],
             reference_audios=["https://audio/beat.mp3"],
+            reference_videos=["https://video/moves.mp4"],
             first_frame="https://img/first.png",
             last_frame="https://img/last.png",
             fps=24,
@@ -85,6 +86,7 @@ async def test_avideo_generation_with_explicit_provider_passes_all_params() -> N
         "negative_prompt": "blurry",
         "reference_images": ["https://img/1.png"],
         "reference_audios": ["https://audio/beat.mp3"],
+        "reference_videos": ["https://video/moves.mp4"],
         "first_frame": "https://img/first.png",
         "last_frame": "https://img/last.png",
         "fps": 24,
@@ -96,10 +98,16 @@ def test_sync_video_generation_dispatches() -> None:
     provider.video_generation = Mock(return_value=_job())
 
     with patch("any_llm.any_llm.AnyLLM.create", return_value=provider):
-        result = video_generation("together:ByteDance/Seedance-2.0", prompt="A fish", seconds=5)
+        result = video_generation(
+            "together:ByteDance/Seedance-2.0",
+            prompt="A fish",
+            seconds=5,
+            reference_videos=["https://video/swim.mp4"],
+        )
 
     assert provider.video_generation.call_args[0] == ("ByteDance/Seedance-2.0", "A fish")
     assert provider.video_generation.call_args[1]["seconds"] == 5
+    assert provider.video_generation.call_args[1]["reference_videos"] == ["https://video/swim.mp4"]
     assert result.id == "vid-1"
 
 

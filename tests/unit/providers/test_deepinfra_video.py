@@ -220,11 +220,21 @@ def test_convert_video_params_passes_keyword_arguments_through_unchanged() -> No
 
 @pytest.mark.parametrize(
     "parameter_name",
-    ["seconds", "seed", "negative_prompt", "size", "first_frame", "last_frame", "reference_images", "reference_audios"],
+    [
+        "seconds",
+        "seed",
+        "negative_prompt",
+        "size",
+        "first_frame",
+        "last_frame",
+        "reference_images",
+        "reference_audios",
+        "reference_videos",
+    ],
 )
 def test_convert_video_params_rejects_a_field_the_schema_has_no_name_for(parameter_name: str) -> None:
     value: Any = "1280x720"
-    if parameter_name in {"reference_images", "reference_audios"}:
+    if parameter_name in {"reference_images", "reference_audios", "reference_videos"}:
         value = ["https://ref"]
     if parameter_name in {"seconds", "seed"}:
         value = 5

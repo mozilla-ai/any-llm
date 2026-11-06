@@ -53,6 +53,7 @@ def test_video_generation_params_to_api_kwargs_includes_set_values() -> None:
         seed=7,
         negative_prompt="blurry",
         reference_images=["https://img/1.png"],
+        reference_videos=["https://video/1.mp4"],
         first_frame="https://img/first.png",
         last_frame="https://img/last.png",
     )
@@ -63,6 +64,7 @@ def test_video_generation_params_to_api_kwargs_includes_set_values() -> None:
         "seed": 7,
         "negative_prompt": "blurry",
         "reference_images": ["https://img/1.png"],
+        "reference_videos": ["https://video/1.mp4"],
         "first_frame": "https://img/first.png",
         "last_frame": "https://img/last.png",
     }
