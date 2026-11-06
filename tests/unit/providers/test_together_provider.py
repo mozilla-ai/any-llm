@@ -21,6 +21,7 @@ def make_together_chunk(
     content: str | None = None,
     role: str = "assistant",
     reasoning: str | None = None,
+    reasoning_content: str | None = None,
     tool_calls: list[Any] | None = None,
     finish_reason: str = "stop",
     usage: dict[str, Any] | None = None,
@@ -30,6 +31,7 @@ def make_together_chunk(
     delta_mock.content = content
     delta_mock.role = role
     delta_mock.reasoning = reasoning
+    delta_mock.reasoning_content = reasoning_content
     delta_mock.tool_calls = tool_calls
 
     choice_mock = Mock()
@@ -227,6 +229,22 @@ def test_create_openai_chunk_with_reasoning() -> None:
     assert result.choices[0].delta.content == "The answer is 42"
     assert result.choices[0].delta.reasoning is not None
     assert result.choices[0].delta.reasoning.content == "Let me think about this..."
+
+
+def test_create_openai_chunk_reads_reasoning_content() -> None:
+    together_chunk = make_together_chunk(content=None, reasoning_content="Let me think about this...")
+    result = _create_openai_chunk_from_together_chunk(together_chunk)
+
+    assert result.choices[0].delta.reasoning is not None
+    assert result.choices[0].delta.reasoning.content == "Let me think about this..."
+
+
+def test_create_openai_chunk_prefers_reasoning_over_reasoning_content() -> None:
+    together_chunk = make_together_chunk(content=None, reasoning="from reasoning", reasoning_content="from content")
+    result = _create_openai_chunk_from_together_chunk(together_chunk)
+
+    assert result.choices[0].delta.reasoning is not None
+    assert result.choices[0].delta.reasoning.content == "from reasoning"
 
 
 def test_create_openai_chunk_with_usage() -> None:
