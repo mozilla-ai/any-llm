@@ -1913,6 +1913,7 @@ def video_generation(
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
     api_key: str | None = None,
@@ -1938,6 +1939,7 @@ def video_generation(
         negative_prompt: What the video should not contain.
         reference_images: Image URLs the video should take its subjects or style from.
         reference_audios: Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track.
+        reference_videos: Video URLs the video should take its motion, subjects or style from.
         first_frame: Image URL to start the video from.
         last_frame: Image URL to end the video on.
         api_key: API key for the provider.
@@ -1967,6 +1969,7 @@ def video_generation(
         negative_prompt=negative_prompt,
         reference_images=reference_images,
         reference_audios=reference_audios,
+        reference_videos=reference_videos,
         first_frame=first_frame,
         last_frame=last_frame,
         **kwargs,
@@ -1986,6 +1989,7 @@ async def avideo_generation(
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
     api_key: str | None = None,
@@ -2011,6 +2015,7 @@ async def avideo_generation(
         negative_prompt: What the video should not contain.
         reference_images: Image URLs the video should take its subjects or style from.
         reference_audios: Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track.
+        reference_videos: Video URLs the video should take its motion, subjects or style from.
         first_frame: Image URL to start the video from.
         last_frame: Image URL to end the video on.
         api_key: API key for the provider.
@@ -2040,6 +2045,7 @@ async def avideo_generation(
         negative_prompt=negative_prompt,
         reference_images=reference_images,
         reference_audios=reference_audios,
+        reference_videos=reference_videos,
         first_frame=first_frame,
         last_frame=last_frame,
         **kwargs,

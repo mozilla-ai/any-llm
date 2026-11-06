@@ -104,6 +104,8 @@ class VideoGenerationParams(BaseModel):
     """Image URLs, provider file URIs or ``data:`` URLs the video takes its subjects or style from."""
     reference_audios: list[str] | None = None
     """Audio URLs the video follows, for lip sync, beat-matched motion or a sound track."""
+    reference_videos: list[str] | None = None
+    """Video URLs or provider file URIs the video takes its motion, subjects or style from."""
     first_frame: str | None = None
     """Image the video starts from, in the same forms as `reference_images`."""
     last_frame: str | None = None

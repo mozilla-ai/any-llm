@@ -203,6 +203,8 @@ class _BodyBuilder:
             self.reference_images(params.reference_images)
         if params.reference_audios:
             self.reference_audios(params.reference_audios)
+        if params.reference_videos:
+            self.reject("reference_videos")
         # Caller-provided media items merge with the ones any-llm's fields produced.
         self.media.extend(kwargs.pop("media", None) or [])
         if self.media:
