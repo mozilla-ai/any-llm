@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -196,22 +197,22 @@ def test_convert_video_params_sends_reference_videos_as_media_reference_videos()
     }
 
 
-def test_convert_video_params_appends_reference_videos_to_the_callers_and_keeps_audio() -> None:
+def test_convert_video_params_accepts_media_that_repeats_reference_videos_and_keeps_audio() -> None:
     params = VideoGenerationParams(
         model_id="ByteDance/Seedance-2.0",
         prompt="a dancer",
         reference_audios=["https://audio/beat.mp3"],
         reference_videos=["https://v/mine.mp4"],
     )
-    extra_body = {"media": {"reference_videos": [{"video": "https://v/theirs.mp4"}]}}
+    extra_body = {"media": {"reference_videos": [{"video": "https://v/mine.mp4"}]}}
     converted = TogetherProvider._convert_video_params(params, extra_body=extra_body)
     assert converted["extra_body"] == {
         "media": {
-            "reference_videos": [{"video": "https://v/theirs.mp4"}, {"video": "https://v/mine.mp4"}],
+            "reference_videos": [{"video": "https://v/mine.mp4"}],
             "audio_inputs": ["https://audio/beat.mp3"],
         },
     }
-    assert extra_body["media"] == {"reference_videos": [{"video": "https://v/theirs.mp4"}]}
+    assert extra_body["media"] == {"reference_videos": [{"video": "https://v/mine.mp4"}]}
 
 
 @pytest.mark.parametrize("generate_audio", [True, False])
@@ -224,12 +225,88 @@ def test_convert_video_params_sends_generate_audio_through_extra_body(generate_a
     }
 
 
-def test_convert_video_params_generate_audio_overrides_the_callers_extra_body() -> None:
-    params = VideoGenerationParams(model_id="ByteDance/Seedance-2.0", prompt="a dancer", generate_audio=False)
-    extra_body = {"generate_audio": True, "fps": 24}
+@pytest.mark.parametrize(
+    ("shared", "options", "message"),
+    [
+        ({"seconds": 5}, {"seconds": "10"}, "seconds=5 conflicts with seconds='10'"),
+        ({"size": "1280x720"}, {"width": 1920}, "size='1280x720' conflicts with width=1920"),
+        ({"seed": 7}, {"seed": 8}, "seed=7 conflicts with seed=8"),
+        ({"negative_prompt": "blur"}, {"negative_prompt": "rain"}, "negative_prompt='blur' conflicts"),
+        ({"reference_images": ["a"]}, {"reference_images": ["b"]}, "reference_images=['a'] conflicts"),
+        ({"resolution": "720p"}, {"extra_body": {"resolution": "1080p"}}, "resolution='720p' conflicts"),
+        ({"aspect_ratio": "16:9"}, {"extra_body": {"ratio": "9:16"}}, "aspect_ratio='16:9' conflicts with ratio"),
+        ({"generate_audio": False}, {"extra_body": {"generate_audio": True}}, "generate_audio=False conflicts"),
+        ({"size": "1280x720"}, {"extra_body": {"width": 1920}}, "size='1280x720' conflicts with width=1920"),
+        ({"seconds": 5}, {"extra_body": {"seconds": "10"}}, "seconds=5 conflicts with seconds='10'"),
+        (
+            {"first_frame": "a.png"},
+            {"frame_images": [{"input_image": "b.png", "frame": "first"}]},
+            "first_frame='a.png' conflicts with frame_images[first]=['b.png']",
+        ),
+        (
+            {"first_frame": "a.png"},
+            {"frame_images": [{"input_image": "b.png", "frame": "first"}, {"input_image": "a.png", "frame": "first"}]},
+            "first_frame='a.png' conflicts with frame_images[first]=['b.png', 'a.png']",
+        ),
+        (
+            {"last_frame": "a.png"},
+            {"extra_body": {"frame_images": [{"input_image": "b.png", "frame": "last"}]}},
+            "last_frame='a.png' conflicts with frame_images[last]=['b.png']",
+        ),
+        ({}, {"extra_body": {"prompt": "a goose"}}, "prompt='a dancer' conflicts with prompt='a goose'"),
+        (
+            {"reference_videos": ["v.mp4"]},
+            {"extra_body": {"media": {"reference_videos": [{"video": "w.mp4"}]}}},
+            "reference_videos=['v.mp4'] conflicts with reference_videos=[{'video': 'w.mp4'}]",
+        ),
+        (
+            {"reference_audios": ["a"]},
+            {"extra_body": {"media": {"audio_inputs": ["b"]}}},
+            "reference_audios=['a'] conflicts with audio_inputs=['b']",
+        ),
+    ],
+)
+def test_convert_video_params_rejects_an_option_that_contradicts_a_shared_field(
+    shared: dict[str, Any], options: dict[str, Any], message: str
+) -> None:
+    params = VideoGenerationParams(model_id="ByteDance/Seedance-2.0", prompt="a dancer", **shared)
+    with pytest.raises(InvalidRequestError, match=re.escape(message)):
+        TogetherProvider._convert_video_params(params, **options)
+
+
+def test_convert_video_params_accepts_options_that_agree_with_the_shared_fields() -> None:
+    params = VideoGenerationParams(
+        model_id="ByteDance/Seedance-2.0", prompt="a dancer", size="1280x720", generate_audio=False
+    )
+    extra_body = {"generate_audio": False, "fps": 24}
+    converted = TogetherProvider._convert_video_params(params, width=1280, extra_body=extra_body)
+    assert converted == {
+        "model": "ByteDance/Seedance-2.0",
+        "prompt": "a dancer",
+        "width": 1280,
+        "height": 720,
+        "extra_body": {"generate_audio": False, "fps": 24},
+    }
+    assert extra_body == {"generate_audio": False, "fps": 24}
+
+
+def test_convert_video_params_keeps_one_frame_image_when_the_caller_repeats_last_frame() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", last_frame="https://img/last.png")
+    converted = TogetherProvider._convert_video_params(
+        params, frame_images=[{"input_image": "https://img/last.png", "frame": "last"}]
+    )
+    assert converted["frame_images"] == [{"input_image": "https://img/last.png", "frame": "last"}]
+
+
+def test_convert_video_params_merges_extra_body_frame_images_with_first_frame() -> None:
+    params = VideoGenerationParams(model_id="m", prompt="p", first_frame="https://img/first.png")
+    extra_body = {"frame_images": [{"input_image": "https://img/mid.png", "frame": 0.5}], "fps": 24}
     converted = TogetherProvider._convert_video_params(params, extra_body=extra_body)
-    assert converted["extra_body"] == {"generate_audio": False, "fps": 24}
-    assert extra_body == {"generate_audio": True, "fps": 24}
+    assert converted["frame_images"] == [
+        {"input_image": "https://img/mid.png", "frame": 0.5},
+        {"input_image": "https://img/first.png", "frame": "first"},
+    ]
+    assert converted["extra_body"] == {"fps": 24}
 
 
 def test_convert_video_params_merges_caller_frame_images_with_first_and_last_frames() -> None:
@@ -262,6 +339,17 @@ async def test_avideo_generation_creates_a_job_and_converts_it() -> None:
     assert isinstance(result, VideoJob)
     assert result.id == "vid-123"
     assert result.status == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_avideo_generation_rejects_a_width_that_contradicts_size_before_creating() -> None:
+    provider, mock_client = make_provider()
+    mock_client.videos.create = AsyncMock(return_value=make_video_job())
+
+    with pytest.raises(InvalidRequestError, match="size='1280x720' conflicts with width=1920"):
+        await provider.avideo_generation("ByteDance/Seedance-2.0", "penguins", size="1280x720", width=1920)
+
+    mock_client.videos.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio

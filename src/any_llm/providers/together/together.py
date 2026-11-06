@@ -351,47 +351,67 @@ class TogetherProvider(AnyLLM):
         ``resolution``, ``ratio``, ``generate_audio``, ``media.audio_inputs`` and
         ``media.reference_videos`` are fields the pinned SDK has no argument for, so they ride in
         ``extra_body`` and merge with whatever the caller passes there.
+
+        Raises:
+            InvalidRequestError: If a keyword argument, ``extra_body``, its ``media`` or a
+                ``frame_images`` entry sets a field a shared field set, to another value.
+
         """
-        create_kwargs: dict[str, Any] = {"model": params.model_id, "prompt": params.prompt}
+        fields: dict[str, tuple[str, Any]] = {"prompt": ("prompt", params.prompt)}
+        body_fields: dict[str, tuple[str, Any]] = {}
+        media_fields: dict[str, tuple[str, Any]] = {}
         if params.seconds is not None:
-            create_kwargs["seconds"] = str(params.seconds)
-        extra_body = dict(kwargs.pop("extra_body", None) or {})
+            fields["seconds"] = ("seconds", str(params.seconds))
         if (shape := params.parse_shape()) is not None:
             if shape.dimensions is not None:
-                create_kwargs["width"], create_kwargs["height"] = shape.dimensions
+                width, height = shape.dimensions
+                fields["width"], fields["height"] = ("size", width), ("size", height)
             if params.resolution is not None:
-                extra_body["resolution"] = f"{shape.short_side}p"
+                body_fields["resolution"] = ("resolution", f"{shape.short_side}p")
             if params.aspect_ratio is not None:
-                extra_body["ratio"] = params.aspect_ratio
+                body_fields["ratio"] = ("aspect_ratio", params.aspect_ratio)
         if params.generate_audio is not None:
-            extra_body["generate_audio"] = params.generate_audio
+            body_fields["generate_audio"] = ("generate_audio", params.generate_audio)
         if params.seed is not None:
-            create_kwargs["seed"] = params.seed
+            fields["seed"] = ("seed", params.seed)
         if params.negative_prompt is not None:
-            create_kwargs["negative_prompt"] = params.negative_prompt
+            fields["negative_prompt"] = ("negative_prompt", params.negative_prompt)
         if params.reference_images is not None:
-            create_kwargs["reference_images"] = params.reference_images
-        frame_images = list(kwargs.pop("frame_images", None) or [])
-        if params.first_frame is not None:
-            frame_images.append({"input_image": params.first_frame, "frame": "first"})
-        if params.last_frame is not None:
-            frame_images.append({"input_image": params.last_frame, "frame": "last"})
-        if frame_images:
-            create_kwargs["frame_images"] = frame_images
-        media = dict(extra_body.get("media") or {})
+            fields["reference_images"] = ("reference_images", params.reference_images)
         if params.reference_audios is not None:
-            media["audio_inputs"] = params.reference_audios
+            media_fields["audio_inputs"] = ("reference_audios", params.reference_audios)
         if params.reference_videos is not None:
-            media["reference_videos"] = [
-                *(media.get("reference_videos") or []),
-                *({"video": video} for video in params.reference_videos),
-            ]
+            videos = [{"video": video} for video in params.reference_videos]
+            media_fields["reference_videos"] = ("reference_videos", videos)
+
+        caller_body = dict(kwargs.pop("extra_body", None) or {})
+        # The SDK merges extra_body over the top-level arguments, so it can change them too, and
+        # frame_images there would replace the list below rather than add to it.
+        params.check_provider_options(fields, caller_body)
+        frame_images = [*(kwargs.pop("frame_images", None) or []), *(caller_body.pop("frame_images", None) or [])]
+        # A video has one first and one last frame, so a caller's entries for either must be the one any-llm sends.
+        for role, parameter_name, image in (
+            ("first", "first_frame", params.first_frame),
+            ("last", "last_frame", params.last_frame),
+        ):
+            if image is None:
+                continue
+            field = f"frame_images[{role}]"
+            passed = [entry.get("input_image") for entry in frame_images if entry.get("frame") == role]
+            params.check_provider_options({field: (parameter_name, [image])}, {field: passed} if passed else {})
+            if not passed:
+                frame_images.append({"input_image": image, "frame": role})
+        media = params.merge_provider_options(media_fields, dict(caller_body.pop("media", None) or {}))
+        extra_body = params.merge_provider_options(body_fields, caller_body)
         if media:
             extra_body["media"] = media
+
+        create_kwargs: dict[str, Any] = {"model": params.model_id}
+        if frame_images:
+            create_kwargs["frame_images"] = frame_images
         if extra_body:
             create_kwargs["extra_body"] = extra_body
-        create_kwargs.update(kwargs)
-        return create_kwargs
+        return create_kwargs | params.merge_provider_options(fields, kwargs)
 
     @override
     async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:
