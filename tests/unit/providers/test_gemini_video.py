@@ -2,7 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from google.genai._gaos.types.interactions import Interaction
+from google.genai._gaos.types.interactions import GenerationConfig, Interaction, VideoResponseFormat
 
 from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.providers.gemini import GeminiProvider
@@ -56,6 +56,78 @@ def test_convert_video_params_forwards_the_clients_api_version_and_seed() -> Non
     converted = convert_video_params(_params(seed=7), "gemini", api_version="v1beta")
     assert converted["api_version"] == "v1beta"
     assert converted["generation_config"] == {"seed": 7}
+
+
+@pytest.mark.parametrize(
+    ("shared", "options", "message"),
+    [
+        ({"size": "1280x720"}, {"response_format": {"aspect_ratio": "9:16"}}, "size='1280x720' conflicts with aspect"),
+        ({"resolution": "720p"}, {"response_format": {"resolution": "4k"}}, "resolution='720p' conflicts with resol"),
+        ({"aspect_ratio": "16:9"}, {"response_format": {"aspect_ratio": "9:16"}}, "aspect_ratio='16:9' conflicts"),
+        ({"seed": 7}, {"generation_config": {"seed": 8}}, "seed=7 conflicts with seed=8"),
+    ],
+)
+def test_convert_video_params_rejects_an_option_that_contradicts_a_shared_field(
+    shared: dict[str, Any], options: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(InvalidRequestError, match=message):
+        convert_video_params(_params(**shared), "gemini", api_version=None, options=options)
+
+
+def test_convert_video_params_merges_options_into_the_mapped_response_format_and_config() -> None:
+    options = {
+        "response_format": {"resolution": "720p", "delivery": "uri"},
+        "generation_config": {"seed": 7, "temperature": 0.5},
+        "store": False,
+    }
+    converted = convert_video_params(_params(size="1280x720", seed=7), "gemini", api_version=None, options=options)
+    assert converted["response_format"] == {
+        "type": "video",
+        "aspect_ratio": "16:9",
+        "resolution": "720p",
+        "delivery": "uri",
+    }
+    assert converted["generation_config"] == {"seed": 7, "temperature": 0.5}
+    assert converted["store"] is False
+
+
+def test_convert_video_params_passes_a_generation_config_through_without_a_seed() -> None:
+    options = {"generation_config": {"temperature": 0.5}}
+    converted = convert_video_params(_params(), "gemini", api_version=None, options=options)
+    assert converted["generation_config"] == {"temperature": 0.5}
+
+
+def test_convert_video_params_merges_a_typed_generation_config() -> None:
+    options = {"generation_config": GenerationConfig(seed=7, max_output_tokens=10)}
+    converted = convert_video_params(_params(seed=7), "gemini", api_version=None, options=options)
+    assert converted["generation_config"] == {"seed": 7, "max_output_tokens": 10}
+
+
+def test_convert_video_params_rejects_a_typed_generation_config_that_contradicts_seed() -> None:
+    options = {"generation_config": GenerationConfig(seed=8)}
+    with pytest.raises(InvalidRequestError, match="seed=7 conflicts with seed=8"):
+        convert_video_params(_params(seed=7), "gemini", api_version=None, options=options)
+
+
+def test_convert_video_params_merges_the_video_entry_of_a_response_format_list() -> None:
+    options = {"response_format": [{"type": "text"}, {"type": "video", "delivery": "uri"}]}
+    converted = convert_video_params(_params(size="1280x720"), "gemini", api_version=None, options=options)
+    assert converted["response_format"] == [
+        {"type": "text"},
+        {"type": "video", "aspect_ratio": "16:9", "resolution": "720p", "delivery": "uri"},
+    ]
+
+
+def test_convert_video_params_adds_a_video_entry_to_a_response_format_list_without_one() -> None:
+    options = {"response_format": [{"type": "text"}]}
+    converted = convert_video_params(_params(resolution="720p"), "gemini", api_version=None, options=options)
+    assert converted["response_format"] == [{"type": "text"}, {"type": "video", "resolution": "720p"}]
+
+
+def test_convert_video_params_rejects_a_video_entry_that_contradicts_size() -> None:
+    options = {"response_format": [VideoResponseFormat(aspect_ratio="9:16")]}
+    with pytest.raises(InvalidRequestError, match="size='1280x720' conflicts with aspect_ratio='9:16'"):
+        convert_video_params(_params(size="1280x720"), "gemini", api_version=None, options=options)
 
 
 @pytest.mark.parametrize(
@@ -241,6 +313,17 @@ async def test_avideo_generation_creates_a_background_interaction() -> None:
     )
     assert result.id == "int-123"
     assert result.status == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_avideo_generation_rejects_a_response_format_that_contradicts_size_before_creating() -> None:
+    provider, client = make_provider()
+    client.aio.interactions.create = AsyncMock(return_value=_interaction())
+
+    with pytest.raises(InvalidRequestError, match="size='1280x720' conflicts with resolution='4k'"):
+        await provider.avideo_generation(MODEL, "a paper boat", size="1280x720", response_format={"resolution": "4k"})
+
+    client.aio.interactions.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio

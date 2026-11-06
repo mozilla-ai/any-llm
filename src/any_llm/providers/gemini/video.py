@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel
+
 from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.types.video import VideoError, VideoJob, VideoOutput, VideoStatus
 
@@ -46,36 +48,67 @@ def _image_part(image: str) -> dict[str, Any]:
     return {"type": "image", "data": data, "mime_type": mime_type}
 
 
-def _response_format(params: VideoGenerationParams) -> dict[str, Any]:
-    response_format: dict[str, Any] = {"type": "video"}
+def _response_format_fields(params: VideoGenerationParams) -> dict[str, tuple[str, Any]]:
+    """The ``response_format`` fields the shape sets, each with the shared parameter it came from."""
+    fields: dict[str, tuple[str, Any]] = {}
     shape = params.parse_shape()
     if shape is None:
-        return response_format
+        return fields
     if shape.ratio is not None:
         aspect_ratio = next((name for name, value in _ASPECT_RATIOS.items() if math.isclose(shape.ratio, value)), None)
         if aspect_ratio is None:
             msg = f"Gemini renders 16:9 or 9:16 video, not {shape.described!r}"
             raise InvalidRequestError(msg)
-        response_format["aspect_ratio"] = aspect_ratio
+        fields["aspect_ratio"] = ("size" if params.size is not None else "aspect_ratio", aspect_ratio)
     if shape.short_side is not None:
         resolution = _RESOLUTIONS.get(shape.short_side)
         if resolution is None:
             sizes = ", ".join(str(side) for side in _RESOLUTIONS)
             msg = f"Gemini renders video with a short side of {sizes} pixels, not {shape.described!r}"
             raise InvalidRequestError(msg)
-        response_format["resolution"] = resolution
-    return response_format
+        fields["resolution"] = ("size" if params.size is not None else "resolution", resolution)
+    return fields
+
+
+def _as_dict(option: Any) -> dict[str, Any]:
+    """A caller's option as a dict, whether it came as a dict or as one of the SDK's models."""
+    if isinstance(option, BaseModel):
+        return option.model_dump(mode="json", exclude_none=True, by_alias=True)
+    return dict(option or {})
+
+
+def _merge_response_format(params: VideoGenerationParams, option: Any) -> dict[str, Any] | list[dict[str, Any]]:
+    """The caller's ``response_format`` with the shape merged into its video format, adding one when it has none."""
+    fields = _response_format_fields(params)
+    if not isinstance(option, list):
+        return {"type": "video"} | params.merge_provider_options(fields, _as_dict(option))
+    formats = [_as_dict(entry) for entry in option]
+    if not any(entry.get("type") == "video" for entry in formats):
+        return [*formats, {"type": "video"} | params.merge_provider_options(fields, {})]
+    return [
+        params.merge_provider_options(fields, entry) if entry.get("type") == "video" else entry for entry in formats
+    ]
 
 
 def convert_video_params(
-    params: VideoGenerationParams, provider_name: str, *, api_version: str | None
+    params: VideoGenerationParams,
+    provider_name: str,
+    *,
+    api_version: str | None,
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Translate VideoGenerationParams into ``interactions.create`` arguments.
+    """Translate VideoGenerationParams, plus provider ``options``, into ``interactions.create`` arguments.
 
     The job runs in the background so the call returns at once; ``retrieve_video`` then reads
     the interaction. Omni Flash assigns frame roles by position: the first image part is the
     first frame, the second is the last frame, and reference images follow them.
+
+    A ``response_format`` or ``generation_config`` option, as a dict or an SDK model, merges with the
+    one the shared fields build, and raises ``InvalidRequestError`` when it sets one of their fields
+    to another value. A list of response formats gets the shape in its video format. Other options
+    replace the argument of the same name.
     """
+    options = dict(options or {})
     if params.seconds is not None:
         # The Interactions SDK has a duration field, but the Gemini API documents no accepted values.
         parameter_name = "seconds"
@@ -108,13 +141,16 @@ def convert_video_params(
         "model": params.model_id,
         "input": params.prompt if not parts else [*parts, {"type": "text", "text": params.prompt}],
         "background": True,
-        "response_format": _response_format(params),
+        "response_format": _merge_response_format(params, options.pop("response_format", None)),
     }
     if api_version is not None:
         create_kwargs["api_version"] = api_version
-    if params.seed is not None:
-        create_kwargs["generation_config"] = {"seed": params.seed}
-    return create_kwargs
+    config_fields = {"seed": ("seed", params.seed)} if params.seed is not None else {}
+    if generation_config := params.merge_provider_options(
+        config_fields, _as_dict(options.pop("generation_config", None))
+    ):
+        create_kwargs["generation_config"] = generation_config
+    return create_kwargs | options
 
 
 def convert_interaction_to_video_job(interaction: Interaction, *, fallback_model: str) -> VideoJob:

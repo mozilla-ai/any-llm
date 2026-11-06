@@ -198,8 +198,8 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
         # Vertex shares this package without requiring the Interactions SDK.
         from .video import convert_interaction_to_video_job, convert_video_params
 
-        create_kwargs = (
-            convert_video_params(params, self.PROVIDER_NAME, api_version=self._interactions_api_version) | kwargs
+        create_kwargs = convert_video_params(
+            params, self.PROVIDER_NAME, api_version=self._interactions_api_version, options=kwargs
         )
         interaction = await self.client.aio.interactions.create(**create_kwargs)
         return convert_interaction_to_video_job(interaction, fallback_model=params.model_id)
