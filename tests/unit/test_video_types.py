@@ -11,6 +11,18 @@ def test_video_job_defaults_to_no_outputs() -> None:
     assert job.progress is None
 
 
+def test_video_job_reports_no_charge_by_default() -> None:
+    job = VideoJob(id="vid-1", model="m", status="completed")
+    assert job.cost is None
+    assert job.tokens is None
+
+
+def test_video_job_carries_the_provider_charge() -> None:
+    job = VideoJob(id="vid-1", model="m", status="completed", cost=0.38991, tokens=50638)
+    assert job.cost == 0.38991
+    assert job.tokens == 50638
+
+
 @pytest.mark.parametrize(
     ("status", "done"),
     [("queued", False), ("in_progress", False), ("completed", True), ("failed", True)],
