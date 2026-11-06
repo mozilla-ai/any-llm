@@ -539,19 +539,21 @@ def test_convert_inference_response_fails_a_success_without_a_video() -> None:
 
 
 def test_convert_inference_response_reports_the_provider_charge() -> None:
-    inference_status = {"status": "succeeded", "cost": 0.38991, "tokens_input": 13, "tokens_generated": 50625}
-    job = convert_inference_response(_response(inference_status=inference_status), model=SEEDANCE, api_base=API_BASE)
+    # The shape of a live Seedance 2.0 reply: 480p, 5 seconds, no inference_status.status.
+    response = _response(out_tokens=50638, inference_status={"runtime_ms": 92153, "cost": 0.38991260000000005})
+    job = convert_inference_response(response, model=SEEDANCE, api_base=API_BASE)
 
-    assert job.cost == 0.38991
+    assert job.status == "completed"
+    assert job.cost == 0.38991260000000005
     assert job.tokens == 50638
 
 
-def test_convert_inference_response_counts_only_the_tokens_reported() -> None:
-    inference_status = {"status": "succeeded", "tokens_generated": 50625}
-    job = convert_inference_response(_response(inference_status=inference_status), model=SEEDANCE, api_base=API_BASE)
+def test_convert_inference_response_reports_tokens_without_a_cost() -> None:
+    response = _response(out_tokens=50638, inference_status={"status": "succeeded"})
+    job = convert_inference_response(response, model=SEEDANCE, api_base=API_BASE)
 
     assert job.cost is None
-    assert job.tokens == 50625
+    assert job.tokens == 50638
 
 
 def test_convert_inference_response_reports_a_whole_dollar_cost_as_a_float() -> None:
@@ -563,27 +565,29 @@ def test_convert_inference_response_reports_a_whole_dollar_cost_as_a_float() -> 
     assert isinstance(job.cost, float)
 
 
-def test_convert_inference_response_reports_no_charge_without_an_inference_status() -> None:
-    job = convert_inference_response(_response(inference_status=None), model=SEEDANCE, api_base=API_BASE)
+def test_convert_inference_response_reports_no_charge_when_the_reply_has_none() -> None:
+    response = _response(inference_status=None)
+    del response["out_tokens"]
+    job = convert_inference_response(response, model=SEEDANCE, api_base=API_BASE)
 
     assert job.cost is None
     assert job.tokens is None
 
 
-@pytest.mark.parametrize("value", [None, "0.5", True])
-def test_convert_inference_response_ignores_a_charge_that_is_not_a_number(value: object) -> None:
-    inference_status = {"status": "succeeded", "cost": value, "tokens_input": value, "tokens_generated": value}
-    job = convert_inference_response(_response(inference_status=inference_status), model=SEEDANCE, api_base=API_BASE)
+@pytest.mark.parametrize("value", [None, "0.5", True, 1.5])
+def test_convert_inference_response_ignores_a_charge_of_the_wrong_type(value: object) -> None:
+    response = _response(
+        out_tokens=value, inference_status={"status": "succeeded", "cost": None if value == 1.5 else value}
+    )
+    job = convert_inference_response(response, model=SEEDANCE, api_base=API_BASE)
 
     assert job.cost is None
     assert job.tokens is None
 
 
 def test_convert_inference_response_reports_the_charge_of_a_failed_render() -> None:
-    inference_status = {"status": "failed", "cost": 0.0, "tokens_input": 0, "tokens_generated": 0}
-    job = convert_inference_response(
-        _response(video_url=None, inference_status=inference_status), model=SEEDANCE, api_base=API_BASE
-    )
+    response = _response(video_url=None, out_tokens=0, inference_status={"status": "failed", "cost": 0.0})
+    job = convert_inference_response(response, model=SEEDANCE, api_base=API_BASE)
 
     assert job.status == "failed"
     assert job.cost == 0.0
@@ -805,7 +809,9 @@ async def test_retrieve_video_returns_a_job_started_in_this_process(provider: De
         job = await provider.avideo_generation(SEEDANCE, "a rubber duck")
 
     assert await provider.aretrieve_video(job.id) is job
-    assert (await provider.aretrieve_video(job.id)).cost == 0.5
+    assert job.tokens == 1000
+    retrieved = await provider.aretrieve_video(job.id)
+    assert (retrieved.cost, retrieved.tokens) == (0.5, 1000)
     # The store is class-wide, so the module-level functions reach it through a fresh instance.
     assert await DeepinfraProvider(api_key="other-key").aretrieve_video(job.id) is job
 
