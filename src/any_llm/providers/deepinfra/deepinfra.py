@@ -76,7 +76,7 @@ class DeepinfraProvider(BaseOpenAIProvider):
         extra_body = kwargs.pop("extra_body", None) or {}
         # The schema fetch shares the caller's deadline but keeps the client's retries: it is a cheap, idempotent GET.
         schema = await self._video_schema(params.model_id, options={"timeout": timeout})
-        body = {**convert_video_params(params, schema, self.PROVIDER_NAME, **kwargs), **extra_body}
+        body = convert_video_params(params, schema, self.PROVIDER_NAME, **(kwargs | extra_body))
         if "webhook" in body:
             msg = (
                 "DeepInfra video jobs cannot take a webhook: the reply would be a queued job that "

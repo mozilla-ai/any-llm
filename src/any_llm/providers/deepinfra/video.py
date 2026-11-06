@@ -30,6 +30,8 @@ _REFERENCE_AUDIOS_FIELD = "reference_audios"
 # Wan 2.6 and 2.7 take a single clip under a field of their own.
 _SINGLE_AUDIO_FIELDS = ("audio_url", "driving_audio")
 _RATIO_FIELDS = ("aspect_ratio", "ratio")
+# Seedance and Veo, Pixverse 6, then Wan 3.0. p-video's ``audio`` is a clip URL, so only a boolean counts.
+_GENERATE_AUDIO_FIELDS = ("generate_audio", "generate_audio_switch", "audio")
 
 # DeepInfra's ``inference_status.status`` values. A synchronous call returns ``succeeded``; the
 # others appear with a webhook or when the render fails.
@@ -99,6 +101,19 @@ class _BodyBuilder:
         """A field the schema has under one fixed name."""
         if field not in self.schema.fields:
             self.reject(parameter_name)
+        self.body[field] = value
+
+    def switch(self, parameter_name: str, field_names: tuple[str, ...], value: bool, kwargs: dict[str, Any]) -> None:
+        """A yes or no the model takes as one of its boolean fields, unless ``kwargs`` set that field the other way."""
+        field = next(
+            (name for name in field_names if (self.schema.fields.get(name) or {}).get("type") == "boolean"), None
+        )
+        if field is None:
+            self.reject(parameter_name)
+        # A gateway bills on the shared field, so the request must not render the opposite.
+        if field in kwargs and kwargs[field] != value:
+            msg = f"{parameter_name}={value} conflicts with {field}={kwargs[field]!r}; pass only one of them"
+            raise InvalidRequestError(msg)
         self.body[field] = value
 
     def image(self, parameter_name: str, value: str, field_names: tuple[str, ...], media_type: str) -> None:
@@ -204,6 +219,8 @@ class _BodyBuilder:
             self.reference_audios(params.reference_audios)
         if params.reference_videos:
             self.references("reference_videos", params.reference_videos, "reference_video")
+        if params.generate_audio is not None:
+            self.switch("generate_audio", _GENERATE_AUDIO_FIELDS, params.generate_audio, kwargs)
         # Caller-provided media items merge with the ones any-llm's fields produced.
         self.media.extend(kwargs.pop("media", None) or [])
         if self.media:

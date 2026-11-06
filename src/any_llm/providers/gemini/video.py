@@ -92,6 +92,10 @@ def convert_video_params(
         # field, so a reference role needs handling of its own before it can be mapped.
         parameter_name = "reference_videos"
         raise UnsupportedParameterError(parameter_name, provider_name)
+    if params.generate_audio is not None:
+        # Omni always tries to add a sound track and has no field to turn it off; only the prompt steers it.
+        parameter_name = "generate_audio"
+        raise UnsupportedParameterError(parameter_name, provider_name)
 
     parts: list[dict[str, Any]] = []
     if params.first_frame is not None:

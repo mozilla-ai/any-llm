@@ -56,6 +56,7 @@ def test_video_generation_params_to_api_kwargs_includes_set_values() -> None:
         reference_videos=["https://video/1.mp4"],
         first_frame="https://img/first.png",
         last_frame="https://img/last.png",
+        generate_audio=False,
     )
     assert params.to_api_kwargs() == {
         "prompt": "a cat",
@@ -67,6 +68,7 @@ def test_video_generation_params_to_api_kwargs_includes_set_values() -> None:
         "reference_videos": ["https://video/1.mp4"],
         "first_frame": "https://img/first.png",
         "last_frame": "https://img/last.png",
+        "generate_audio": False,
     }
 
 

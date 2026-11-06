@@ -72,6 +72,7 @@ async def test_avideo_generation_with_explicit_provider_passes_all_params() -> N
             reference_videos=["https://video/moves.mp4"],
             first_frame="https://img/first.png",
             last_frame="https://img/last.png",
+            generate_audio=True,
             fps=24,
         )
 
@@ -89,6 +90,7 @@ async def test_avideo_generation_with_explicit_provider_passes_all_params() -> N
         "reference_videos": ["https://video/moves.mp4"],
         "first_frame": "https://img/first.png",
         "last_frame": "https://img/last.png",
+        "generate_audio": True,
         "fps": 24,
     }
 
@@ -103,11 +105,13 @@ def test_sync_video_generation_dispatches() -> None:
             prompt="A fish",
             seconds=5,
             reference_videos=["https://video/swim.mp4"],
+            generate_audio=False,
         )
 
     assert provider.video_generation.call_args[0] == ("ByteDance/Seedance-2.0", "A fish")
     assert provider.video_generation.call_args[1]["seconds"] == 5
     assert provider.video_generation.call_args[1]["reference_videos"] == ["https://video/swim.mp4"]
+    assert provider.video_generation.call_args[1]["generate_audio"] is False
     assert result.id == "vid-1"
 
 
