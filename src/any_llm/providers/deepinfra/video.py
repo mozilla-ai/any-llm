@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 from uuid import uuid4
 
 from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
-from any_llm.types.video import VideoError, VideoJob, VideoOutput, VideoStatus
+from any_llm.types.video import TERMINAL_VIDEO_STATUSES, VideoError, VideoJob, VideoOutput, VideoStatus
 
 if TYPE_CHECKING:
     from any_llm.types.video import VideoGenerationParams
@@ -281,10 +281,11 @@ def _number(value: object) -> int | float | None:
 
 
 def convert_inference_response(response: dict[str, Any], *, model: str, api_base: str) -> VideoJob:
-    """Read a synchronous inference reply as a finished VideoJob.
+    """Read an inference reply as a VideoJob.
 
-    DeepInfra renders inside the request and returns the video URL in the same reply, so the
-    job is already ``completed`` (or ``failed``) when it is first seen.
+    Without a webhook, DeepInfra renders inside the request and returns the video URL in the
+    same reply, so the job is already ``completed`` (or ``failed``). With one, the reply is the
+    ``queued`` job and the finished one arrives at the webhook.
     """
     inference_status = response.get("inference_status") or {}
     raw_status = str(inference_status.get("status") or "unknown")
@@ -308,9 +309,13 @@ def convert_inference_response(response: dict[str, Any], *, model: str, api_base
         detail = response.get("detail") or response.get("error") or "DeepInfra returned no video."
         error = VideoError(message=str(detail))
 
-    cost = _number(inference_status.get("cost"))
-    # The billed token count sits beside inference_status, not in it: cost is out_tokens times the per-token price.
-    tokens = _number(response.get("out_tokens"))
+    cost: int | float | None = None
+    tokens: int | float | None = None
+    # A queued or running job reports a zero cost, which is not what the render will bill.
+    if status in TERMINAL_VIDEO_STATUSES:
+        cost = _number(inference_status.get("cost"))
+        # The billed token count sits beside inference_status, not in it: cost is out_tokens times the per-token price.
+        tokens = _number(response.get("out_tokens"))
     return VideoJob(
         id=str(response.get("request_id") or f"deepinfra-{uuid4().hex}"),
         model=model,

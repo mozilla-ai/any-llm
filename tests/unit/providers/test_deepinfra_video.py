@@ -506,11 +506,13 @@ def test_convert_inference_response_treats_a_missing_status_as_finished() -> Non
 
 @pytest.mark.parametrize(("raw_status", "status"), [("queued", "queued"), ("running", "in_progress")])
 def test_convert_inference_response_maps_a_pending_status(raw_status: str, status: str) -> None:
-    response = _response(video_url=None, inference_status={"status": raw_status})
+    response = _response(video_url=None, inference_status={"status": raw_status, "cost": 0.0})
     job = convert_inference_response(response, model=SEEDANCE, api_base=API_BASE)
     assert job.status == status
     assert job.outputs == []
     assert job.error is None
+    # The charge is only known once the render ends.
+    assert (job.cost, job.tokens) == (None, None)
 
 
 def test_convert_inference_response_keeps_outputs_empty_until_the_job_is_complete() -> None:
@@ -689,23 +691,50 @@ async def test_video_generation_fetches_the_schema_again_for_another_api_base(pr
     ]
 
 
+def _queued_response(**overrides: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "request_id": "RqueuedIaF5GlVisBAi5xR3E",
+        "inference_status": {"status": "queued", "runtime_ms": 0, "cost": 0.0},
+    }
+    fields.update(overrides)
+    return fields
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "kwargs",
     [{"webhook": "https://hooks.example/done"}, {"extra_body": {"webhook": "https://hooks.example/done"}}],
 )
-async def test_video_generation_rejects_a_webhook_before_posting(
+async def test_video_generation_with_a_webhook_returns_the_queued_job(
     provider: DeepinfraProvider, kwargs: dict[str, Any]
 ) -> None:
-    post = AsyncMock(return_value=_response())
+    post = AsyncMock(return_value=_queued_response())
     with (
         patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": SEEDANCE_SCHEMA})),
         patch.object(provider.client, "post", post),
-        pytest.raises(InvalidRequestError, match="cannot take a webhook"),
     ):
-        await provider.avideo_generation(SEEDANCE, "a rubber duck", **kwargs)
+        job = await provider.avideo_generation(SEEDANCE, "a rubber duck", **kwargs)
 
-    assert post.await_count == 0
+    assert post.call_args.kwargs["body"] == {"prompt": "a rubber duck", "webhook": "https://hooks.example/done"}
+    assert post.call_args.kwargs["options"] == {"max_retries": 0, "timeout": 900.0}
+    assert (job.id, job.model, job.status) == ("RqueuedIaF5GlVisBAi5xR3E", SEEDANCE, "queued")
+    # A queued reply carries a zero cost, which is not what the finished render will bill.
+    assert (job.cost, job.tokens) == (None, None)
+    assert await provider.aretrieve_video(job.id) is job
+
+
+@pytest.mark.asyncio
+async def test_video_generation_with_a_webhook_rejects_a_reply_without_a_request_id(
+    provider: DeepinfraProvider,
+) -> None:
+    with (
+        patch.object(provider.client, "get", AsyncMock(return_value={"in_schema": SEEDANCE_SCHEMA})),
+        patch.object(provider.client, "post", AsyncMock(return_value=_queued_response(request_id=None))),
+        pytest.raises(ProviderError, match="no request_id"),
+    ):
+        await provider.avideo_generation(SEEDANCE, "a rubber duck", webhook="https://hooks.example/done")
+
+    assert DeepinfraProvider._video_jobs == {}
 
 
 @pytest.mark.asyncio

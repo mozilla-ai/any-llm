@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from typing_extensions import override
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, ProviderError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 from .video import VideoSchema, convert_inference_response, convert_video_params
@@ -39,8 +39,8 @@ class DeepinfraProvider(BaseOpenAIProvider):
     SUPPORTS_VIDEO_GENERATION = True
 
     _video_jobs: ClassVar[dict[str, VideoJob]] = {}
-    """The newest finished video jobs by id. DeepInfra renders inside the request and has no
-    endpoint to look a request up afterwards, so this is the only place ``retrieve_video`` can read from."""
+    """The newest video jobs by id, finished or waiting on their webhook. DeepInfra has no endpoint to
+    look a request up afterwards, so this is the only place ``retrieve_video`` can read from."""
 
     _video_schemas: ClassVar[dict[tuple[str, str], VideoSchema]] = {}
     """Each video model's input schema by API root and model, fetched once per process from ``GET /models/{model}``."""
@@ -77,18 +77,16 @@ class DeepinfraProvider(BaseOpenAIProvider):
         # The schema fetch shares the caller's deadline but keeps the client's retries: it is a cheap, idempotent GET.
         schema = await self._video_schema(params.model_id, options={"timeout": timeout})
         body = convert_video_params(params, schema, self.PROVIDER_NAME, **(kwargs | extra_body))
-        if "webhook" in body:
-            msg = (
-                "DeepInfra video jobs cannot take a webhook: the reply would be a queued job that "
-                "retrieve_video has no way to read back."
-            )
-            raise InvalidRequestError(msg)
         response = await self.client.post(
             self._inference_url(params.model_id),
             body=body,
             cast_to=dict[str, Any],
             options=options,
         )
+        if "webhook" in body and not response.get("request_id"):
+            # The callback names its job only by request_id, so a queued job without one can never finish.
+            msg = "DeepInfra queued the video job with no request_id, so its webhook callback cannot be matched to it"
+            raise ProviderError(msg)
         job = convert_inference_response(response, model=params.model_id, api_base=str(self.client.base_url))
         self._video_jobs[job.id] = job
         while len(self._video_jobs) > _VIDEO_JOBS_KEPT:
