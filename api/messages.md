@@ -30,6 +30,7 @@ def messages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     container: str | dict[str, Any] | None = None,
+    inference_geo: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,
     api_key: str | None = None,
@@ -66,6 +67,7 @@ async def amessages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     container: str | dict[str, Any] | None = None,
+    inference_geo: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,
     api_key: str | None = None,
@@ -99,6 +101,7 @@ async def amessages(
 | `context_management` | `dict[str, Any] \| None` | None | Anthropic context management configuration. The `compact_20260112` strategy requires a supported model. Its `input_tokens` trigger value must be at least 50,000 when provided; see [Anthropic's compaction documentation](https://platform.claude.com/docs/en/build-with-claude/compaction). |
 | `betas` | `list[str] \| None` | None | Anthropic beta identifiers. |
 | `container` | `str \| dict[str, Any] \| None` | None | Container identifier, or an object with optional ``id`` and ``skills``. A string reuses an existing container. An object selects Skills for a fresh container or reuses one while attaching Skills. See [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter). |
+| `inference_geo` | `str \| None` | None | Anthropic's region to run the request in, such as ``us``. When omitted, Anthropic uses the workspace's ``default_inference_geo``. The response reports where the request ran in ``usage.inference_geo``. Providers without a matching option raise `UnsupportedParameterError`. |
 | `output_format` | `type \| dict[str, Any] \| None` | None | Structured output, mirroring Anthropic's ``messages.parse``/``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output`` holds the parsed JSON). Non-streaming calls return Anthropic's ``ParsedMessage`` for types or mappings with a non-empty schema dict. Mappings without one return ``MessageResponse``. Providers with native support can stream schema-constrained Messages events. Native Anthropic typed beta requests return ``ParsedBetaMessage`` when ``context_management`` is set or beta identifiers are supplied. |
 | `timeout` | `float \| None` | None | Per-request timeout in seconds, passed through to the provider's client/SDK. An explicit ``None`` is treated the same as omitting it (the provider's default applies), so it cannot request an unbounded timeout. Providers that have no per-request timeout raise `UnsupportedParameterError`; set a timeout on their client via `client_args` instead. |
 | `api_key` | `str \| None` | None | API key for the provider. |
