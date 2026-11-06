@@ -15,6 +15,7 @@ from any_llm.utils.structured_output import get_json_schema, is_structured_outpu
 MISSING_PACKAGES_ERROR = None
 try:
     import together
+    from together._base_client import make_request_options
 
     from .utils import (
         _convert_batch_job_to_openai,
@@ -52,6 +53,7 @@ _SCHEMA_METADATA_KEYS = ("name", "description", "strict")
 # (https://docs.together.ai/reference/audio-speech). So any-llm's pcm has no equivalent on the
 # unary call made here, and opus, aac and flac have none at all.
 _SPEECH_RESPONSE_FORMATS = frozenset({"mp3", "wav"})
+_REQUEST_OPTION_KEYS = ("extra_headers", "extra_query", "extra_body", "timeout")
 
 
 def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
@@ -288,7 +290,19 @@ class TogetherProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        models_list = await self.client.models.list(**kwargs)
+        """List the serverless models through ``GET /v1/models``.
+
+        SDK 3.x has no method for this endpoint: its ``models.list`` lists a project's own models,
+        and ``models.list_supported`` lists the base models available for dedicated deployments.
+        Keyword arguments other than the SDK's request options, such as ``dedicated``, become
+        query parameters.
+        """
+        request_options = {key: kwargs.pop(key) for key in _REQUEST_OPTION_KEYS if key in kwargs}
+        models_list = await self.client.get(
+            "/v1/models",
+            cast_to=list[dict[str, Any]],
+            options=make_request_options(query=kwargs, **request_options),
+        )
         return self._convert_list_models_response(models_list)
 
     @override
