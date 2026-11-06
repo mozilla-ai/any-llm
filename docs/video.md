@@ -168,6 +168,8 @@ Take `provider` and one entry of `VideoJob.outputs` and return the video as byte
 | `progress` | `int \| None` | Percent complete, when the provider reports it |
 | `seconds` | `int \| None` | Length of the video, when the provider reports it |
 | `size` | `str \| None` | `WIDTHxHEIGHT` of the video, when the provider reports it |
+| `cost` | `float \| None` | What the provider charged for the job, in USD, when it reports it |
+| `tokens` | `int \| None` | The units the provider bills the job by, when it bills video by tokens and reports them |
 | `error` | `VideoError \| None` | Why a `failed` job failed |
 | `outputs` | `list[VideoOutput]` | The rendered videos; empty until `completed` |
 
