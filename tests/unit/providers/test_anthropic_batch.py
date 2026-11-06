@@ -196,6 +196,8 @@ async def test_acreate_batch() -> None:
 async def test_aretrieve_batch_results_completed_mixed() -> None:
     """Test retrieving batch results with mixed successes and failures."""
     pytest.importorskip("anthropic")
+    from anthropic.types import Usage
+
     from any_llm.providers.anthropic.anthropic import AnthropicProvider
 
     with patch("any_llm.providers.anthropic.anthropic.AsyncAnthropic"):
@@ -214,7 +216,7 @@ async def test_aretrieve_batch_results_completed_mixed() -> None:
         mock_message.model = "claude-sonnet-4-20250514"
         mock_message.stop_reason = "end_turn"
         mock_message.content = [Mock(type="text", text="Hello!")]
-        mock_message.usage = Mock(
+        mock_message.usage = Usage(
             input_tokens=10,
             output_tokens=5,
             cache_read_input_tokens=0,

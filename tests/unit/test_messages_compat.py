@@ -2204,6 +2204,15 @@ def test_completion_usage_without_cache_data_serializes_unchanged() -> None:
     assert json.loads(plain.model_dump_json()) == json.loads(openai_shape.model_dump_json())
 
 
+def test_completion_usage_serializes_reported_inference_geo() -> None:
+    usage = CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11, inference_geo="us")
+
+    assert usage.model_dump()["inference_geo"] == "us"
+    assert json.loads(usage.model_dump_json())["inference_geo"] == "us"
+    assert CompletionUsage.model_validate_json(usage.model_dump_json()).inference_geo == "us"
+    assert "inference_geo" in CompletionUsage.model_json_schema(mode="serialization")["properties"]
+
+
 def test_prompt_tokens_details_round_trips_cache_write_ttl() -> None:
     usage = CompletionUsage(
         prompt_tokens=10,
