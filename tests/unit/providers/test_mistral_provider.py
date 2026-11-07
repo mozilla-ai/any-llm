@@ -1738,6 +1738,31 @@ def test_create_mistral_completion_maps_finish_reason(finish_reason: str, expect
     assert completion.choices[0].message.content == "partial"
 
 
+@pytest.mark.parametrize(("finish_reason", "expected"), [("model_length", "length"), ("stop", "stop")])
+def test_create_openai_chunk_maps_finish_reason(finish_reason: str, expected: str) -> None:
+    """Streaming maps model_length to length, like the non-streaming path."""
+    pytest.importorskip("mistralai")
+    from any_llm.providers.mistral.utils import _create_openai_chunk_from_mistral_chunk
+
+    choice = Mock()
+    choice.index = 0
+    choice.delta.content = "partial"
+    choice.delta.role = "assistant"
+    choice.delta.tool_calls = None
+    choice.finish_reason = finish_reason
+
+    event = Mock()
+    event.data.id = "chatcmpl-abc"
+    event.data.created = 1_700_000_000
+    event.data.model = "mistral-small-latest"
+    event.data.choices = [choice]
+    event.data.usage = None
+
+    chunk = _create_openai_chunk_from_mistral_chunk(event)
+
+    assert chunk.choices[0].finish_reason == expected
+
+
 def test_create_openai_chunk_keeps_nonstandard_finish_reason() -> None:
     """Mistral's streaming ``error`` finish_reason reaches the caller as sent."""
     pytest.importorskip("mistralai")
