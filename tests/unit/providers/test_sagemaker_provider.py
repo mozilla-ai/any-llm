@@ -1,3 +1,9 @@
+import threading
+from collections.abc import Iterator
+from unittest.mock import patch
+
+import pytest
+
 from any_llm.providers.sagemaker.sagemaker import SagemakerProvider
 from any_llm.providers.sagemaker.utils import _convert_params
 from any_llm.types.completion import CompletionParams
@@ -37,3 +43,24 @@ def test_convert_params_omits_unset_sampling_params() -> None:
 
     assert "temperature" not in result
     assert "top_p" not in result
+
+
+@pytest.mark.asyncio
+async def test_async_stream_reads_events_off_the_event_loop() -> None:
+    loop_thread = threading.get_ident()
+    read_threads: list[int] = []
+
+    def blocking_chunks() -> Iterator[str]:
+        for item in ("a", "b"):
+            read_threads.append(threading.get_ident())
+            yield item
+
+    provider = SagemakerProvider.__new__(SagemakerProvider)
+    params = CompletionParams(model_id="endpoint", messages=[{"role": "user", "content": "hi"}], stream=True)
+
+    with patch.object(SagemakerProvider, "_completion", return_value=blocking_chunks()):
+        stream = await provider._acompletion(params)
+        received = [chunk async for chunk in stream]  # type: ignore[union-attr]
+
+    assert received == ["a", "b"]
+    assert loop_thread not in read_threads
