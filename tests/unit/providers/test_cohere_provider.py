@@ -1452,3 +1452,32 @@ def test_streaming_message_end_maps_cached_tokens() -> None:
     assert result.usage is not None
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 2048
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("openai_params", "cohere_params"),
+    [
+        ({"stop": "END"}, {"stop_sequences": ["END"]}),
+        ({"stop": ["a", "b"]}, {"stop_sequences": ["a", "b"]}),
+        ({"top_p": 0.5}, {"p": 0.5}),
+        ({"max_completion_tokens": 64}, {"max_tokens": 64}),
+        ({"max_tokens": 32, "max_completion_tokens": 64}, {"max_tokens": 64}),
+    ],
+)
+async def test_openai_style_params_are_renamed_for_chat(
+    openai_params: dict[str, Any], cohere_params: dict[str, Any]
+) -> None:
+    provider = _mk_provider()
+
+    with (
+        patch.object(provider.client, "chat", autospec=True) as mock_chat,
+        patch("any_llm.providers.cohere.cohere._convert_response", return_value=Mock()),
+    ):
+        await provider.acompletion(model="model-id", messages=[{"role": "user", "content": "Hello"}], **openai_params)
+
+    sent = mock_chat.call_args.kwargs
+    for name in ("stop", "top_p", "max_completion_tokens"):
+        assert name not in sent
+    for name, value in cohere_params.items():
+        assert sent[name] == value
