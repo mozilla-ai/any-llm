@@ -773,33 +773,52 @@ async def test_speech_rejects_instructions() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("api_base", "env_base", "expected_base"),
+    ("api_base", "env_base", "expected_root"),
     [
-        (None, None, "https://api.groq.com/openai/v1/"),
-        ("https://proxy.example/openai/v1", None, "https://proxy.example/openai/v1/"),
-        (None, "https://env.example/openai/v1", "https://env.example/openai/v1/"),
-        (
-            "https://proxy.example/openai/v1",
-            "https://env.example/openai/v1",
-            "https://proxy.example/openai/v1/",
-        ),
+        (None, None, "https://api.groq.com"),
+        (None, "https://api.groq.com", "https://api.groq.com"),
+        (None, "https://proxy.example", "https://proxy.example"),
+        (None, "https://proxy.example/openai/v1/", "https://proxy.example"),
+        ("https://proxy.example", None, "https://proxy.example"),
+        ("https://proxy.example/openai/v1", None, "https://proxy.example"),
+        ("https://proxy.example/openai/v1/", "https://env.example", "https://proxy.example"),
     ],
 )
-async def test_responses_uses_configured_base_url(
-    monkeypatch: pytest.MonkeyPatch, api_base: str | None, env_base: str | None, expected_base: str
+async def test_chat_and_responses_use_configured_base_url(
+    monkeypatch: pytest.MonkeyPatch, api_base: str | None, env_base: str | None, expected_root: str
 ) -> None:
+    import httpx
+
     from any_llm.providers.groq.groq import GroqProvider
 
     monkeypatch.delenv("GROQ_BASE_URL", raising=False)
     if env_base is not None:
         monkeypatch.setenv("GROQ_BASE_URL", env_base)
 
-    provider = GroqProvider(api_key="test-api-key", api_base=api_base)
-    try:
-        with patch("any_llm.providers.groq.groq.AsyncOpenAI") as mocked_openai:
-            mocked_openai.return_value.responses.create = AsyncMock(return_value=_make_openai_response("hi"))
-            await provider.aresponses("openai/gpt-oss-20b", "hello")
+    requests: list[httpx.Request] = []
 
-        assert str(mocked_openai.call_args.kwargs["base_url"]).rstrip("/") == expected_base.rstrip("/")
-    finally:
-        await provider.client.close()
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/responses"):
+            return httpx.Response(200, json=_make_openai_response("hi").model_dump(mode="json"))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chat-1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "test-model",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http_client:
+        provider = GroqProvider(api_key="test-api-key", api_base=api_base, http_client=http_client)
+        await provider.acompletion("test-model", [{"role": "user", "content": "hello"}])
+        await provider.aresponses("test-model", "hello")
+
+    assert [str(request.url) for request in requests] == [
+        f"{expected_root}/openai/v1/chat/completions",
+        f"{expected_root}/openai/v1/responses",
+    ]
+    assert all(request.headers["authorization"] == "Bearer test-api-key" for request in requests)
