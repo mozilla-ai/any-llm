@@ -159,7 +159,10 @@ _USAGE_EVENT: dict[str, Any] = {"metadata": {"usage": {"inputTokens": 33, "outpu
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("stream_options", "choices"), [({"include_usage": True}, 0), (None, 1)])
+@pytest.mark.parametrize(
+    ("stream_options", "choices"),
+    [({"include_usage": True}, 0), ({"include_usage": False}, 1), (None, 1)],
+)
 async def test_converse_stream_usage_chunk_follows_include_usage(
     stream_options: dict[str, Any] | None, choices: int
 ) -> None:
