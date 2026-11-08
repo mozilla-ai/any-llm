@@ -1352,7 +1352,7 @@ def test_streaming_metadata_chunk_without_cached_tokens() -> None:
 
 
 def test_streaming_metadata_chunk_has_no_choices() -> None:
-    """The usage-only event comes out in OpenAI's shape: usage and no choices.
+    """With ``include_usage``, the usage event comes out in OpenAI's shape: usage and no choices.
 
     A placeholder choice with an empty delta and no finish_reason reads as a
     content chunk, so a consumer looking for the terminal usage chunk (no choices,
@@ -1360,12 +1360,36 @@ def test_streaming_metadata_chunk_has_no_choices() -> None:
     """
     chunk: dict[str, Any] = {"metadata": {"usage": {"inputTokens": 33, "outputTokens": 20, "totalTokens": 53}}}
 
-    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model", include_usage=True)
 
     assert result is not None
     assert result.choices == []
     assert result.usage is not None
     assert result.usage.total_tokens == 53
+
+
+def test_streaming_metadata_chunk_keeps_a_choice_when_usage_was_not_requested() -> None:
+    """Without ``include_usage`` the usage event keeps its choice, so ``choices[0]`` still works."""
+    chunk: dict[str, Any] = {"metadata": {"usage": {"inputTokens": 33, "outputTokens": 20, "totalTokens": 53}}}
+
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert len(result.choices) == 1
+    assert result.choices[0].finish_reason is None
+    assert result.usage is not None
+    assert result.usage.total_tokens == 53
+
+
+def test_streaming_content_chunk_sets_usage_to_none() -> None:
+    """``usage`` is set explicitly, so ``exclude_unset`` serialization keeps it as null."""
+    chunk = {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "Hi"}}}
+
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert "usage" in result.model_dump(exclude_unset=True)
+    assert result.usage is None
 
 
 def test_convert_tool_spec_none_parameters() -> None:
