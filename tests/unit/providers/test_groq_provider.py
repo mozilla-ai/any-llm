@@ -773,19 +773,26 @@ async def test_speech_rejects_instructions() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("api_base", "env_base", "expected_root"),
+    ("api_base", "env_base", "base_url", "expected_root"),
     [
-        (None, None, "https://api.groq.com"),
-        (None, "https://api.groq.com", "https://api.groq.com"),
-        (None, "https://proxy.example", "https://proxy.example"),
-        (None, "https://proxy.example/openai/v1/", "https://proxy.example"),
-        ("https://proxy.example", None, "https://proxy.example"),
-        ("https://proxy.example/openai/v1", None, "https://proxy.example"),
-        ("https://proxy.example/openai/v1/", "https://env.example", "https://proxy.example"),
+        (None, None, None, "https://api.groq.com"),
+        (None, "https://api.groq.com", None, "https://api.groq.com"),
+        (None, "https://proxy.example", None, "https://proxy.example"),
+        (None, "https://proxy.example/openai/v1/", None, "https://proxy.example"),
+        ("https://proxy.example", None, None, "https://proxy.example"),
+        ("https://proxy.example/openai/v1", None, None, "https://proxy.example"),
+        ("https://proxy.example/openai/v1/", "https://env.example", None, "https://proxy.example"),
+        (None, None, "https://client.example", "https://client.example"),
+        (None, "https://env.example", "https://client.example", "https://client.example"),
+        ("https://api.example", "https://env.example", "https://client.example/openai/v1/", "https://client.example"),
     ],
 )
 async def test_chat_and_responses_use_configured_base_url(
-    monkeypatch: pytest.MonkeyPatch, api_base: str | None, env_base: str | None, expected_root: str
+    monkeypatch: pytest.MonkeyPatch,
+    api_base: str | None,
+    env_base: str | None,
+    base_url: str | None,
+    expected_root: str,
 ) -> None:
     import httpx
 
@@ -813,7 +820,8 @@ async def test_chat_and_responses_use_configured_base_url(
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http_client:
-        provider = GroqProvider(api_key="test-api-key", api_base=api_base, http_client=http_client)
+        client_args = {"base_url": base_url} if base_url is not None else {}
+        provider = GroqProvider(api_key="test-api-key", api_base=api_base, http_client=http_client, **client_args)
         await provider.acompletion("test-model", [{"role": "user", "content": "hello"}])
         await provider.aresponses("test-model", "hello")
 
