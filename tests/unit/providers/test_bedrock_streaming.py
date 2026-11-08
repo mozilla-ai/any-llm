@@ -172,6 +172,9 @@ async def test_converse_stream_usage_chunk_follows_include_usage(
 
     chunks = [chunk async for chunk in stream]
 
+    assert len(chunks) == 3
+    assert chunks[0].choices[0].delta.content == "Hi"
+    assert chunks[1].choices[0].finish_reason == "stop"
     last = chunks[-1]
     assert len(last.choices) == choices
     assert last.usage is not None
