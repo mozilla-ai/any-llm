@@ -129,7 +129,8 @@ class GroqProvider(AnyLLM):
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_key = api_key
-        self.api_base = (api_base or "https://api.groq.com").rstrip("/").removesuffix("/openai/v1")
+        base_url = kwargs.pop("base_url", None)
+        self.api_base = str(base_url or api_base or "https://api.groq.com").rstrip("/").removesuffix("/openai/v1")
         self.kwargs = kwargs
         self.client = AsyncGroq(api_key=api_key, base_url=self.api_base, **kwargs)
 
