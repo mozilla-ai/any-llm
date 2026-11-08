@@ -129,6 +129,7 @@ class GroqProvider(AnyLLM):
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_key = api_key
+        self.api_base = api_base
         self.kwargs = kwargs
         self.client = AsyncGroq(api_key=api_key, **kwargs)
 
@@ -198,7 +199,7 @@ class GroqProvider(AnyLLM):
             raise UnsupportedParameterError(parameter, self.PROVIDER_NAME)
 
         client = AsyncOpenAI(
-            base_url="https://api.groq.com/openai/v1",
+            base_url=self.api_base or "https://api.groq.com/openai/v1",
             api_key=self.api_key,
             **self.kwargs,
         )
