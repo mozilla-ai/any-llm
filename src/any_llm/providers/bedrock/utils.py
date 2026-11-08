@@ -480,7 +480,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
     tool calls from a single assistant message to be grouped together. Consecutive user
     messages are merged for the same reason: Bedrock rejects two user turns in a row.
 
-    Every system message, wherever it appears, is hoisted into the system prompt in order,
+    Every system or developer message, wherever it appears, is hoisted into the system prompt in order,
     since Converse has no system role inside the conversation.
     """
     system_message: list[dict[str, Any]] = []
@@ -495,7 +495,7 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[list[dict[str, An
             pending_tool_results.clear()
 
     for message in messages:
-        if message["role"] == "system":
+        if message["role"] in ("system", "developer"):
             system_message.extend(_convert_system_content(message.get("content")))
         elif message["role"] == "tool":
             tool_result_content = _convert_tool_result_content(message)
