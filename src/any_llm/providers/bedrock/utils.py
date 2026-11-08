@@ -757,7 +757,6 @@ def _create_openai_chunk_from_aws_chunk(
     reasoning_content: str | None = None
     finish_reason: _FinishReason | None = None
     tool_call: ChoiceDeltaToolCall | None = None
-    usage: CompletionUsage | None = None
 
     if "contentBlockStart" in chunk:
         block_start = chunk["contentBlockStart"]
@@ -806,7 +805,16 @@ def _create_openai_chunk_from_aws_chunk(
         content = ""
     elif "metadata" in chunk:
         usage_data = chunk["metadata"].get("usage")
-        usage = _extract_usage(usage_data) if usage_data else None
+        # Usage only, in OpenAI's shape: no choices. A placeholder choice with an
+        # empty delta would read as a content chunk, not the stream's usage chunk.
+        return ChatCompletionChunk(
+            id=f"chatcmpl-{time()}",  # AWS doesn't provide an ID in the chunk
+            choices=[],
+            model=model,
+            created=int(time()),
+            object="chat.completion.chunk",
+            usage=_extract_usage(usage_data) if usage_data else None,
+        )
     else:
         return None
 
@@ -827,7 +835,6 @@ def _create_openai_chunk_from_aws_chunk(
         model=model,
         created=int(time()),
         object="chat.completion.chunk",
-        usage=usage,
     )
 
 

@@ -1351,6 +1351,23 @@ def test_streaming_metadata_chunk_without_cached_tokens() -> None:
     assert result.usage.prompt_tokens_details is None
 
 
+def test_streaming_metadata_chunk_has_no_choices() -> None:
+    """The usage-only event comes out in OpenAI's shape: usage and no choices.
+
+    A placeholder choice with an empty delta and no finish_reason reads as a
+    content chunk, so a consumer looking for the terminal usage chunk (no choices,
+    or a choice that finishes) never finds it.
+    """
+    chunk: dict[str, Any] = {"metadata": {"usage": {"inputTokens": 33, "outputTokens": 20, "totalTokens": 53}}}
+
+    result = _create_openai_chunk_from_aws_chunk(chunk, "test-model")
+
+    assert result is not None
+    assert result.choices == []
+    assert result.usage is not None
+    assert result.usage.total_tokens == 53
+
+
 def test_convert_tool_spec_none_parameters() -> None:
     """Regression: parameters=None must not pass None to Bedrock's inputSchema."""
     tool_config = _convert_tool_spec(
