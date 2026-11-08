@@ -256,11 +256,13 @@ class HuggingfaceProvider(AnyLLM):
         if is_structured_output_type(response_format):
             create_kwargs.pop("text", None)
             if issubclass(response_format, BaseModel):
-                return await self.responses_client.responses.parse(
+                # openai>=3.42 overloads parse() on parse_as, which the spread kwargs could carry, so mypy infers Any.
+                parsed: ParsedResponse[Any] = await self.responses_client.responses.parse(
                     text_format=response_format,
                     **create_kwargs,
                     **kwargs,
                 )
+                return parsed
             create_kwargs["text"] = build_responses_text_format(response_format)
         elif isinstance(response_format, dict):
             create_kwargs["text"] = {"format": response_format}
