@@ -448,6 +448,7 @@ SPEECH_PROVIDERS = {
     LLMProvider.TOGETHER,
     LLMProvider.MISTRAL,
     LLMProvider.GEMINI,
+    LLMProvider.DEEPINFRA,
 }
 
 
