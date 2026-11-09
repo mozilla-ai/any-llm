@@ -1,7 +1,8 @@
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
@@ -32,6 +33,7 @@ def test_deepinfra_supports_flags() -> None:
     assert provider.SUPPORTS_MODERATION is True
     assert provider.SUPPORTS_LIST_MODELS is True
     assert provider.SUPPORTS_VIDEO_GENERATION is True
+    assert provider.SUPPORTS_IMAGE_GENERATION is True
 
 
 def test_factory_integration() -> None:
@@ -111,4 +113,53 @@ async def test_deepinfra_streams_messages_output_config_as_json_schema() -> None
     assert request["response_format"] == {
         "type": "json_schema",
         "json_schema": {"name": "structured_output", "schema": schema},
+    }
+
+
+def _recording_provider(
+    requests: list[httpx.Request], respond: Callable[[httpx.Request], httpx.Response]
+) -> DeepinfraProvider:
+    """A provider whose HTTP calls are recorded in ``requests`` and answered by ``respond``."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return respond(request)
+
+    return DeepinfraProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)))
+
+
+@pytest.mark.asyncio
+async def test_image_generation_posts_to_the_openai_images_endpoint() -> None:
+    """https://docs.deepinfra.com/api-reference/image-generation/openai-images-generations"""
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(
+        requests, lambda _: httpx.Response(200, json={"created": 1, "data": [{"b64_json": "aW1hZ2U="}]})
+    )
+    try:
+        result = await provider.aimage_generation(
+            "black-forest-labs/FLUX-1-schnell",
+            "A lighthouse at dusk",
+            n=2,
+            size="512x512",
+            response_format="url",
+            quality="hd",
+            style="vivid",
+            user="user-1",
+        )
+    finally:
+        await provider.client.close()
+
+    assert result.data is not None
+    assert result.data[0].b64_json == "aW1hZ2U="
+    assert [request.url.path for request in requests] == ["/v1/openai/images/generations"]
+    assert json.loads(requests[0].content) == {
+        "model": "black-forest-labs/FLUX-1-schnell",
+        "prompt": "A lighthouse at dusk",
+        "n": 2,
+        "size": "512x512",
+        "response_format": "url",
+        "quality": "hd",
+        "style": "vivid",
+        "user": "user-1",
     }

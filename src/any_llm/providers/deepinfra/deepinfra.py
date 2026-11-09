@@ -1,4 +1,4 @@
-"""DeepInfra: OpenAI-compatible chat and embeddings, plus video through the native inference API."""
+"""DeepInfra: OpenAI-compatible chat, embeddings and images, plus video through the native inference API."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ class DeepinfraProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_MODERATION = True
+    SUPPORTS_IMAGE_GENERATION = True
     SUPPORTS_VIDEO_GENERATION = True
 
     _video_jobs: ClassVar[dict[str, VideoJob]] = {}
