@@ -34,6 +34,7 @@ def test_deepinfra_supports_flags() -> None:
     assert provider.SUPPORTS_LIST_MODELS is True
     assert provider.SUPPORTS_VIDEO_GENERATION is True
     assert provider.SUPPORTS_IMAGE_GENERATION is True
+    assert provider.SUPPORTS_AUDIO_TRANSCRIPTION is True
 
 
 def test_factory_integration() -> None:
@@ -163,3 +164,52 @@ async def test_image_generation_posts_to_the_openai_images_endpoint() -> None:
         "style": "vivid",
         "user": "user-1",
     }
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_the_clip_with_every_field() -> None:
+    """https://docs.deepinfra.com/api-reference/audio/openai-audio-transcriptions"""
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, json={"text": "hello"}))
+    try:
+        result = await provider.atranscription(
+            "openai/whisper-large-v3",
+            b"RIFF\x24\x00\x00\x00WAVEfmt ",
+            language="en",
+            prompt="A greeting.",
+            response_format="verbose_json",
+            temperature=0.2,
+            timestamp_granularities=["word"],
+        )
+    finally:
+        await provider.client.close()
+
+    assert result.text == "hello"
+    assert [request.url.path for request in requests] == ["/v1/openai/audio/transcriptions"]
+    body = requests[0].content
+    assert b'name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n' in body
+    for name, value in (
+        (b"model", b"openai/whisper-large-v3"),
+        (b"language", b"en"),
+        (b"prompt", b"A greeting."),
+        (b"response_format", b"verbose_json"),
+        (b"temperature", b"0.2"),
+        (b"timestamp_granularities[]", b"word"),
+    ):
+        assert b'name="' + name + b'"\r\n\r\n' + value + b"\r\n" in body
+
+
+@pytest.mark.asyncio
+async def test_transcription_wraps_a_plain_text_reply() -> None:
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(
+        requests, lambda _: httpx.Response(200, text="hello", headers={"content-type": "text/plain"})
+    )
+    try:
+        result = await provider.atranscription(
+            "openai/whisper-large-v3", b"RIFF\x24\x00\x00\x00WAVEfmt ", response_format="text"
+        )
+    finally:
+        await provider.client.close()
+
+    assert result.text == "hello"

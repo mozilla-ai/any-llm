@@ -439,7 +439,7 @@ def test_speech_params_rejects_extra_fields() -> None:
         AudioSpeechParams(model_id="tts-1", input="hi", voice="alloy", bogus="value")  # type: ignore[call-arg]
 
 
-TRANSCRIPTION_PROVIDERS = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.OTARI}
+TRANSCRIPTION_PROVIDERS = {LLMProvider.OPENAI, LLMProvider.AZUREOPENAI, LLMProvider.OTARI, LLMProvider.DEEPINFRA}
 SPEECH_PROVIDERS = {
     LLMProvider.OPENAI,
     LLMProvider.AZUREOPENAI,
