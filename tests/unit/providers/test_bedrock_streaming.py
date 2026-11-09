@@ -89,6 +89,27 @@ async def test_converse_stream_keeps_tool_indices_and_skips_unknown_events() -> 
 
 
 @pytest.mark.asyncio
+async def test_converse_stream_reports_usage_on_a_chunk_with_no_choices() -> None:
+    """The usage arrives after the finish, on a chunk of its own with no choices, as OpenAI sends it."""
+    event_stream = _FakeEventStream(
+        [
+            _text("hi"),
+            {"messageStop": {"stopReason": "max_tokens"}},
+            {"metadata": {"usage": {"inputTokens": 18, "outputTokens": 5, "totalTokens": 23}, "metrics": {}}},
+        ]
+    )
+    stream = await _open_stream(event_stream)
+    chunks = [chunk async for chunk in stream]
+
+    finish, usage = chunks[-2:]
+    assert finish.choices[0].finish_reason == "length"
+    assert finish.usage is None
+    assert usage.choices == []
+    assert usage.usage is not None
+    assert (usage.usage.prompt_tokens, usage.usage.completion_tokens, usage.usage.total_tokens) == (18, 5, 23)
+
+
+@pytest.mark.asyncio
 async def test_converse_stream_error_is_converted_and_closes_the_stream() -> None:
     error = EventStreamError(  # type: ignore[no-untyped-call]
         {"Error": {"Code": "ThrottlingException", "Message": "Too many requests"}}, "ConverseStream"
