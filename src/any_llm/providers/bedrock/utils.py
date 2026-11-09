@@ -757,7 +757,6 @@ def _create_openai_chunk_from_aws_chunk(
     reasoning_content: str | None = None
     finish_reason: _FinishReason | None = None
     tool_call: ChoiceDeltaToolCall | None = None
-    usage: CompletionUsage | None = None
 
     if "contentBlockStart" in chunk:
         block_start = chunk["contentBlockStart"]
@@ -805,8 +804,17 @@ def _create_openai_chunk_from_aws_chunk(
     elif "messageStart" in chunk:
         content = ""
     elif "metadata" in chunk:
+        # The usage report gets a chunk of its own with no choices, as OpenAI's
+        # ``stream_options.include_usage`` chunk does, so consumers do not read it as content.
         usage_data = chunk["metadata"].get("usage")
-        usage = _extract_usage(usage_data) if usage_data else None
+        return ChatCompletionChunk(
+            id=f"chatcmpl-{time()}",
+            choices=[],
+            model=model,
+            created=int(time()),
+            object="chat.completion.chunk",
+            usage=_extract_usage(usage_data) if usage_data else None,
+        )
     else:
         return None
 
@@ -827,7 +835,6 @@ def _create_openai_chunk_from_aws_chunk(
         model=model,
         created=int(time()),
         object="chat.completion.chunk",
-        usage=usage,
     )
 
 
