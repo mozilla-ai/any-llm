@@ -7,6 +7,7 @@ import pytest
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
 from any_llm import AnyLLM
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.deepinfra.deepinfra import DeepinfraProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.messages import ContentBlockDeltaEvent, TextDelta
@@ -35,6 +36,7 @@ def test_deepinfra_supports_flags() -> None:
     assert provider.SUPPORTS_VIDEO_GENERATION is True
     assert provider.SUPPORTS_IMAGE_GENERATION is True
     assert provider.SUPPORTS_AUDIO_TRANSCRIPTION is True
+    assert provider.SUPPORTS_AUDIO_SPEECH is True
 
 
 def test_factory_integration() -> None:
@@ -213,3 +215,57 @@ async def test_transcription_wraps_a_plain_text_reply() -> None:
         await provider.client.close()
 
     assert result.text == "hello"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["mp3", "opus", "flac", "wav", "pcm"])
+async def test_speech_posts_every_field_and_returns_the_audio(response_format: str) -> None:
+    """https://docs.deepinfra.com/api-reference/audio/openai-audio-speech"""
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, content=b"audio-bytes"))
+    try:
+        result = await provider.aspeech(
+            "hexgrad/Kokoro-82M",
+            "Hello there",
+            "af_bella",
+            response_format=response_format,  # type: ignore[arg-type]
+            speed=1.5,
+        )
+    finally:
+        await provider.client.close()
+
+    assert result == b"audio-bytes"
+    assert [request.url.path for request in requests] == ["/v1/openai/audio/speech"]
+    assert json.loads(requests[0].content) == {
+        "model": "hexgrad/Kokoro-82M",
+        "input": "Hello there",
+        "voice": "af_bella",
+        "response_format": response_format,
+        "speed": 1.5,
+    }
+
+
+@pytest.mark.asyncio
+async def test_speech_rejects_instructions() -> None:
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, content=b"audio-bytes"))
+    try:
+        with pytest.raises(UnsupportedParameterError, match="instructions"):
+            await provider.aspeech("hexgrad/Kokoro-82M", "Hello", "af_bella", instructions="Speak slowly")
+    finally:
+        await provider.client.close()
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_speech_rejects_aac() -> None:
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, content=b"audio-bytes"))
+    try:
+        with pytest.raises(UnsupportedParameterError, match="aac"):
+            await provider.aspeech("hexgrad/Kokoro-82M", "Hello", "af_bella", response_format="aac")
+    finally:
+        await provider.client.close()
+
+    assert requests == []

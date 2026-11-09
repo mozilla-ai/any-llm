@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from typing_extensions import override
 
-from any_llm.exceptions import InvalidRequestError, ProviderError
+from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
 from .video import VideoSchema, callback_response, convert_inference_response, convert_video_params
@@ -14,6 +14,7 @@ from .video import VideoSchema, callback_response, convert_inference_response, c
 if TYPE_CHECKING:
     from openai._types import RequestOptions
 
+    from any_llm.types.audio import AudioSpeechParams
     from any_llm.types.video import VideoGenerationParams, VideoJob
 
 # A Seedance render takes minutes and DeepInfra holds the request open for all of it, so the
@@ -22,6 +23,8 @@ _VIDEO_REQUEST_TIMEOUT_SECONDS = 900.0
 # Finished jobs live in memory until retrieve_video reads them, so a long-lived process keeps
 # only the newest ones.
 _VIDEO_JOBS_KEPT = 1000
+# The TtsResponseFormat enum of https://docs.deepinfra.com/api-reference/audio/openai-audio-speech
+_SPEECH_RESPONSE_FORMATS = frozenset({"mp3", "opus", "flac", "wav", "pcm"})
 
 
 class DeepinfraProvider(BaseOpenAIProvider):
@@ -38,6 +41,7 @@ class DeepinfraProvider(BaseOpenAIProvider):
     SUPPORTS_MODERATION = True
     SUPPORTS_IMAGE_GENERATION = True
     SUPPORTS_AUDIO_TRANSCRIPTION = True
+    SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_VIDEO_GENERATION = True
 
     _video_jobs: ClassVar[dict[str, VideoJob]] = {}
@@ -69,6 +73,28 @@ class DeepinfraProvider(BaseOpenAIProvider):
             record = await self.client.get(self._model_url(model), cast_to=dict[str, Any], options=options)
             self._video_schemas[key] = VideoSchema.from_model_record(model, record)
         return self._video_schemas[key]
+
+    @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        """Generate speech through DeepInfra's OpenAI-compatible ``/audio/speech`` endpoint.
+
+        DeepInfra has no ``instructions`` field and serves no ``aac``, so both raise
+        ``UnsupportedParameterError`` instead of being dropped or failing upstream. ``extra_body``
+        reaches DeepInfra as is, the way it does for every provider.
+        See https://docs.deepinfra.com/api-reference/audio/openai-audio-speech.
+        """
+        if params.instructions is not None:
+            parameter_name = "instructions"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if params.response_format is not None and params.response_format not in _SPEECH_RESPONSE_FORMATS:
+            parameter_name = "response_format"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                f"DeepInfra speech returns {', '.join(sorted(_SPEECH_RESPONSE_FORMATS))}, "
+                f"not {params.response_format!r}.",
+            )
+        return await super()._aspeech(params, **kwargs)
 
     @override
     async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:
