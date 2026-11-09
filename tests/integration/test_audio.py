@@ -20,6 +20,7 @@ def transcription_provider_model_map() -> dict[LLMProvider, str]:
         LLMProvider.OPENAI: "whisper-1",
         LLMProvider.AZUREOPENAI: "whisper",
         LLMProvider.OTARI: "openai:whisper-1",
+        LLMProvider.DEEPINFRA: "openai/whisper-large-v3",
     }
 
 
