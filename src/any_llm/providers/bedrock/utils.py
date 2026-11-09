@@ -740,7 +740,7 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
 
 
 def _create_openai_chunk_from_aws_chunk(
-    chunk: dict[str, Any], model: str, tool_index_map: dict[int, int] | None = None
+    chunk: dict[str, Any], model: str, tool_index_map: dict[int, int] | None = None, *, include_usage: bool = False
 ) -> ChatCompletionChunk | None:
     """Create an OpenAI ChatCompletionChunk from an AWS Bedrock chunk.
 
@@ -749,6 +749,8 @@ def _create_openai_chunk_from_aws_chunk(
         model: The model identifier
         tool_index_map: Optional mapping from contentBlockIndex to tool call index (0-based).
                        This should be passed in and maintained by the caller for multi-turn streaming.
+        include_usage: The request's ``stream_options.include_usage``. When set, the usage
+                       event becomes a chunk with no choices, as OpenAI sends it.
     """
     if tool_index_map is None:
         tool_index_map = {}
@@ -807,6 +809,16 @@ def _create_openai_chunk_from_aws_chunk(
     elif "metadata" in chunk:
         usage_data = chunk["metadata"].get("usage")
         usage = _extract_usage(usage_data) if usage_data else None
+        if include_usage:
+            # A placeholder choice would read as a content chunk, not the stream's usage chunk.
+            return ChatCompletionChunk(
+                id=f"chatcmpl-{time()}",  # AWS doesn't provide an ID in the chunk
+                choices=[],
+                model=model,
+                created=int(time()),
+                object="chat.completion.chunk",
+                usage=usage,
+            )
     else:
         return None
 

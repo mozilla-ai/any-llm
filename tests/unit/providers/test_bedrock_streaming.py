@@ -38,11 +38,13 @@ def _text(text: str) -> dict[str, Any]:
     return {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": text}}}
 
 
-async def _open_stream(event_stream: _FakeEventStream) -> AsyncIterator[ChatCompletionChunk]:
+async def _open_stream(event_stream: _FakeEventStream, **kwargs: Any) -> AsyncIterator[ChatCompletionChunk]:
     client = Mock()
     client.converse_stream.return_value = {"stream": event_stream}
     provider = BedrockProvider(client=client, unified_exceptions=True)
-    stream = await provider.acompletion(model=MODEL, messages=[{"role": "user", "content": "Hello"}], stream=True)
+    stream = await provider.acompletion(
+        model=MODEL, messages=[{"role": "user", "content": "Hello"}], stream=True, **kwargs
+    )
     assert isinstance(stream, AsyncIterator)
     return stream
 
@@ -151,3 +153,31 @@ def test_converse_sync_stream_closes_the_bedrock_stream() -> None:
 
     assert [chunk.choices[0].delta.content for chunk in chunks] == ["first", "second"]
     assert event_stream.closed
+
+
+_USAGE_EVENT: dict[str, Any] = {"metadata": {"usage": {"inputTokens": 33, "outputTokens": 20, "totalTokens": 53}}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stream_options", "choices"),
+    [({"include_usage": True}, 0), ({"include_usage": False}, 1), (None, 1)],
+)
+async def test_converse_stream_usage_chunk_follows_include_usage(
+    stream_options: dict[str, Any] | None, choices: int
+) -> None:
+    """The stream's last chunk carries usage; it has no choices only when usage was requested."""
+    events = [_text("Hi"), {"messageStop": {"stopReason": "end_turn"}}, _USAGE_EVENT]
+    stream = await _open_stream(_FakeEventStream(events), stream_options=stream_options)
+
+    chunks = [chunk async for chunk in stream]
+
+    assert len(chunks) == 3
+    assert chunks[0].choices[0].delta.content == "Hi"
+    assert chunks[0].usage is None
+    assert chunks[1].choices[0].finish_reason == "stop"
+    assert chunks[1].usage is None
+    last = chunks[-1]
+    assert len(last.choices) == choices
+    assert last.usage is not None
+    assert (last.usage.prompt_tokens, last.usage.completion_tokens) == (33, 20)

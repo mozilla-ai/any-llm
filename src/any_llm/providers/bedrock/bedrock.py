@@ -392,16 +392,19 @@ class BedrockProvider(AnyLLM):
         result = await asyncio.to_thread(self._completion, params, **kwargs)
         if isinstance(result, ChatCompletion):
             return result
-        return self._stream_converse(result, params.model_id)
+        include_usage = bool((params.stream_options or {}).get("include_usage"))
+        return self._stream_converse(result, params.model_id, include_usage=include_usage)
 
     @staticmethod
-    async def _stream_converse(event_stream: Any, model_id: str) -> AsyncIterator[ChatCompletionChunk]:
+    async def _stream_converse(
+        event_stream: Any, model_id: str, *, include_usage: bool = False
+    ) -> AsyncIterator[ChatCompletionChunk]:
         """Yield the chunks of a Converse response stream, reading each event off the event loop."""
         events = iter(event_stream)
         tool_index_map: dict[int, int] = {}
         try:
             while (item := await asyncio.to_thread(next, events, None)) is not None:
-                chunk = _create_openai_chunk_from_aws_chunk(item, model_id, tool_index_map)
+                chunk = _create_openai_chunk_from_aws_chunk(item, model_id, tool_index_map, include_usage=include_usage)
                 if chunk is not None:
                     yield chunk
         finally:
