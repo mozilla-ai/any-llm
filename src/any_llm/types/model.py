@@ -26,7 +26,7 @@ class Model(OpenAIModel):
     @classmethod
     def _read_context_window(cls, data: Any) -> Any:
         # The OpenAI SDK hands back its own Model, which this subclass would otherwise refuse.
-        if isinstance(data, OpenAIModel) and not isinstance(data, cls):
+        if isinstance(data, OpenAIModel):
             data = data.model_dump()
         # A malformed value leaves the field unset rather than failing the whole
         # listing, so one odd entry does not hide every other model.
