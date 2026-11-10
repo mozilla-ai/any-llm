@@ -504,12 +504,12 @@ async def test_huggingface_list_models_reads_the_router_listing() -> None:
     ):
         router = mock_openai.return_value.__aenter__.return_value
         router.models.list = AsyncMock(return_value=Mock(data=served))
-        provider = HuggingfaceProvider(api_key="test-api-key")
+        provider = HuggingfaceProvider(api_key="test-api-key", timeout=10)
 
         models = await provider._alist_models()
 
     assert models == served
-    mock_openai.assert_any_call(base_url=HuggingfaceProvider.MODELS_ROUTER_URL, api_key="test-api-key")
+    mock_openai.assert_any_call(base_url=HuggingfaceProvider.MODELS_ROUTER_URL, api_key="test-api-key", timeout=10)
     mock_hf_api.assert_not_called()
 
 
