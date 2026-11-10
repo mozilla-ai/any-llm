@@ -792,7 +792,13 @@ async def test_arerank_refuses_max_tokens_per_doc() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "body",
-    [{"model": "m"}, {"results": [{"index": 0}]}, {"results": [{"index": 0, "relevance_score": "high"}]}],
+    [
+        {"model": "m"},
+        {"results": [{"index": 0}]},
+        {"results": [{"index": 0, "relevance_score": "high"}]},
+        {"results": [], "usage": {"search_units": "many"}},
+        {"results": [], "usage": [1]},
+    ],
 )
 async def test_arerank_reports_an_unreadable_response_as_a_provider_error(body: dict[str, Any]) -> None:
     provider = _decisions_provider(_answering([], body=body))
