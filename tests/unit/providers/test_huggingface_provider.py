@@ -11,6 +11,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.providers.huggingface.utils import _create_openai_chunk_from_huggingface_chunk
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+from any_llm.types.model import Model
 
 
 @contextmanager
@@ -491,3 +492,39 @@ async def test_huggingface_tool_call_with_null_arguments() -> None:
     tool_call = tool_calls[0]
     assert isinstance(tool_call, OpenAIChatCompletionMessageFunctionToolCall)
     assert tool_call.function.arguments == "{}"
+
+
+@pytest.mark.asyncio
+async def test_huggingface_list_models_reads_the_router_listing() -> None:
+    served = [Model(id="swiss-ai/Apertus-70B-Instruct-2509", created=0, object="model", owned_by="swiss-ai")]
+    with (
+        mock_huggingface_provider(),
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+        patch("any_llm.providers.huggingface.huggingface.HfApi") as mock_hf_api,
+    ):
+        router = mock_openai.return_value.__aenter__.return_value
+        router.models.list = AsyncMock(return_value=Mock(data=served))
+        provider = HuggingfaceProvider(api_key="test-api-key")
+
+        models = await provider._alist_models()
+
+    assert models == served
+    mock_openai.assert_any_call(base_url=HuggingfaceProvider.MODELS_ROUTER_URL, api_key="test-api-key")
+    mock_hf_api.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_huggingface_list_models_with_hub_filters_searches_the_hub() -> None:
+    with (
+        mock_huggingface_provider(),
+        patch("any_llm.providers.huggingface.huggingface.HfApi") as mock_hf_api,
+    ):
+        mock_hf_api.return_value.list_models.return_value = [
+            Mock(id="swiss-ai/Apertus-v1.5-70B", created_at=None),
+        ]
+        provider = HuggingfaceProvider(api_key="test-api-key")
+
+        models = await provider._alist_models(search="Apertus")
+
+    mock_hf_api.return_value.list_models.assert_called_once_with(search="Apertus", inference="warm", limit=20)
+    assert [model.id for model in models] == ["swiss-ai/Apertus-v1.5-70B"]

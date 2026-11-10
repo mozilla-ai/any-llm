@@ -75,6 +75,9 @@ class HuggingfaceProvider(AnyLLM):
     # OpenResponses router endpoint for the OpenResponses API
     OPENRESPONSES_ROUTER_URL = "https://evalstate-openresponses.hf.space/v1"
 
+    # Lists every chat model Inference Providers serve, which the Hub's list_models does not filter to
+    MODELS_ROUTER_URL = "https://router.huggingface.co/v1"
+
     SUPPORTS_COMPLETION_STREAMING = True
     SUPPORTS_COMPLETION = True
     SUPPORTS_COMPLETION_N = True
@@ -234,6 +237,16 @@ class HuggingfaceProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
+        """List the chat models Inference Providers serve, or search the Hub when given its filters.
+
+        With no filters this is the router's listing, whose models a chat
+        completion can reach. Hub filters (``search``, ``inference_provider``,
+        ``limit`` and the rest of ``HfApi.list_models``) search every repository.
+        """
+        if not kwargs:
+            async with AsyncOpenAI(base_url=self.MODELS_ROUTER_URL, api_key=self.api_key) as router:
+                page = await router.models.list()
+            return page.data
         client = HfApi(token=self.api_key)
         if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
             kwargs["inference"] = "warm"
