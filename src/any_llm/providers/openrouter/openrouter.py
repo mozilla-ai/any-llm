@@ -1,9 +1,10 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
 from typing_extensions import override
 
-from any_llm.exceptions import UnsupportedParameterError
+from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 from any_llm.providers.openrouter.utils import _convert_models_list, build_reasoning_directive, convert_rerank_response
 from any_llm.types.completion import CompletionParams
@@ -65,6 +66,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
 
     @override
     async def _arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        """Rerank `documents` through OpenRouter's `/rerank` endpoint."""
         if kwargs.pop("max_tokens_per_doc", None) is not None:
             msg = "max_tokens_per_doc"
             raise UnsupportedParameterError(
@@ -80,4 +82,8 @@ class OpenrouterProvider(BaseOpenAIProvider):
         extra_body = kwargs.pop("extra_body", None) or {}
         body = {"model": model, "query": query, "documents": documents, **kwargs, **extra_body}
         response = await self.client.post("/rerank", body=body, cast_to=dict[str, Any], options=options)
-        return convert_rerank_response(response)
+        try:
+            return convert_rerank_response(response)
+        except (KeyError, TypeError, ValidationError) as error:
+            msg = f"{self.PROVIDER_NAME} returned a rerank response that is not valid"
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME) from error
