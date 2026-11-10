@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from pydantic import ValidationError
 from typing_extensions import override
 
 from any_llm.exceptions import ProviderError, UnsupportedParameterError
@@ -84,6 +83,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
         response = await self.client.post("/rerank", body=body, cast_to=dict[str, Any], options=options)
         try:
             return convert_rerank_response(response)
-        except (KeyError, TypeError, ValidationError) as error:
+        # ValueError covers pydantic's ValidationError and a search_units float() rejects.
+        except (AttributeError, KeyError, TypeError, ValueError) as error:
             msg = f"{self.PROVIDER_NAME} returned a rerank response that is not valid"
             raise ProviderError(msg, provider_name=self.PROVIDER_NAME) from error
