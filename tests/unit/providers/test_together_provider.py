@@ -641,6 +641,7 @@ def test_together_convert_models_list_maps_to_openai_model() -> None:
     assert result[0].model_extra is not None
     assert result[0].model_extra["type"] == "chat"
     assert result[0].model_extra["context_length"] == 131072
+    assert result[0].context_window == 131072
 
 
 def test_together_convert_models_list_fills_missing_fields() -> None:

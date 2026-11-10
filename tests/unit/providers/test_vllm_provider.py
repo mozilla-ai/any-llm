@@ -1,8 +1,10 @@
+import httpx
 import pytest
 
 from any_llm.any_llm import AnyLLM
 from any_llm.constants import LLMProvider
 from any_llm.providers.vllm.vllm import VllmProvider
+from any_llm.types.model import Model
 
 
 def test_provider_metadata() -> None:
@@ -60,3 +62,42 @@ def test_registered_in_enum_and_loader() -> None:
     assert LLMProvider.from_string("vllm") is LLMProvider.VLLM
     assert AnyLLM.get_provider_class("vllm") is VllmProvider
     assert "vllm" in AnyLLM.get_supported_providers()
+
+
+@pytest.mark.asyncio
+async def test_list_models_reads_the_served_context_length() -> None:
+    # A vLLM ModelCard as ``GET /v1/models`` serves it; ``max_model_len`` is the
+    # ``--max-model-len`` the engine was started with, not the model's own maximum.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "id": "Qwen/Qwen3-32B",
+                        "object": "model",
+                        "created": 1767225600,
+                        "owned_by": "vllm",
+                        "root": "Qwen/Qwen3-32B",
+                        "parent": None,
+                        "max_model_len": 32768,
+                        "permission": [],
+                    }
+                ],
+            },
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = VllmProvider(http_client=http_client)
+    try:
+        result = await provider.alist_models()
+    finally:
+        await http_client.aclose()
+
+    assert len(result) == 1
+    assert isinstance(result[0], Model)
+    assert result[0].id == "Qwen/Qwen3-32B"
+    assert result[0].context_window == 32768
+    assert result[0].model_extra is not None
+    assert result[0].model_extra["max_model_len"] == 32768
