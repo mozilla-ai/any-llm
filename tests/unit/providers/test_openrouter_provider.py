@@ -787,3 +787,15 @@ async def test_arerank_refuses_max_tokens_per_doc() -> None:
         await provider.arerank("qwen/qwen3-reranker-8b", "q", ["a"], max_tokens_per_doc=128)
 
     assert not requests
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [{"model": "m"}, {"results": [{"index": 0}]}, {"results": [{"index": 0, "relevance_score": "high"}]}],
+)
+async def test_arerank_reports_an_unreadable_response_as_a_provider_error(body: dict[str, Any]) -> None:
+    provider = _decisions_provider(_answering([], body=body))
+
+    with pytest.raises(ProviderError, match="openrouter returned a rerank response that is not valid"):
+        await provider.arerank("qwen/qwen3-reranker-8b", "q", ["a"])
