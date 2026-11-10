@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from any_llm.types.model import Model
+from any_llm.types.rerank import RerankMeta, RerankResponse, RerankResult, RerankUsage
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -64,6 +65,28 @@ def _convert_models_list(response: Any) -> Sequence[Model]:
             data["created"] = 0
         result.append(Model.model_validate(data))
     return result
+
+
+def convert_rerank_response(response: dict[str, Any]) -> RerankResponse:
+    """Convert an OpenRouter `/rerank` JSON body to a normalized RerankResponse.
+
+    The echoed `document` on each result is dropped, as RerankResult carries none. `search_units`
+    goes to `meta.billed_units`, where Cohere reports it.
+    """
+    results = [
+        RerankResult(index=item["index"], relevance_score=item["relevance_score"]) for item in response["results"]
+    ]
+    results.sort(key=lambda r: r.relevance_score, reverse=True)
+
+    usage = response.get("usage") or {}
+    search_units = usage.get("search_units")
+    return RerankResponse(
+        id=response.get("id"),
+        model=response.get("model"),
+        results=results,
+        meta=RerankMeta(billed_units={"search_units": float(search_units)}) if search_units is not None else None,
+        usage=RerankUsage(total_tokens=usage["total_tokens"]) if usage.get("total_tokens") is not None else None,
+    )
 
 
 def _normalize_reasoning_obj(obj: Any) -> dict[str, Any]:

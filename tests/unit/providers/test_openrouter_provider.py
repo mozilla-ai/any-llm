@@ -698,3 +698,92 @@ async def test_unified_decide_error_message_can_quote_the_upstream_body() -> Non
 
     assert "I was charged twice." in exc_info.value.message
     assert exc_info.value.status_code == 400
+
+
+_RERANK_BODY = {
+    "id": "gen-rerank-1",
+    "model": "qwen/qwen3-reranker-8b",
+    "provider": "Novita",
+    "results": [
+        {"document": {"text": "b"}, "index": 1, "relevance_score": 0.2},
+        {"document": {"text": "a"}, "index": 0, "relevance_score": 0.9},
+    ],
+    "usage": {"search_units": 1, "total_tokens": 150, "cost": 0.001},
+}
+
+
+def test_openrouter_supports_rerank() -> None:
+    assert OpenrouterProvider.get_provider_metadata().rerank is True
+
+
+@pytest.mark.asyncio
+async def test_arerank_posts_to_the_rerank_endpoint() -> None:
+    requests: list[httpx.Request] = []
+    provider = _decisions_provider(_answering(requests, body=_RERANK_BODY))
+
+    result = await provider.arerank("qwen/qwen3-reranker-8b", "q", ["a", "b"], top_n=2)
+
+    (request,) = requests
+    assert request.method == "POST"
+    assert str(request.url) == "https://openrouter.ai/api/v1/rerank"
+    assert request.headers["authorization"] == "Bearer test-key"
+    assert json.loads(request.content) == {
+        "model": "qwen/qwen3-reranker-8b",
+        "query": "q",
+        "documents": ["a", "b"],
+        "top_n": 2,
+    }
+    assert result.id == "gen-rerank-1"
+    assert result.model == "qwen/qwen3-reranker-8b"
+    assert [(r.index, r.relevance_score) for r in result.results] == [(0, 0.9), (1, 0.2)]
+    assert result.meta is not None
+    assert result.meta.billed_units == {"search_units": 1.0}
+    assert result.usage is not None
+    assert result.usage.total_tokens == 150
+
+
+@pytest.mark.asyncio
+async def test_arerank_without_usage_reports_none() -> None:
+    body = {"model": "cohere/rerank-v3.5", "results": [{"document": {"text": "a"}, "index": 0, "relevance_score": 0.5}]}
+    provider = _decisions_provider(_answering([], body=body))
+
+    result = await provider.arerank("cohere/rerank-v3.5", "q", ["a"])
+
+    assert result.id is None
+    assert result.meta is None
+    assert result.usage is None
+
+
+@pytest.mark.asyncio
+async def test_arerank_sends_extra_fields_headers_and_timeout() -> None:
+    requests: list[httpx.Request] = []
+    provider = _decisions_provider(_answering(requests, body=_RERANK_BODY))
+
+    await provider.arerank(
+        "qwen/qwen3-reranker-8b",
+        "q",
+        ["a", "b"],
+        max_tokens_per_doc=None,
+        timeout=2.5,
+        extra_body={"user": "u-1"},
+        extra_headers={"X-Title": "otari"},
+    )
+
+    (request,) = requests
+    body = json.loads(request.content)
+    assert body["user"] == "u-1"
+    assert "timeout" not in body
+    assert "max_tokens_per_doc" not in body
+    assert request.headers["x-title"] == "otari"
+    assert request.extensions["timeout"]["read"] == 2.5
+
+
+@pytest.mark.asyncio
+async def test_arerank_refuses_max_tokens_per_doc() -> None:
+    requests: list[httpx.Request] = []
+    provider = _decisions_provider(_answering(requests, body=_RERANK_BODY))
+
+    with pytest.raises(UnsupportedParameterError, match="max_tokens_per_doc"):
+        await provider.arerank("qwen/qwen3-reranker-8b", "q", ["a"], max_tokens_per_doc=128)
+
+    assert not requests

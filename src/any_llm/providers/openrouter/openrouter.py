@@ -1,12 +1,17 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.providers.openrouter.utils import _convert_models_list, build_reasoning_directive
+from any_llm.providers.openrouter.utils import _convert_models_list, build_reasoning_directive, convert_rerank_response
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
+from any_llm.types.rerank import RerankResponse
+
+if TYPE_CHECKING:
+    from openai._types import RequestOptions
 
 
 class OpenrouterProvider(BaseOpenAIProvider):
@@ -31,6 +36,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
     SUPPORTS_DECIDE = True
     # The alpha decisions endpoint sits outside /v1: https://openrouter.ai/api/alpha/decisions.
     DECIDE_PATH = "../alpha/decisions"
+    SUPPORTS_RERANK = True
 
     @staticmethod
     @override
@@ -56,3 +62,22 @@ class OpenrouterProvider(BaseOpenAIProvider):
             converted_params["extra_body"] = extra_body
 
         return converted_params
+
+    @override
+    async def _arerank(self, model: str, query: str, documents: list[str], **kwargs: Any) -> RerankResponse:
+        if kwargs.pop("max_tokens_per_doc", None) is not None:
+            msg = "max_tokens_per_doc"
+            raise UnsupportedParameterError(
+                msg, self.PROVIDER_NAME, "OpenRouter's rerank endpoint has no per-document truncation limit."
+            )
+        # The OpenAI SDK has no rerank resource, so post through its client to keep the
+        # provider's auth, retries and error mapping, as _adecide does.
+        options: RequestOptions = {}
+        if (timeout := kwargs.pop("timeout", None)) is not None:
+            options["timeout"] = timeout
+        if (extra_headers := kwargs.pop("extra_headers", None)) is not None:
+            options["headers"] = extra_headers
+        extra_body = kwargs.pop("extra_body", None) or {}
+        body = {"model": model, "query": query, "documents": documents, **kwargs, **extra_body}
+        response = await self.client.post("/rerank", body=body, cast_to=dict[str, Any], options=options)
+        return convert_rerank_response(response)
