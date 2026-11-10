@@ -33,6 +33,7 @@ from any_llm.types.completion import (
     ImageContent,
     PromptTokensDetails,
     Reasoning,
+    ServerToolUsage,
     Usage,
 )
 from any_llm.types.model import Model
@@ -715,7 +716,8 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     in ``prompt_tokens`` and ``completion_tokens`` respectively. Audio and image
     output tokens stay inside ``completion_tokens`` and are broken out in its details;
     audio input tokens are broken out of ``prompt_tokens`` the same way, since Gemini
-    prices audio input above text.
+    prices audio input above text. Google Search grounding queries are reported as
+    ``server_tool_use.web_search_requests``.
 
     Reference: https://ai.google.dev/api/generate-content#UsageMetadata
     """
@@ -741,7 +743,23 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
         usage["prompt_tokens_details"] = PromptTokensDetails(
             cached_tokens=metadata.cached_content_token_count, audio_tokens=input_audio_tokens
         )
+    if web_search_requests := _web_search_query_count(response):
+        usage["server_tool_use"] = ServerToolUsage(web_search_requests=web_search_requests)
     return usage
+
+
+def _web_search_query_count(response: types.GenerateContentResponse) -> int:
+    """Count the Google Search queries the model ran to ground its answer.
+
+    Gemini 3 bills each query, while earlier models bill one grounded prompt however many queries
+    it ran, so the count is reported as is and the per-prompt rule is left to the caller.
+    https://ai.google.dev/gemini-api/docs/pricing
+    """
+    return sum(
+        len(metadata.web_search_queries or [])
+        for candidate in response.candidates or []
+        if isinstance(metadata := candidate.grounding_metadata, types.GroundingMetadata)
+    )
 
 
 def _thought_signature_extra_content(part: types.Part) -> dict[str, Any] | None:

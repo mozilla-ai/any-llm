@@ -376,6 +376,7 @@ class GoogleProvider(AnyLLM):
             total_tokens=usage_dict.get("total_tokens", 0),
             prompt_tokens_details=usage_dict.get("prompt_tokens_details"),
             completion_tokens_details=usage_dict.get("completion_tokens_details"),
+            server_tool_use=usage_dict.get("server_tool_use"),
         )
 
         return ChatCompletion(
