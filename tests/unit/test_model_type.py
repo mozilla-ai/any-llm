@@ -2,6 +2,7 @@ from typing import Any
 
 import pytest
 from openai.types.model import Model as OpenAIModel
+from pydantic import ValidationError
 
 from any_llm.types.model import Model
 
@@ -78,6 +79,12 @@ def test_a_model_validates_as_itself() -> None:
     model = Model.model_validate(_listing(max_model_len=256000))
 
     assert Model.model_validate(model) == model
+
+
+@pytest.mark.parametrize("value", ["m", None, ["m"]])
+def test_input_that_is_not_a_mapping_fails_as_validation(value: object) -> None:
+    with pytest.raises(ValidationError):
+        Model.model_validate(value)
 
 
 def test_model_is_still_an_openai_model() -> None:
