@@ -244,7 +244,7 @@ class HuggingfaceProvider(AnyLLM):
         ``limit`` and the rest of ``HfApi.list_models``) search every repository.
         """
         if not kwargs:
-            async with AsyncOpenAI(base_url=self.MODELS_ROUTER_URL, api_key=self.api_key) as router:
+            async with AsyncOpenAI(base_url=self.MODELS_ROUTER_URL, api_key=self.api_key, **self.kwargs) as router:
                 page = await router.models.list()
             return page.data
         client = HfApi(token=self.api_key)
