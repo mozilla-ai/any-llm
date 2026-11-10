@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -10,21 +11,200 @@ groq = pytest.importorskip("groq")
 
 
 @pytest.mark.asyncio
-async def test_stream_with_response_format_raises() -> None:
+async def test_stream_with_response_format_passes_to_completion_create() -> None:
+    pytest.importorskip("groq")
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.groq import GroqProvider
+
+    response_format = {"type": "json_object"}
+    fake_chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "openai/gpt-oss-20b",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": '{"ok": true}'},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    )
+
+    async def _fake_stream() -> AsyncIterator[GroqChatCompletionChunk]:
+        yield fake_chunk
+
+    with patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq:
+        mock_client = Mock()
+        mock_client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+        mocked_groq.return_value = mock_client
+
+        provider = GroqProvider(api_key="test-api-key")
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="openai/gpt-oss-20b",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                response_format=response_format,
+            )
+        )
+        collected = [chunk async for chunk in result]  # type: ignore[union-attr]
+
+    assert len(collected) == 1
+    assert collected[0].choices[0].delta.content == '{"ok": true}'
+    mock_client.chat.completions.create.assert_awaited_once()
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["response_format"] == response_format
+
+
+@pytest.mark.asyncio
+async def test_stream_with_response_format_basemodel() -> None:
+    pytest.importorskip("groq")
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.providers.groq.groq import GroqProvider
+
+    class TestOutput(BaseModel):
+        foo: str
+
+    fake_chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "openai/gpt-oss-20b",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": '{"foo": "bar"}'},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    )
+
+    async def _fake_stream() -> AsyncIterator[GroqChatCompletionChunk]:
+        yield fake_chunk
+
+    with patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq:
+        mock_client = Mock()
+        mock_client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+        mocked_groq.return_value = mock_client
+
+        provider = GroqProvider(api_key="test-api-key")
+        result = await provider._acompletion(
+            CompletionParams(
+                model_id="openai/gpt-oss-20b",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                response_format=TestOutput,
+            )
+        )
+        collected = [chunk async for chunk in result]  # type: ignore[union-attr]
+
+    assert len(collected) == 1
+    assert collected[0].choices[0].delta.content == '{"foo": "bar"}'
+    mock_client.chat.completions.create.assert_awaited_once()
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "TestOutput",
+            "schema": {
+                "properties": {"foo": {"title": "Foo", "type": "string"}},
+                "required": ["foo"],
+                "title": "TestOutput",
+                "type": "object",
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_structured_output_via_public_interface() -> None:
+    pytest.importorskip("groq")
+    from groq.types.chat import ChatCompletionChunk as GroqChatCompletionChunk
+
+    from any_llm.any_llm import AnyLLM
+
+    fake_chunk = GroqChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "openai/gpt-oss-20b",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": '{"verdict": "strong_signal"}'},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    )
+
+    async def _fake_stream() -> AsyncIterator[GroqChatCompletionChunk]:
+        yield fake_chunk
+
+    schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "verdict",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"verdict": {"type": "string"}},
+                "required": ["verdict"],
+            },
+        },
+    }
+
+    with patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq:
+        mock_client = Mock()
+        mock_client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+        mocked_groq.return_value = mock_client
+
+        llm = AnyLLM.create("groq", api_key="test-api-key")
+        result = await llm.acompletion(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": "Give a verdict"}],
+            response_format=schema,
+            stream=True,
+        )
+        collected = [chunk async for chunk in result]
+
+    assert len(collected) == 1
+    assert collected[0].choices[0].delta.content == '{"verdict": "strong_signal"}'
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["response_format"] == schema
+
+
+@pytest.mark.asyncio
+async def test_stream_with_response_format_propagates_upstream_error() -> None:
     pytest.importorskip("groq")
     from any_llm.providers.groq.groq import GroqProvider
 
-    provider = GroqProvider(api_key="test-api-key")
+    with patch("any_llm.providers.groq.groq.AsyncGroq") as mocked_groq:
+        mock_client = Mock()
+        mock_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("Groq service error"))
+        mocked_groq.return_value = mock_client
 
-    with pytest.raises(UnsupportedParameterError, match="stream and response_format"):
-        await provider._acompletion(
-            CompletionParams(
-                model_id="model-id",
-                messages=[{"role": "user", "content": "Hello"}],
-                stream=True,
-                response_format={"type": "json_object"},
+        provider = GroqProvider(api_key="test-api-key")
+        with pytest.raises(RuntimeError, match="Groq service error"):
+            await provider._acompletion(
+                CompletionParams(
+                    model_id="openai/gpt-oss-20b",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    stream=True,
+                    response_format={"type": "json_object"},
+                )
             )
-        )
 
 
 @pytest.mark.asyncio
