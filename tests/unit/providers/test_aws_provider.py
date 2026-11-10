@@ -1913,6 +1913,22 @@ def test_convert_params_response_format_non_anthropic_model_raises() -> None:
     assert "nova" in str(excinfo.value).lower()
 
 
+@pytest.mark.parametrize(
+    "model_id", [*ANTHROPIC_MODEL_IDS, *GPT_OSS_MODEL_IDS, "amazon.nova-lite-v1:0", "mistral.devstral-2-123b"]
+)
+def test_supports_completion_response_format_agrees_with_convert_params(model_id: str) -> None:
+    """The per-model answer is the one `_convert_params` acts on, so a caller can trust it before sending."""
+    params = CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "hi"}], response_format=_City)
+    try:
+        _convert_params(params, {})
+    except UnsupportedParameterError:
+        accepted = False
+    else:
+        accepted = True
+
+    assert BedrockProvider.supports_completion_response_format(model_id) is accepted
+
+
 def test_convert_params_response_format_combines_with_existing_tools() -> None:
     """User-supplied tools are preserved alongside the synthetic structured-output tool."""
     result = _convert_params(

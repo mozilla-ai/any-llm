@@ -188,6 +188,12 @@ class AnyLLM(FilesMixin, ABC):
     than silently answered with a single choice.
     """
 
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT: bool = True
+    """Whether a chat completion may carry ``response_format``; a provider that clears it rejects one.
+
+    A provider that takes it for only some of its models answers per model in
+    `supports_completion_response_format`."""
+
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
 
@@ -674,6 +680,19 @@ class AnyLLM(FilesMixin, ABC):
 
         """
         return cls.SUPPORTS_MESSAGES_NATIVE
+
+    @classmethod
+    def supports_completion_response_format(cls, model: str) -> bool:
+        """Whether a chat completion for `model` may carry ``response_format``.
+
+        When this is False, a request with one raises `UnsupportedParameterError` before it
+        reaches the provider, so a caller can leave the parameter out instead.
+
+        Args:
+            model: The provider's own model id, without a ``provider:`` prefix.
+
+        """
+        return cls.SUPPORTS_COMPLETION_RESPONSE_FORMAT
 
     @abstractmethod
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
