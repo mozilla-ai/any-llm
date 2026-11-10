@@ -44,6 +44,7 @@ from any_llm.types.completion import (
     Function,
     PromptTokensDetails,
     ReasoningEffort,
+    ServerToolUsage,
 )
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
@@ -3830,6 +3831,71 @@ def test_convert_response_combines_cached_and_audio_input_tokens() -> None:
     usage = _convert_response_to_response_dict(response)["usage"]
 
     assert usage["prompt_tokens_details"] == PromptTokensDetails(cached_tokens=3000, audio_tokens=3000)
+
+
+def _grounded_response(web_search_queries: list[str] | None) -> types.GenerateContentResponse:
+    response = _make_gemini_response([types.Part(text="It is sunny.")], types.FinishReason.STOP)
+    assert response.candidates is not None
+    response.candidates[0].grounding_metadata = types.GroundingMetadata(web_search_queries=web_search_queries)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=20, candidates_token_count=5, total_token_count=25
+    )
+    return response
+
+
+def test_convert_response_reports_grounding_queries_as_web_search_requests() -> None:
+    response = _grounded_response(["weather paris", "weather paris tomorrow"])
+
+    completion = GeminiProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-3-flash")
+    )
+
+    assert completion.usage is not None
+    assert completion.usage.server_tool_use == ServerToolUsage(web_search_requests=2)
+    assert completion.usage.model_dump()["server_tool_use"] == {"web_search_requests": 2}
+
+
+def test_streaming_chunk_reports_grounding_queries_as_web_search_requests() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_grounded_response(["weather paris"]))
+
+    assert chunk.usage is not None
+    assert chunk.usage.server_tool_use == ServerToolUsage(web_search_requests=1)
+
+
+def test_convert_response_sums_grounding_queries_across_candidates() -> None:
+    response = _grounded_response(["a"])
+    assert response.candidates is not None
+    response.candidates.append(
+        types.Candidate(index=1, grounding_metadata=types.GroundingMetadata(web_search_queries=["b", "c"]))
+    )
+
+    usage = _convert_response_to_response_dict(response)["usage"]
+
+    assert usage["server_tool_use"] == ServerToolUsage(web_search_requests=3)
+
+
+@pytest.mark.parametrize("web_search_queries", [None, []], ids=["no-queries", "empty-queries"])
+def test_convert_response_omits_server_tool_use_without_grounding_queries(
+    web_search_queries: list[str] | None,
+) -> None:
+    usage = _convert_response_to_response_dict(_grounded_response(web_search_queries))["usage"]
+
+    assert "server_tool_use" not in usage
+
+
+def test_convert_response_without_grounding_keeps_the_openai_usage_shape() -> None:
+    response = _make_gemini_response([types.Part(text="Hi.")], types.FinishReason.STOP)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=3, candidates_token_count=1, total_token_count=4
+    )
+
+    completion = GeminiProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-3-flash")
+    )
+
+    assert completion.usage is not None
+    assert completion.usage.server_tool_use is None
+    assert "server_tool_use" not in completion.usage.model_dump()
 
 
 def test_convert_response_without_thought_tokens() -> None:
