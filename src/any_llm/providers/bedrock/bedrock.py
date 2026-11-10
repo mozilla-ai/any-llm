@@ -195,6 +195,8 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_RERANK = False
     # Claude models only, see `serves_messages_natively`.
     SUPPORTS_MESSAGES_NATIVE = True
+    # Claude models only, see `supports_completion_response_format`.
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT = True
 
     # boto3's Converse API has no per-request timeout, so it is translated into a per-timeout
     # boto3 client in _completion via _client_for_timeout. A caller-supplied `client=` can't be
@@ -475,6 +477,12 @@ class BedrockProvider(AnyLLM):
     @override
     def serves_messages_natively(cls, model: str) -> bool:
         """Claude models take Bedrock's Anthropic Messages body; every other model uses the bridge."""
+        return _is_anthropic_model(model)
+
+    @classmethod
+    @override
+    def supports_completion_response_format(cls, model: str) -> bool:
+        """Only Claude models take the forced-tool-call emulation; see `_build_tool_config`."""
         return _is_anthropic_model(model)
 
     @override
