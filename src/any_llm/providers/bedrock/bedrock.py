@@ -35,6 +35,7 @@ from any_llm.utils.structured_output import normalize_output_config
 
 # Outside the guarded block below: it needs no AWS SDK, and the per-model Messages answer must
 # work on the class even when boto3 is not installed.
+from .pegasus import convert_pegasus_response, convert_pegasus_stream_event, is_pegasus_model, pegasus_body
 from .stability import convert_stability_response, stability_edit_body
 from .utils import _is_anthropic_model
 
@@ -205,7 +206,7 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_IMAGE_EDIT = True
     # Claude models only, see `serves_messages_natively`.
     SUPPORTS_MESSAGES_NATIVE = True
-    # Claude models only, see `supports_completion_response_format`.
+    # Claude and Pegasus models only, see `supports_completion_response_format`.
     SUPPORTS_COMPLETION_RESPONSE_FORMAT = True
 
     # boto3's Converse API has no per-request timeout, so it is translated into a per-timeout
@@ -401,6 +402,8 @@ class BedrockProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        if is_pegasus_model(params.model_id):
+            return await self._apegasus_completion(params, **kwargs)
         result = await asyncio.to_thread(self._completion, params, **kwargs)
         if isinstance(result, ChatCompletion):
             return result
@@ -415,6 +418,44 @@ class BedrockProvider(AnyLLM):
             while (item := await asyncio.to_thread(next, events, None)) is not None:
                 chunk = _create_openai_chunk_from_aws_chunk(item, model_id, tool_index_map)
                 if chunk is not None:
+                    yield chunk
+        finally:
+            event_stream.close()
+
+    async def _apegasus_completion(
+        self, params: CompletionParams, **kwargs: Any
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        """Send a Pegasus request to InvokeModel, since Converse rejects the Pegasus models.
+
+        ``additionalModelRequestFields`` is merged into the body, as Converse does with it, which
+        reaches the fields chat has no name for, such as Pegasus 1.5's ``start_time``. Other
+        keyword arguments go to InvokeModel.
+        """
+        # Building a client for a new timeout loads the service model, so it runs off the event loop.
+        client = await asyncio.to_thread(self._client_for_timeout, kwargs.pop("timeout", None))
+        body = pegasus_body(params, self.PROVIDER_NAME, kwargs.pop("additionalModelRequestFields", None))
+        # The request fields come last, so a forwarded argument cannot change the model or the body.
+        request = {
+            **kwargs,
+            "modelId": params.model_id,
+            "body": json.dumps(body),
+            "contentType": "application/json",
+            "accept": "application/json",
+        }
+        if params.stream:
+            response = await asyncio.to_thread(client.invoke_model_with_response_stream, **request)
+            return self._stream_pegasus(response["body"], params.model_id, response["ResponseMetadata"]["RequestId"])
+        response = await asyncio.to_thread(client.invoke_model, **request)
+        payload = await asyncio.to_thread(response["body"].read)
+        return convert_pegasus_response(json.loads(payload), params.model_id, response["ResponseMetadata"]["RequestId"])
+
+    @staticmethod
+    async def _stream_pegasus(event_stream: Any, model_id: str, request_id: str) -> AsyncIterator[ChatCompletionChunk]:
+        """Yield the chunks of a Pegasus response stream, reading each event off the event loop."""
+        events = iter(event_stream)
+        try:
+            while (event := await asyncio.to_thread(next, events, None)) is not None:
+                for chunk in convert_pegasus_stream_event(json.loads(event["chunk"]["bytes"]), model_id, request_id):
                     yield chunk
         finally:
             event_stream.close()
@@ -492,8 +533,8 @@ class BedrockProvider(AnyLLM):
     @classmethod
     @override
     def supports_completion_response_format(cls, model: str) -> bool:
-        """Only Claude models take the forced-tool-call emulation; see `_build_tool_config`."""
-        return _is_anthropic_model(model)
+        """Claude models take the forced-tool-call emulation (see `_build_tool_config`), and Pegasus takes a schema."""
+        return _is_anthropic_model(model) or is_pegasus_model(model)
 
     @override
     async def _amessages(
