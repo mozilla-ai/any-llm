@@ -21,6 +21,7 @@ from any_llm.types.completion import (
     CreateEmbeddingResponse,
     Reasoning,
 )
+from any_llm.types.model import Model
 from any_llm.utils.structured_output import build_responses_text_format, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -45,7 +46,6 @@ if TYPE_CHECKING:
         ChatCompletionStreamOutput as HuggingFaceChatCompletionStreamOutput,
     )
 
-    from any_llm.types.model import Model
     from any_llm.types.responses import ParsedResponse, Response, ResponsesParams
 
 
@@ -246,7 +246,7 @@ class HuggingfaceProvider(AnyLLM):
         if not kwargs:
             async with AsyncOpenAI(base_url=self.MODELS_ROUTER_URL, api_key=self.api_key, **self.kwargs) as router:
                 page = await router.models.list()
-            return page.data
+            return [Model.model_validate(model) for model in page.data]
         client = HfApi(token=self.api_key)
         if kwargs.get("inference") is None and kwargs.get("inference_provider") is None:
             kwargs["inference"] = "warm"

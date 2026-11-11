@@ -7,6 +7,7 @@ import pytest
 from openai.types.chat.chat_completion_message_function_tool_call import (
     ChatCompletionMessageFunctionToolCall as OpenAIChatCompletionMessageFunctionToolCall,
 )
+from openai.types.model import Model as OpenAIModel
 
 from any_llm.providers.huggingface.huggingface import HuggingfaceProvider
 from any_llm.providers.huggingface.utils import _create_openai_chunk_from_huggingface_chunk
@@ -511,6 +512,23 @@ async def test_huggingface_list_models_reads_the_router_listing() -> None:
     assert models == served
     mock_openai.assert_any_call(base_url=HuggingfaceProvider.MODELS_ROUTER_URL, api_key="test-api-key", timeout=10)
     mock_hf_api.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_huggingface_list_models_returns_any_llm_models_from_the_router() -> None:
+    served = [OpenAIModel(id="swiss-ai/Apertus-70B-Instruct-2509", created=0, object="model", owned_by="swiss-ai")]
+    with (
+        mock_huggingface_provider(),
+        patch("any_llm.providers.huggingface.huggingface.AsyncOpenAI") as mock_openai,
+    ):
+        router = mock_openai.return_value.__aenter__.return_value
+        router.models.list = AsyncMock(return_value=Mock(data=served))
+        provider = HuggingfaceProvider(api_key="test-api-key")
+
+        models = await provider._alist_models()
+
+    assert [type(model) for model in models] == [Model]
+    assert models[0].id == "swiss-ai/Apertus-70B-Instruct-2509"
 
 
 @pytest.mark.asyncio
