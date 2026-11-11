@@ -35,6 +35,7 @@ from any_llm.utils.structured_output import normalize_output_config
 
 # Outside the guarded block below: it needs no AWS SDK, and the per-model Messages answer must
 # work on the class even when boto3 is not installed.
+from .stability import convert_stability_response, stability_edit_body
 from .utils import _is_anthropic_model
 
 MISSING_PACKAGES_ERROR = None
@@ -60,6 +61,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Sequence
 
     from any_llm.types.batch import Batch, BatchResult
+    from any_llm.types.image import ImageEditParams, ImagesResponse
     from any_llm.types.messages import MessagesParams, ParsedBetaMessage, ParsedMessage
 
 # Claude's Messages body on Bedrock carries the API version and the betas in the body itself,
@@ -101,6 +103,12 @@ _BEDROCK_BETAS = frozenset(
 # the body, and answers "updates" without it as an unknown display value.
 _THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
 _BEDROCK_THINKING_DISPLAYS = frozenset({"summarized", "omitted", "updates"})
+
+# The InvokeModel request fields beside the model body; image edit sends every other keyword
+# argument as a body field.
+_INVOKE_MODEL_OPTIONS = frozenset(
+    {"guardrailIdentifier", "guardrailVersion", "trace", "performanceConfigLatency", "serviceTier", "requestMetadata"}
+)
 
 _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
     "message_start": MessageStartEvent,
@@ -193,6 +201,8 @@ class BedrockProvider(AnyLLM):
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_BATCH = True
     SUPPORTS_RERANK = False
+    # Stability AI image services only, see `_aimage_edit`.
+    SUPPORTS_IMAGE_EDIT = True
     # Claude models only, see `serves_messages_natively`.
     SUPPORTS_MESSAGES_NATIVE = True
     # Claude models only, see `supports_completion_response_format`.
@@ -578,6 +588,28 @@ class BedrockProvider(AnyLLM):
                     yield event_model.model_validate(payload)
         finally:
             event_stream.close()
+
+    @override
+    async def _aimage_edit(self, params: ImageEditParams, **kwargs: Any) -> ImagesResponse:
+        """Edit an image with a Stability AI image service, such as ``us.stability.stable-image-inpaint-v1:0``.
+
+        See `stability_edit_body` for how the images, the prompt and the extra keyword arguments
+        map to the service's body. InvokeModel options, such as ``guardrailIdentifier`` and
+        ``guardrailVersion``, go on the request instead.
+        """
+        client = await asyncio.to_thread(self._client_for_timeout, kwargs.pop("timeout", None))
+        invoke_options = {key: kwargs.pop(key) for key in _INVOKE_MODEL_OPTIONS & kwargs.keys()}
+        # Reads the image and mask, which may be paths or file objects.
+        body = await asyncio.to_thread(stability_edit_body, params, self.PROVIDER_NAME, **kwargs)
+        request = {
+            **invoke_options,
+            "modelId": params.model_id,
+            "body": json.dumps(body),
+            "contentType": "application/json",
+            "accept": "application/json",
+        }
+        response = await asyncio.to_thread(self._invoke_model_json, client, request)
+        return convert_stability_response(response, body.get("output_format"), self.PROVIDER_NAME)
 
     @override
     async def _aembedding(

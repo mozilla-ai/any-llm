@@ -254,5 +254,5 @@ def test_supports_image_edit_only_on_expected_providers() -> None:
             cls = AnyLLM.get_provider_class(provider_enum)
         except ImportError:
             continue
-        expected = provider_enum in {LLMProvider.GEMINI, LLMProvider.OPENAI}
+        expected = provider_enum in {LLMProvider.BEDROCK, LLMProvider.GEMINI, LLMProvider.OPENAI}
         assert cls.get_provider_metadata().image_edit is expected, f"{provider_enum.value} image_edit != {expected}"
