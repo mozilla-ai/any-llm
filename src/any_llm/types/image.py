@@ -90,6 +90,29 @@ def _resolve_image(image: ImageFile) -> FileTypes:
     return image
 
 
+def read_image_content(content: Any, provider_name: str) -> bytes:
+    """Read the content of one image: bytes, a path, or a binary file object."""
+    if isinstance(content, bytes):
+        return content
+    if isinstance(content, PathLike):
+        path = Path(content)
+        try:
+            return path.read_bytes()
+        except (OSError, ValueError) as exc:
+            msg = f"Cannot read image path {str(path)!r}: {getattr(exc, 'strerror', None) or exc}"
+            raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
+    try:
+        data = content.read()
+    except (OSError, ValueError) as exc:
+        # ValueError is what reading a closed file raises.
+        msg = f"Cannot read image file object: {exc}"
+        raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
+    if not isinstance(data, bytes):
+        msg = "Image file objects must be opened in binary mode"
+        raise InvalidRequestError(msg, provider_name=provider_name)
+    return data
+
+
 class ImageGenerationParams(BaseModel):
     """Parameters for image generation requests."""
 
