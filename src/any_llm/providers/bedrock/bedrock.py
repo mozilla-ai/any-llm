@@ -519,7 +519,7 @@ class BedrockProvider(AnyLLM):
             response = await asyncio.to_thread(client.invoke_model_with_response_stream, **request)
             return self._stream_native_messages(response["body"])
 
-        response = await asyncio.to_thread(self._invoke_native_messages, client, request)
+        response = await asyncio.to_thread(self._invoke_model_json, client, request)
         return MessageResponse.model_validate(response)
 
     def _native_messages_body(self, params: MessagesParams) -> dict[str, Any]:
@@ -558,7 +558,7 @@ class BedrockProvider(AnyLLM):
         return body
 
     @staticmethod
-    def _invoke_native_messages(client: Any, request: dict[str, Any]) -> Any:
+    def _invoke_model_json(client: Any, request: dict[str, Any]) -> Any:
         response = client.invoke_model(**request)
         return json.loads(response["body"].read())
 
