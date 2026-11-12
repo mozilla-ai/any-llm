@@ -175,6 +175,13 @@ PROVIDER_REGISTRY: dict[str, OpenAICompatibleProviderConfig] = {
         supports_batch=True,
         supports_image_generation=True,
     ),
+    "outerlabs": OpenAICompatibleProviderConfig(
+        name="outerlabs",
+        api_base="https://api.outerlabs.ai/v1",
+        env_api_key_name="OUTERLABS_API_KEY",
+        env_api_base_name="OUTERLABS_API_BASE",
+        provider_documentation_url="https://outerlabs.ai/docs",
+    ),
     "ovhcloud": OpenAICompatibleProviderConfig(
         name="ovhcloud",
         api_base="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
