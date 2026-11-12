@@ -111,6 +111,8 @@ _INVOKE_MODEL_OPTIONS = frozenset(
     {"guardrailIdentifier", "guardrailVersion", "trace", "performanceConfigLatency", "serviceTier", "requestMetadata"}
 )
 
+_APPLICATION_INFERENCE_PROFILE = ":application-inference-profile/"
+
 _MESSAGE_STREAM_EVENT_TYPES: dict[str, type[MessageStreamEvent]] = {
     "message_start": MessageStartEvent,
     "message_delta": MessageDeltaEvent,
@@ -238,6 +240,11 @@ class BedrockProvider(AnyLLM):
         self._custom_client: Any = kwargs.pop("client", None)
         self._custom_control_client: Any = kwargs.pop("control_client", None)
         self._custom_s3_client: Any = kwargs.pop("s3_client", None)
+        # Application inference profile ARN to the ID of the foundation model behind it, see `_profile_model_id`.
+        self._profile_model_ids: dict[str, str] = {}
+        # One lock per ARN, so concurrent first requests share one lookup without holding up other ARNs.
+        self._profile_lookup_locks: dict[str, threading.Lock] = {}
+        self._profile_lookup_locks_lock = threading.Lock()
         self._session_credential_kwargs = {k: v for k, v in kwargs.items() if k in self._SESSION_CREDENTIAL_KWARGS}
         # profile_name/botocore_session are boto3.Session-only parameters; Session.client() (used
         # to build the runtime/control-plane/S3 clients below) doesn't accept them, so they must
@@ -402,8 +409,11 @@ class BedrockProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        if is_pegasus_model(params.model_id):
-            return await self._apegasus_completion(params, **kwargs)
+        model_id = params.model_id
+        if model_id.startswith("arn:") and _APPLICATION_INFERENCE_PROFILE in model_id:
+            model_id = await asyncio.to_thread(self._profile_model_id, model_id, kwargs.get("timeout"))
+        if is_pegasus_model(model_id):
+            return await self._apegasus_completion(params, model_id, **kwargs)
         result = await asyncio.to_thread(self._completion, params, **kwargs)
         if isinstance(result, ChatCompletion):
             return result
@@ -423,9 +433,12 @@ class BedrockProvider(AnyLLM):
             event_stream.close()
 
     async def _apegasus_completion(
-        self, params: CompletionParams, **kwargs: Any
+        self, params: CompletionParams, pegasus_model_id: str, **kwargs: Any
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
         """Send a Pegasus request to InvokeModel, since Converse rejects the Pegasus models.
+
+        ``pegasus_model_id`` is the Pegasus model behind ``params.model_id``, which can be an
+        application inference profile ARN.
 
         ``additionalModelRequestFields`` is merged into the body, as Converse does with it, which
         reaches the fields chat has no name for, such as Pegasus 1.5's ``start_time``. Other
@@ -434,7 +447,7 @@ class BedrockProvider(AnyLLM):
         # Building a client for a new timeout loads the service model, so it runs off the event loop.
         client = await asyncio.to_thread(self._client_for_timeout, kwargs.pop("timeout", None))
         body = pegasus_body(
-            params, params.model_id, self.PROVIDER_NAME, kwargs.pop("additionalModelRequestFields", None)
+            params, pegasus_model_id, self.PROVIDER_NAME, kwargs.pop("additionalModelRequestFields", None)
         )
         # The request fields come last, so a forwarded argument cannot change the model or the body.
         request = {
@@ -450,6 +463,42 @@ class BedrockProvider(AnyLLM):
         response = await asyncio.to_thread(client.invoke_model, **request)
         payload = await asyncio.to_thread(response["body"].read)
         return convert_pegasus_response(json.loads(payload), params.model_id, response["ResponseMetadata"]["RequestId"])
+
+    def _profile_model_id(self, profile_arn: str, timeout: float | None) -> str:
+        """Return the ID of the foundation model behind an application inference profile.
+
+        The ARN names the profile, not its model, so ``GetInferenceProfile`` gives the answer,
+        which is kept for later requests. When that call is denied, the ARN itself is the answer,
+        so the request goes to Converse. The lookup honors the request's ``timeout``.
+        """
+        if (cached := self._profile_model_ids.get(profile_arn)) is not None:
+            return cached
+        with self._profile_lookup_locks_lock:
+            lock = self._profile_lookup_locks.setdefault(profile_arn, threading.Lock())
+        with lock:
+            if (cached := self._profile_model_ids.get(profile_arn)) is not None:
+                return cached
+            model_id = self._look_up_profile_model_id(profile_arn, timeout)
+            self._profile_model_ids[profile_arn] = model_id
+            return model_id
+
+    def _look_up_profile_model_id(self, profile_arn: str, timeout: float | None) -> str:
+        try:
+            profile = self._get_bedrock_control_client(timeout).get_inference_profile(
+                inferenceProfileIdentifier=profile_arn
+            )
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") != "AccessDeniedException":
+                raise
+            logger.warning(
+                "Reading Bedrock inference profile %s was denied, so its requests go to Converse, which rejects "
+                "the TwelveLabs Pegasus models. Grant bedrock:GetInferenceProfile to send Pegasus requests to "
+                "InvokeModel.",
+                profile_arn,
+            )
+            return profile_arn
+        # An application inference profile routes to one model, in one or more Regions.
+        return str(profile["models"][0]["modelArn"].partition("foundation-model/")[2])
 
     @staticmethod
     async def _stream_pegasus(event_stream: Any, model_id: str, request_id: str) -> AsyncIterator[ChatCompletionChunk]:
@@ -515,16 +564,19 @@ class BedrockProvider(AnyLLM):
         with self._timeout_clients_lock:
             cached = self._timeout_clients.get(timeout)
             if cached is None:
-                timeout_config = Config(connect_timeout=timeout, read_timeout=timeout)
-                client_kwargs = self._bedrock_client_kwargs(self.kwargs)
-                client_kwargs["config"] = (
-                    client_kwargs["config"].merge(timeout_config) if "config" in client_kwargs else timeout_config
-                )
+                client_kwargs = self._with_timeout(self._bedrock_client_kwargs(self.kwargs), timeout)
                 cached = self._boto_session.client("bedrock-runtime", endpoint_url=self.api_base, **client_kwargs)
                 if len(self._timeout_clients) >= self._MAX_TIMEOUT_CLIENTS:
                     self._timeout_clients.pop(next(iter(self._timeout_clients)))
                 self._timeout_clients[timeout] = cached
             return cached
+
+    @staticmethod
+    def _with_timeout(client_kwargs: dict[str, Any], timeout: float) -> dict[str, Any]:
+        """Add connect and read timeouts to the ``config`` of boto3 client kwargs."""
+        timeout_config = Config(connect_timeout=timeout, read_timeout=timeout)
+        config = client_kwargs.get("config")
+        return {**client_kwargs, "config": config.merge(timeout_config) if config is not None else timeout_config}
 
     @classmethod
     @override
@@ -753,7 +805,7 @@ class BedrockProvider(AnyLLM):
             )
             return []
 
-    def _get_bedrock_control_client(self) -> Any:
+    def _get_bedrock_control_client(self, timeout: float | None = None) -> Any:
         """Return a ``bedrock`` control-plane client for batch and model management operations.
 
         Built from the same session (and, when applicable, the same bearer-token credentials)
@@ -768,12 +820,25 @@ class BedrockProvider(AnyLLM):
         ``profile_name``/``botocore_session``, and would leave the bearer ``Config`` forced by
         ``_bedrock_client_kwargs`` (whenever ``api_key`` was supplied) without a matching scoped
         token provider, so the request would fall through to an ambient (or missing) token.
+
+        A ``timeout`` sets the connect and read timeouts of the client. It cannot be applied to a
+        custom ``control_client=``, so it is rejected there, as `_client_for_timeout` does.
         """
         if self._custom_control_client is not None:
+            if timeout is not None:
+                parameter_name = "timeout"
+                additional_message = (
+                    "A per-request 'timeout' cannot be applied to a custom control_client. Set "
+                    "connect_timeout/read_timeout via botocore.config.Config when constructing it, "
+                    "or let any-llm build the client."
+                )
+                raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME, additional_message)
             return self._custom_control_client
-        if self._boto_session is not None:
-            return self._boto_session.client("bedrock", **self._bedrock_client_kwargs(self.kwargs))
-        return self._build_boto_session(self._api_key).client("bedrock", **self._bedrock_client_kwargs(self.kwargs))
+        client_kwargs = self._bedrock_client_kwargs(self.kwargs)
+        if timeout is not None:
+            client_kwargs = self._with_timeout(client_kwargs, timeout)
+        session = self._boto_session if self._boto_session is not None else self._build_boto_session(self._api_key)
+        return session.client("bedrock", **client_kwargs)
 
     def _get_s3_client(self) -> Any:
         """Return an ``s3`` client for reading batch output files.
