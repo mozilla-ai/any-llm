@@ -1324,6 +1324,12 @@ class AnyLLM(FilesMixin, ABC):
             finally:
                 await aclose_quietly(result)
 
+            if state.started and not state.finished:
+                # Without a finish_reason a complete message cannot be told from a cut one, so end it
+                # like the failure path above: usage, but no stop_reason and no message_stop.
+                yield usage_delta(None)
+                return
+
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
                 for close_event in close_open_blocks(state):
