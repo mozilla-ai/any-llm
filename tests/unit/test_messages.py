@@ -37,6 +37,8 @@ from any_llm.types.completion import (
     ChatCompletionMessage,
     Choice,
     ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionParams,
     CompletionUsage,
@@ -1560,9 +1562,27 @@ async def test_default_amessages_streaming_close_after_failure_flush_is_clean() 
     await result.aclose()
 
 
+@pytest.mark.parametrize(
+    "delta",
+    [
+        ChoiceDelta(content="The capital of France is Par"),
+        ChoiceDelta(
+            tool_calls=[
+                ChoiceDeltaToolCall(
+                    index=0,
+                    id="call_1",
+                    type="function",
+                    function=ChoiceDeltaToolCallFunction(name="get_weather", arguments='{"city": "Par'),
+                )
+            ]
+        ),
+        ChoiceDelta(refusal="I can't help with"),
+    ],
+    ids=["text", "tool_arguments", "refusal"],
+)
 @pytest.mark.asyncio
-async def test_default_amessages_streaming_no_finish_reason_closes_open_block() -> None:
-    """A stream that ends without finish_reason still closes the open block and defaults to end_turn."""
+async def test_default_amessages_streaming_no_finish_reason_is_not_a_completion(delta: ChoiceDelta) -> None:
+    """A stream that ends before any chunk carries a finish_reason was cut short and must not end the message."""
 
     async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
         yield ChatCompletionChunk(
@@ -1570,7 +1590,8 @@ async def test_default_amessages_streaming_no_finish_reason_closes_open_block() 
             model="gpt-4",
             created=0,
             object="chat.completion.chunk",
-            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+            choices=[ChunkChoice(index=0, delta=delta, finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
         )
 
     mock_provider = Mock()
@@ -1590,12 +1611,12 @@ async def test_default_amessages_streaming_no_finish_reason_closes_open_block() 
         "message_start",
         "content_block_start",
         "content_block_delta",
-        "content_block_stop",
         "message_delta",
-        "message_stop",
     ]
-    delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
-    assert delta.delta.stop_reason == "end_turn"
+    delta_event = events[-1]
+    assert isinstance(delta_event, MessageDeltaEvent)
+    assert delta_event.delta.stop_reason is None
+    assert delta_event.usage.output_tokens == 10
 
 
 @pytest.mark.asyncio

@@ -902,6 +902,8 @@ class StreamingState:
         self.cache_creation_input_tokens: int | None = None
         self.cache_creation: CacheCreation | None = None
         self.stop_reason: StopReason | None = None
+        self.finished = False
+        """Whether a chunk carried a finish_reason, which a stream cut short never does."""
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
         self.tool_block_indexes: dict[int, int] = {}
@@ -1122,6 +1124,7 @@ def chat_completion_chunk_to_message_stream_events(
                     )
 
     if choice.finish_reason:
+        state.finished = True
         _close_current_block(state, events)
         # OpenAI ends a streamed refusal with finish_reason="stop", which must not mask the refusal.
         if state.stop_reason != "refusal":
