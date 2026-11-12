@@ -128,8 +128,36 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
     )
 
 
-def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsUpdate) -> ChatCompletionChunk:
-    """Convert an Azure AI Inference streaming chunk to OpenAI ChatCompletionChunk format."""
+class _ToolCallIndexer:
+    """Track the OpenAI ``index`` of each streamed tool call across the chunks of one stream.
+
+    The Azure AI Inference SDK does not expose an index on streamed tool call updates. A call opens
+    with a delta that carries its ``id`` and name, and the deltas that follow carry only more
+    arguments (the id is empty). A call therefore gets the next index when its id is new, and a delta
+    without an id continues the call that came last.
+    """
+
+    def __init__(self) -> None:
+        self._last_id: dict[int, str] = {}
+        self._count: dict[int, int] = {}
+
+    def index_for(self, choice_index: int, tool_call_id: str | None) -> int:
+        count = self._count.get(choice_index, 0)
+        if tool_call_id and tool_call_id != self._last_id.get(choice_index):
+            self._last_id[choice_index] = tool_call_id
+            self._count[choice_index] = count + 1
+            return count
+        return max(count - 1, 0)
+
+
+def _create_openai_chunk_from_azure_chunk(
+    azure_chunk: StreamingChatCompletionsUpdate, indexer: _ToolCallIndexer | None = None
+) -> ChatCompletionChunk:
+    """Convert an Azure AI Inference streaming chunk to OpenAI ChatCompletionChunk format.
+
+    Pass the same ``indexer`` for every chunk of a stream so parallel tool calls keep distinct indexes.
+    """
+    indexer = indexer or _ToolCallIndexer()
     openai_choices = []
     choices = azure_chunk.choices
 
@@ -159,7 +187,7 @@ def _create_openai_chunk_from_azure_chunk(azure_chunk: StreamingChatCompletionsU
 
                 delta_tool_calls.append(
                     ChoiceDeltaToolCall(
-                        index=len(delta_tool_calls),  # Use current length as index
+                        index=indexer.index_for(choice.index, tool_call.id),
                         id=tool_call.id,
                         type="function",
                         function=function,
