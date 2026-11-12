@@ -1171,10 +1171,23 @@ def test_convert_list_models_response_round_trip_serialization() -> None:
     assert restored.context_window == 1048576
 
 
+# The SDK clients are patched where DeepseekProvider._init_client() looks them up.
+# AsyncOpenAI would otherwise reach the real DeepSeek endpoint from the inherited
+# _alist_models() path. Mocking it feeds the same leniently constructed items the
+# SDK returns (created=None plus DeepSeek extras) and keeps this unit test offline
+# and keyless. AsyncAnthropic is not used by list_models(), but _init_client()
+# creates it eagerly, so patching it keeps the test hermetic and leaves no real
+# SDK client open. Real endpoint behavior is covered by
+# tests/integration/test_list_models.py and by a live check in the PR.
 @patch("any_llm.providers.deepseek.deepseek.AsyncAnthropic")
 @patch("any_llm.providers.deepseek.deepseek.AsyncOpenAI")
 def test_list_models_returns_valid_model_objects(mock_openai_class: MagicMock, mock_anthropic_class: MagicMock) -> None:
-    """End-to-end: DeepseekProvider.list_models() returns spec-compliant Model objects."""
+    """End-to-end: DeepseekProvider.list_models() returns spec-compliant Model objects.
+
+    This exercises the inherited _alist_models() path (client.models.list() then
+    _convert_list_models_response()), so it fails if the DeepSeek override is not
+    wired in, not only if the shared helper regresses.
+    """
     raw_models = [
         _make_deepseek_sdk_model(),
         _make_deepseek_sdk_model(id="deepseek-v4-pro", context_window=None, name="DeepSeek-V4-Pro"),
