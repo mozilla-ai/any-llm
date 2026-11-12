@@ -9,6 +9,7 @@ from any_llm.constants import REASONING_FIELD_NAMES
 from any_llm.exceptions import ProviderError
 from any_llm.logging import logger
 from any_llm.types.completion import ChatCompletion, ParsedChatCompletion
+from any_llm.types.model import Model
 from any_llm.types.moderation import ModerationResponse, ModerationResult
 
 
@@ -160,3 +161,36 @@ def _convert_moderation_response_from_openai(raw: Any, *, include_raw: bool) -> 
         model=raw.model,
         results=results,
     )
+
+
+def convert_models_list(response: Any, *, owned_by: str) -> list[Model]:
+    """Convert an OpenAI-compatible list-models response to valid ``Model`` objects.
+
+    OpenAI-compatible endpoints do not always send every field the OpenAI ``Model``
+    schema requires: OpenRouter omits ``object`` and ``owned_by`` (mozilla-ai/any-llm#1083),
+    DeepSeek omits ``created`` (https://api-docs.deepseek.com/api/list-models). The
+    OpenAI SDK constructs such objects leniently, without pydantic validation, so
+    they fail validation and round-trip serialization later. Fill the missing
+    required fields, preserve provider-specific extras (``name``, ``context_window``,
+    ``pricing``, ...), and validate the result.
+
+    Args:
+        response: The SDK's list-models response (anything with ``data``), or a
+            sequence of model objects/dicts.
+        owned_by: Value used when the endpoint omits ``owned_by``.
+
+    Returns:
+        One validated ``Model`` per entry in the response.
+    """
+    raw_models = response.data if hasattr(response, "data") else response
+    result: list[Model] = []
+    for model in raw_models:
+        data: dict[str, Any] = model.model_dump() if hasattr(model, "model_dump") else dict(vars(model))
+        if data.get("object") is None:
+            data["object"] = "model"
+        if data.get("owned_by") is None:
+            data["owned_by"] = owned_by
+        if data.get("created") is None:
+            data["created"] = 0
+        result.append(Model.model_validate(data))
+    return result

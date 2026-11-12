@@ -1,18 +1,22 @@
 import dataclasses
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx2
 import pytest
 from openai.types.chat.chat_completion import ChatCompletion as OpenAIChatCompletion
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from openai.types.model import Model as OpenAIModel
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError
 from any_llm.providers.deepseek.deepseek import DeepseekProvider
 from any_llm.providers.deepseek.utils import ReasoningReplayStream, _preprocess_messages, _reinject_reasoning_content
 from any_llm.types.completion import ChatCompletionChunk, ChatCompletionMessage, CompletionParams, ReasoningEffort
+from any_llm.types.model import Model
 from any_llm.utils.streaming import aaccumulate_chunks
 
 
@@ -1091,3 +1095,100 @@ async def test_streamed_tool_call_turn_replays_reasoning_content() -> None:
     assert replayed["tool_calls"][0]["function"] == {"name": "weather", "arguments": '{"city": "Paris"}'}
     assert "extra_content" not in replayed
     assert "extra_content" not in replayed["tool_calls"][0]
+
+
+def _make_deepseek_sdk_model(**overrides: object) -> OpenAIModel:
+    """A model as the OpenAI SDK builds it from a DeepSeek listing.
+
+    ``model_construct`` skips validation, so ``created`` stays ``None``: DeepSeek's
+    ``/models`` response has no such field. DeepSeek-specific extras are kept,
+    matching the SDK's extra-field behavior.
+    """
+    defaults: dict[str, object] = {
+        "id": "deepseek-flash",
+        "object": "model",
+        "owned_by": "deepseek",
+        "context_window": 1048576,
+        "name": "DeepSeek-V4.1-Flash",
+    }
+    defaults.update(overrides)
+    return OpenAIModel.model_construct(**defaults)  # type: ignore[arg-type]
+
+
+def test_convert_list_models_response_fills_missing_created() -> None:
+    """DeepSeek omits ``created``; conversion returns a valid Model instead of raising."""
+    response = SimpleNamespace(data=[_make_deepseek_sdk_model()])
+
+    result = DeepseekProvider._convert_list_models_response(response)
+
+    assert len(result) == 1
+    model = result[0]
+    assert isinstance(model, Model)
+    assert model.id == "deepseek-flash"
+    assert model.created == 0
+    assert model.object == "model"
+    assert model.owned_by == "deepseek"
+    assert model.context_window == 1048576
+    assert model.model_extra is not None
+    assert model.model_extra["name"] == "DeepSeek-V4.1-Flash"
+
+
+def test_convert_list_models_response_preserves_existing_created() -> None:
+    """A listing that does provide ``created`` keeps it."""
+    response = SimpleNamespace(data=[_make_deepseek_sdk_model(created=1779376861)])
+
+    result = DeepseekProvider._convert_list_models_response(response)
+
+    assert result[0].created == 1779376861
+
+
+def test_convert_list_models_response_fills_missing_owned_by() -> None:
+    """DeepSeek's owner name is used when the endpoint omits ``owned_by``."""
+    response = SimpleNamespace(data=[_make_deepseek_sdk_model(owned_by=None)])
+
+    result = DeepseekProvider._convert_list_models_response(response)
+
+    assert result[0].owned_by == "deepseek"
+
+
+def test_convert_list_models_response_handles_empty_listing() -> None:
+    response = SimpleNamespace(data=[])
+
+    result = DeepseekProvider._convert_list_models_response(response)
+
+    assert result == []
+
+
+def test_convert_list_models_response_round_trip_serialization() -> None:
+    """Converted models must survive model_dump_json -> model_validate_json."""
+    response = SimpleNamespace(data=[_make_deepseek_sdk_model()])
+
+    model = DeepseekProvider._convert_list_models_response(response)[0]
+    restored = Model.model_validate_json(model.model_dump_json())
+
+    assert restored.id == model.id
+    assert restored.created == 0
+    assert restored.context_window == 1048576
+
+
+@patch("any_llm.providers.deepseek.deepseek.AsyncAnthropic")
+@patch("any_llm.providers.deepseek.deepseek.AsyncOpenAI")
+def test_list_models_returns_valid_model_objects(mock_openai_class: MagicMock, mock_anthropic_class: MagicMock) -> None:
+    """End-to-end: DeepseekProvider.list_models() returns spec-compliant Model objects."""
+    raw_models = [
+        _make_deepseek_sdk_model(),
+        _make_deepseek_sdk_model(id="deepseek-v4-pro", context_window=None, name="DeepSeek-V4-Pro"),
+    ]
+    mock_client = AsyncMock()
+    mock_client.models.list.return_value = SimpleNamespace(data=raw_models)
+    mock_openai_class.return_value = mock_client
+
+    provider = DeepseekProvider(api_key="sk-test")
+    result = provider.list_models()
+
+    assert len(result) == 2
+    assert all(isinstance(model, Model) for model in result)
+    assert [model.id for model in result] == ["deepseek-flash", "deepseek-v4-pro"]
+    assert [model.created for model in result] == [0, 0]
+    assert result[0].context_window == 1048576
+    assert result[1].context_window is None
