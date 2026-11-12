@@ -433,7 +433,9 @@ class BedrockProvider(AnyLLM):
         """
         # Building a client for a new timeout loads the service model, so it runs off the event loop.
         client = await asyncio.to_thread(self._client_for_timeout, kwargs.pop("timeout", None))
-        body = pegasus_body(params, self.PROVIDER_NAME, kwargs.pop("additionalModelRequestFields", None))
+        body = pegasus_body(
+            params, params.model_id, self.PROVIDER_NAME, kwargs.pop("additionalModelRequestFields", None)
+        )
         # The request fields come last, so a forwarded argument cannot change the model or the body.
         request = {
             **kwargs,
