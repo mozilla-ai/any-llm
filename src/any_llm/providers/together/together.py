@@ -82,9 +82,8 @@ def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
 def _match_resolution_spelling(options: dict[str, Any], sent: str) -> None:
     """Spell a caller's ``resolution`` as ``sent`` when both name the same tier.
 
-    any-llm sends a tier as its short side, so ``4k`` goes out as ``2160p`` and ``720P`` or
-    ``0720p`` as ``720p``. A caller who repeats the shared resolution in another spelling is not
-    changing it.
+    any-llm sends a tier as its short side, so ``4k`` goes out as ``2160p`` and ``0720p`` as
+    ``720p``. A caller who repeats the shared resolution in another spelling is not changing it.
     """
     value = options.get("resolution")
     if not isinstance(value, str):
@@ -94,7 +93,7 @@ def _match_resolution_spelling(options: dict[str, Any], sent: str) -> None:
         tier = "2160p"
     elif tier.endswith("p") and tier[:-1].isdecimal():
         tier = f"{int(tier[:-1])}p"
-    if tier == sent:
+    if tier == sent.lower():
         options["resolution"] = sent
 
 
@@ -403,7 +402,9 @@ class TogetherProvider(AnyLLM):
                 width, height = shape.dimensions
                 fields["width"], fields["height"] = ("size", width), ("size", height)
             if params.resolution is not None:
-                fields["resolution"] = ("resolution", f"{shape.short_side}p")
+                # Some models take only an uppercase tier (Wan 2.7 rejects 720p), so keep the caller's case.
+                suffix = "P" if params.resolution.endswith("P") else "p"
+                fields["resolution"] = ("resolution", f"{shape.short_side}{suffix}")
             if params.aspect_ratio is not None:
                 fields["ratio"] = ("aspect_ratio", params.aspect_ratio)
         if params.generate_audio is not None:
