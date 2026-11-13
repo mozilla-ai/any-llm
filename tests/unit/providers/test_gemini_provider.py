@@ -3547,6 +3547,45 @@ def test_convert_response_extracts_cached_tokens() -> None:
     assert response_dict["usage"]["prompt_tokens_details"].cached_tokens == 80
 
 
+def _audio_cache_hit_usage() -> types.GenerateContentResponseUsageMetadata:
+    """A prompt of 100 text and 300 audio tokens, 250 of them read from the cache: 50 text and 200 audio."""
+    return types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=400,
+        candidates_token_count=10,
+        total_token_count=410,
+        cached_content_token_count=250,
+        prompt_tokens_details=[
+            types.ModalityTokenCount(modality=types.MediaModality.TEXT, token_count=100),
+            types.ModalityTokenCount(modality=types.MediaModality.AUDIO, token_count=300),
+        ],
+        cache_tokens_details=[
+            types.ModalityTokenCount(modality=types.MediaModality.TEXT, token_count=50),
+            types.ModalityTokenCount(modality=types.MediaModality.AUDIO, token_count=200),
+        ],
+    )
+
+
+def test_convert_response_extracts_cached_audio_tokens() -> None:
+    response = _make_gemini_response([types.Part(text="Hello!")], types.FinishReason.STOP)
+    response.usage_metadata = _audio_cache_hit_usage()
+
+    details = _convert_response_to_response_dict(response)["usage"]["prompt_tokens_details"]
+
+    assert (details.cached_tokens, details.audio_tokens, details.cached_audio_tokens) == (250, 300, 200)
+
+
+def test_streaming_chunk_extracts_cached_audio_tokens() -> None:
+    response = _make_gemini_response([types.Part(text="Hello!")], types.FinishReason.STOP)
+    response.model_version = "gemini-2.5-flash"
+    response.usage_metadata = _audio_cache_hit_usage()
+
+    chunk = _create_openai_chunk_from_google_chunk(response)
+
+    assert chunk.usage is not None
+    assert chunk.usage.prompt_tokens_details is not None
+    assert chunk.usage.prompt_tokens_details.cached_audio_tokens == 200
+
+
 def test_convert_response_includes_tool_use_prompt_tokens() -> None:
     response = _make_gemini_response([types.Part(text="Hello!")], types.FinishReason.STOP)
     response.usage_metadata = types.GenerateContentResponseUsageMetadata(
