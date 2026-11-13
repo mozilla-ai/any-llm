@@ -716,8 +716,8 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     in ``prompt_tokens`` and ``completion_tokens`` respectively. Audio and image
     output tokens stay inside ``completion_tokens`` and are broken out in its details;
     audio input tokens are broken out of ``prompt_tokens`` the same way, since Gemini
-    prices audio input above text. Google Search grounding queries are reported as
-    ``server_tool_use.web_search_requests``.
+    prices audio input above text, and so are the cached ones out of ``cached_tokens``.
+    Google Search grounding queries are reported as ``server_tool_use.web_search_requests``.
 
     Reference: https://ai.google.dev/api/generate-content#UsageMetadata
     """
@@ -739,9 +739,12 @@ def _extract_usage_dict(response: types.GenerateContentResponse) -> dict[str, An
     input_audio_tokens = _tokens_by_modality(
         metadata.prompt_tokens_details, metadata.tool_use_prompt_tokens_details
     ).get(types.MediaModality.AUDIO)
+    cached_audio_tokens = _tokens_by_modality(metadata.cache_tokens_details).get(types.MediaModality.AUDIO)
     if metadata.cached_content_token_count or input_audio_tokens:
         usage["prompt_tokens_details"] = PromptTokensDetails(
-            cached_tokens=metadata.cached_content_token_count, audio_tokens=input_audio_tokens
+            cached_tokens=metadata.cached_content_token_count,
+            audio_tokens=input_audio_tokens,
+            cached_audio_tokens=cached_audio_tokens,
         )
     if web_search_requests := _web_search_query_count(response):
         usage["server_tool_use"] = ServerToolUsage(web_search_requests=web_search_requests)
