@@ -5,7 +5,7 @@ import os
 import re
 import warnings
 from collections.abc import Callable
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, TypeVar
 
 from pydantic import ValidationError
@@ -276,15 +276,39 @@ def _header_value(exception: Exception, names: tuple[str, ...]) -> str | None:
     return None
 
 
-def _milliseconds_to_seconds(value: str) -> str | None:
-    """Convert a millisecond count to a decimal seconds string, or None if it is not a valid count."""
+_RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo"
+
+
+def _to_seconds(value: str, per_second: int) -> str | None:
+    """Convert a count of 1/per_second-second units to a decimal seconds string, or None if it is not a valid count."""
     try:
-        milliseconds = Decimal(value.strip())
-    except InvalidOperation:
+        count = Decimal(value.strip())
+        if not count.is_finite() or count < 0:
+            return None
+        return format(count / per_second, "f")
+    except DecimalException:  # not a number, or too large to divide
         return None
-    if not milliseconds.is_finite() or milliseconds < 0:
+
+
+def _google_retry_delay(exception: Exception) -> str | None:
+    """Return the ``retryDelay`` of a ``google.rpc.RetryInfo`` in the error body, as seconds.
+
+    Gemini sends no ``Retry-After`` header on a 429. It puts the delay in the
+    body's ``error.details`` instead, as a protobuf Duration string such as
+    ``"20s"``, and google-genai keeps that body on the exception's ``details``.
+    """
+    body = getattr(exception, "details", None)
+    error = body.get("error") if isinstance(body, dict) else None
+    details = error.get("details") if isinstance(error, dict) else None
+    if not isinstance(details, list):
         return None
-    return format(milliseconds / 1000, "f")
+
+    for detail in details:
+        if isinstance(detail, dict) and detail.get("@type") == _RETRY_INFO_TYPE:
+            delay = detail.get("retryDelay")
+            if isinstance(delay, str) and delay.endswith("s"):
+                return _to_seconds(delay[:-1], 1)
+    return None
 
 
 def _extract_retry_after(exception: Exception) -> str | None:
@@ -293,16 +317,17 @@ def _extract_retry_after(exception: Exception) -> str | None:
     ``Retry-After`` is returned verbatim, because it is either a number of
     seconds or an HTTP-date and normalizing it would throw away the caller's
     ability to tell the two apart. When it is absent, ``retry-after-ms`` (sent
-    by some SDKs and APIs) is converted to seconds.
+    by some SDKs and APIs) is converted to seconds, and after that a Google
+    ``RetryInfo`` in the error body, which is where Gemini sends its delay.
     """
     retry_after = _header_value(exception, ("retry-after", "Retry-After"))
     if retry_after is not None:
         return retry_after
 
     retry_after_ms = _header_value(exception, ("retry-after-ms", "Retry-After-Ms"))
-    if retry_after_ms is None:
-        return None
-    return _milliseconds_to_seconds(retry_after_ms)
+    if retry_after_ms is not None:
+        return _to_seconds(retry_after_ms, 1000)
+    return _google_retry_delay(exception)
 
 
 def _provider_pick(classify: ExceptionClassifier, exception: Exception) -> type[AnyLLMError] | None:
@@ -331,7 +356,8 @@ def convert_exception(
     ``param``, ``type``) is carried onto the unified exception so
     consumers can classify a failure without unwrapping ``original_exception``,
     and a :class:`~any_llm.exceptions.RateLimitError` additionally carries the
-    ``Retry-After`` header when the provider sent one.
+    retry delay when the provider sent one: its ``Retry-After`` header, else
+    ``retry-after-ms`` in seconds, else a Google ``RetryInfo`` in the error body.
 
     Args:
         exception: The original exception from the SDK
