@@ -73,6 +73,8 @@ class RateLimitError(AnyLLMError):
     Attributes:
         retry_after: Value of the ``Retry-After`` header, when the server
             provides one.  May be a number of seconds or an HTTP-date string.
+            Without it, ``retry-after-ms`` or a Google ``RetryInfo`` in the
+            error body (Gemini's ``retryDelay``), converted to seconds.
 
     """
 

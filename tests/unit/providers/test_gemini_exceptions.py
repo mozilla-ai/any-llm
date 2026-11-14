@@ -102,10 +102,11 @@ def test_rate_limit_reads_retry_delay_from_retry_info(delay: str, expected: str)
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo"},),
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "soon"},),
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "-5s"},),
+        ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "1e1000000s"},),
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": 20},),
         ({"@type": "type.googleapis.com/google.rpc.Help", "retryDelay": "20s"},),
     ],
-    ids=["no-retry-info", "no-delay", "not-a-duration", "negative", "not-a-string", "other-type"],
+    ids=["no-retry-info", "no-delay", "not-a-duration", "negative", "overflowing", "not-a-string", "other-type"],
 )
 def test_rate_limit_without_a_usable_retry_delay_has_no_retry_after(details: tuple[object, ...]) -> None:
     result = convert_exception(_quota_error(*details), "gemini")
@@ -114,12 +115,11 @@ def test_rate_limit_without_a_usable_retry_delay_has_no_retry_after(details: tup
     assert result.retry_after is None
 
 
-def test_retry_after_header_wins_over_retry_info() -> None:
-    original = _quota_error(
-        {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "20s"}, headers={"retry-after": "7"}
-    )
+@pytest.mark.parametrize(("headers", "expected"), [({"retry-after": "7"}, "7"), ({"retry-after-ms": "1500"}, "1.5")])
+def test_a_retry_header_wins_over_retry_info(headers: dict[str, str], expected: str) -> None:
+    original = _quota_error({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "20s"}, headers=headers)
 
     result = convert_exception(original, "gemini")
 
     assert isinstance(result, RateLimitError)
-    assert result.retry_after == "7"
+    assert result.retry_after == expected
