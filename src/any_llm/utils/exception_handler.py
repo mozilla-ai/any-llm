@@ -5,7 +5,7 @@ import os
 import re
 import warnings
 from collections.abc import Callable
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, TypeVar
 
 from pydantic import ValidationError
@@ -283,11 +283,11 @@ def _to_seconds(value: str, per_second: int) -> str | None:
     """Convert a count of 1/per_second-second units to a decimal seconds string, or None if it is not a valid count."""
     try:
         count = Decimal(value.strip())
-    except InvalidOperation:
+        if not count.is_finite() or count < 0:
+            return None
+        return format(count / per_second, "f")
+    except DecimalException:  # not a number, or too large to divide
         return None
-    if not count.is_finite() or count < 0:
-        return None
-    return format(count / per_second, "f")
 
 
 def _google_retry_delay(exception: Exception) -> str | None:
@@ -356,7 +356,8 @@ def convert_exception(
     ``param``, ``type``) is carried onto the unified exception so
     consumers can classify a failure without unwrapping ``original_exception``,
     and a :class:`~any_llm.exceptions.RateLimitError` additionally carries the
-    ``Retry-After`` header when the provider sent one.
+    retry delay when the provider sent one: its ``Retry-After`` header, else
+    ``retry-after-ms`` in seconds, else a Google ``RetryInfo`` in the error body.
 
     Args:
         exception: The original exception from the SDK
