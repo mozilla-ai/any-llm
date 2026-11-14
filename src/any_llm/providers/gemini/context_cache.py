@@ -340,17 +340,21 @@ def report_cache_write(usage: CompletionUsage | None, cache_use: ContextCacheUse
 
     Gemini counts the prefix as ``cached_content_token_count`` because the request read the cache it
     had just created. ``cached_tokens`` and ``cache_write_tokens`` are disjoint subsets of
-    ``prompt_tokens``, so the written tokens leave the read count.
+    ``prompt_tokens``, so the written tokens leave the read count, and the cached audio can't
+    outnumber what is left of it.
     """
     if usage is None or cache_use.cache_write_tokens is None:
         return
     written = min(cache_use.cache_write_tokens, usage.prompt_tokens)
     details = usage.prompt_tokens_details
     read = details.cached_tokens if details is not None else None
+    cached = max((read or 0) - written, 0)
+    cached_audio = details.cached_audio_tokens if details is not None else None
     long_ttl = cache_use.ttl_seconds == LONG_TTL_SECONDS
     usage.prompt_tokens_details = PromptTokensDetails(
         audio_tokens=details.audio_tokens if details is not None else None,
-        cached_tokens=max((read or 0) - written, 0),
+        cached_tokens=cached,
+        cached_audio_tokens=min(cached_audio, cached) if cached_audio is not None else None,
         cache_write_tokens=written,
         cache_creation_token_details=CacheCreationTokenDetails(
             ephemeral_5m_input_tokens=0 if long_ttl else written,

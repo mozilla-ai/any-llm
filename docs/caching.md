@@ -66,6 +66,8 @@ off for that call.
 On the call that creates the cache, the cached prefix is reported as
 `usage.prompt_tokens_details.cache_write_tokens` (with `cached_tokens=0`). Later
 calls that reuse it report `cached_tokens`. Both are subsets of `prompt_tokens`.
+When the cache holds audio, `cached_audio_tokens` says how much of `cached_tokens`
+was audio, since cached audio is priced apart from cached text.
 Through `messages()` they appear as `cache_creation_input_tokens` and
 `cache_read_input_tokens`.
 
