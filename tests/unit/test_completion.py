@@ -720,3 +720,22 @@ async def test_acompletion_maps_reasoning_effort_for_deepseek_v4(
             reasoning_effort=requested,
         )
     assert mock_ac.call_args.args[0].reasoning_effort == sent
+
+
+def test_base_convert_completion_params_raises() -> None:
+    """The base class default _convert_completion_params raises NotImplementedError."""
+    params = CompletionParams(model_id="test-model", messages=[{"role": "user", "content": "hi"}])
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        AnyLLM._convert_completion_params(params)
+
+
+def test_base_convert_completion_response_raises() -> None:
+    """The base class default _convert_completion_response raises NotImplementedError."""
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        AnyLLM._convert_completion_response({})
+
+
+def test_base_convert_completion_chunk_response_raises() -> None:
+    """The base class default _convert_completion_chunk_response raises NotImplementedError."""
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        AnyLLM._convert_completion_chunk_response({})

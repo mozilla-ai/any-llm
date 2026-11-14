@@ -172,3 +172,15 @@ async def test_float_only_providers_do_not_send_encoding_format(
     else:
         assert isinstance(embedding, str)
         assert struct.unpack("<3f", base64.b64decode(embedding)) == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_base_convert_embedding_params_raises() -> None:
+    """The base class default _convert_embedding_params raises NotImplementedError."""
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        AnyLLM._convert_embedding_params("text")
+
+
+def test_base_convert_embedding_response_raises() -> None:
+    """The base class default _convert_embedding_response raises NotImplementedError."""
+    with pytest.raises(NotImplementedError, match="Subclasses must implement"):
+        AnyLLM._convert_embedding_response({})
