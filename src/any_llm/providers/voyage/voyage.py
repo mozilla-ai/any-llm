@@ -32,7 +32,7 @@ else:
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
+    from any_llm.types.completion import CreateEmbeddingResponse
     from any_llm.types.model import Model
     from any_llm.types.rerank import RerankResponse
 
@@ -63,27 +63,6 @@ class VoyageProvider(AnyLLM):
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 
     client: AsyncClient
-
-    @staticmethod
-    @override
-    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
-        """Convert CompletionParams to kwargs for Voyage API."""
-        msg = "Voyage does not support completions"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_completion_response(response: Any) -> ChatCompletion:
-        """Convert Voyage response to OpenAI format."""
-        msg = "Voyage does not support completions"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
-        """Convert Voyage chunk response to OpenAI format."""
-        msg = "Voyage does not support completions"
-        raise NotImplementedError(msg)
 
     @staticmethod
     @override

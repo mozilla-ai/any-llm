@@ -39,7 +39,6 @@ if TYPE_CHECKING:
 
     from typesafe_sdk import QuestionModel as TypeSafeQuestionModel
 
-    from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams, CreateEmbeddingResponse
     from any_llm.types.decide import JSONContent
 
 
@@ -99,36 +98,6 @@ class TypesafeProvider(AnyLLM):
             # A self-hosted server (for example Ollama) needs no key, but the SDK client still requires one.
             return "no-key-required"
         raise MissingApiKeyError(self.PROVIDER_NAME, self.ENV_API_KEY_NAME)
-
-    @staticmethod
-    @override
-    def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
-        msg = "TypeSafe does not support completions"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_completion_response(response: Any) -> ChatCompletion:
-        msg = "TypeSafe does not support completions"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
-        msg = "TypeSafe does not support completions"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
-        msg = "TypeSafe does not support embeddings"
-        raise NotImplementedError(msg)
-
-    @staticmethod
-    @override
-    def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
-        msg = "TypeSafe does not support embeddings"
-        raise NotImplementedError(msg)
 
     @staticmethod
     @override
