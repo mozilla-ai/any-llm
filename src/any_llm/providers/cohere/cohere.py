@@ -181,6 +181,9 @@ class CohereProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        """Initializes the SDK with the resolved API base and caller-supplied client options."""
+        if api_base is not None:
+            kwargs.setdefault("base_url", api_base)
         self.client = cohere.AsyncClientV2(api_key=api_key, **kwargs)
 
     async def _stream_completion_async(

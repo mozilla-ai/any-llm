@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Any, TypedDict
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from cohere.types import Usage as CohereUsage
 from cohere.types import UsageTokens
@@ -14,6 +15,54 @@ from any_llm.providers.cohere.utils import (
     _patch_messages,
 )
 from any_llm.types.completion import CompletionParams, CreateEmbeddingResponse, ReasoningEffort
+
+
+class CohereClientOptions(TypedDict, total=False):
+    base_url: str
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("api_base", "environment_base", "sdk_base", "expected_base"),
+    [
+        ("https://explicit.example/proxy", None, None, "https://explicit.example/proxy"),
+        (None, "https://environment.example/proxy", None, "https://environment.example/proxy"),
+        ("https://explicit.example/proxy", "https://environment.example", None, "https://explicit.example/proxy"),
+        (None, None, None, "https://api.cohere.com"),
+        ("https://explicit.example", None, "https://sdk.example/proxy", "https://sdk.example/proxy"),
+    ],
+)
+async def test_list_models_uses_custom_api_base(
+    monkeypatch: pytest.MonkeyPatch,
+    api_base: str | None,
+    environment_base: str | None,
+    sdk_base: str | None,
+    expected_base: str,
+) -> None:
+    from any_llm.providers.cohere.cohere import CohereProvider
+
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"models": []})
+
+    monkeypatch.delenv("CO_API_URL", raising=False)
+    monkeypatch.delenv("COHERE_BASE_URL", raising=False)
+    if environment_base:
+        monkeypatch.setenv("COHERE_BASE_URL", environment_base)
+    client_options: CohereClientOptions = {} if sdk_base is None else {"base_url": sdk_base}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        provider = CohereProvider(
+            api_key="test-api-key",
+            api_base=api_base,
+            httpx_client=client,
+            **client_options,
+        )
+        assert await provider.alist_models() == []
+
+    assert len(requests) == 1
+    assert str(requests[0].url) == expected_base + "/v1/models"
 
 
 def _mk_provider() -> Any:
