@@ -554,9 +554,10 @@ def _convert_tool_result_content(message: dict[str, Any]) -> dict[str, Any] | No
     else:
         try:
             content_json = json.loads(message["content"])
-            content = [{"json": content_json}]
         except json.JSONDecodeError:
-            content = [{"text": message["content"]}]
+            content_json = None
+        # A json block holds an object only; Converse refuses an array, a string or a number there.
+        content = [{"json": content_json}] if isinstance(content_json, dict) else [{"text": message["content"]}]
 
     return {"toolResult": {"toolUseId": tool_call_id, "content": content}}
 
