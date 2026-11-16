@@ -2271,6 +2271,10 @@ def test_convert_messages_sends_tool_result_text_parts_as_text_blocks() -> None:
     [
         ('{"temp": 18}', [{"json": {"temp": 18}}]),
         ("18 degrees", [{"text": "18 degrees"}]),
+        ('[{"name": "README.md"}]', [{"text": '[{"name": "README.md"}]'}]),
+        ('"done"', [{"text": '"done"'}]),
+        ("18", [{"text": "18"}]),
+        ("null", [{"text": "null"}]),
     ],
 )
 def test_convert_messages_sends_string_tool_result_as_json_or_text(
