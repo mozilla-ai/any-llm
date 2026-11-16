@@ -592,6 +592,22 @@ def test_report_cache_write_caps_the_write_at_prompt_tokens_and_uses_the_1h_buck
     assert usage.prompt_tokens_details.cache_creation_token_details.ephemeral_1h_input_tokens == 100
 
 
+def test_report_cache_write_leaves_no_more_cached_audio_than_cached_tokens() -> None:
+    usage = CompletionUsage(
+        prompt_tokens=400,
+        completion_tokens=1,
+        total_tokens=401,
+        prompt_tokens_details=PromptTokensDetails(cached_tokens=250, audio_tokens=300, cached_audio_tokens=200),
+    )
+    cache_use = ContextCacheUse(request_kwargs={}, uncached_kwargs={}, cache_write_tokens=150, ttl_seconds=300)
+
+    report_cache_write(usage, cache_use)
+
+    assert usage.prompt_tokens_details is not None
+    assert usage.prompt_tokens_details.cached_tokens == 100
+    assert usage.prompt_tokens_details.cached_audio_tokens == 100
+
+
 def test_report_cache_write_without_a_write_or_usage_changes_nothing() -> None:
     usage = CompletionUsage(prompt_tokens=10, completion_tokens=1, total_tokens=11)
 

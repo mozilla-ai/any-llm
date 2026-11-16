@@ -51,11 +51,14 @@ class PromptTokensDetails(OpenAIPromptTokensDetails):
     """OpenAI prompt token breakdown extended with the TTL split of cache writes.
 
     As in OpenAI, ``cached_tokens`` and ``cache_write_tokens`` are subsets of ``prompt_tokens``.
+    ``cached_audio_tokens`` is the part of ``cached_tokens`` that is audio, so it is a subset of
+    ``audio_tokens`` too.
     """
 
     # Declared here because older openai-python releases do not define it on the parent model.
     cache_write_tokens: int | None = None
     cache_creation_token_details: CacheCreationTokenDetails | None = None
+    cached_audio_tokens: int | None = None
 
     @model_validator(mode="before")
     @classmethod
