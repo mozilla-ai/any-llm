@@ -23,7 +23,9 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: first-pr-limit-${{ github.event.pull_request.user.login }}
+  # Shared by first-pr-limit and pr-flood-guard: run separately, the two
+  # could each close a different PR and leave the author none open.
+  group: pr-limit-${{ github.event.pull_request.user.login }}
   cancel-in-progress: false
   # Queue every event: by default a newer pending run cancels the waiting one,
   # and that PR would never be checked.
@@ -49,8 +51,11 @@ jobs:
                   owner, repo, username,
                 });
                 return ['admin', 'maintain', 'write'].includes(data.permission);
-              } catch {
-                return false;
+              } catch (error) {
+                // Only a 404 means no access; any other failure must stop the run,
+                // since treating a team member as external could close their PRs.
+                if (error.status === 404) return false;
+                throw error;
               }
             }
 
