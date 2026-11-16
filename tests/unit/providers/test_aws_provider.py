@@ -3,13 +3,13 @@ import dataclasses
 import json
 import logging
 import threading
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, get_args
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import boto3
 import botocore.session
@@ -38,7 +38,12 @@ from any_llm.providers.bedrock.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_aws_chunk,
 )
-from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
+from any_llm.types.completion import (
+    ChatCompletionMessage,
+    ChatCompletionMessageFunctionToolCall,
+    CompletionParams,
+    ReasoningEffort,
+)
 
 
 @contextmanager
@@ -1003,10 +1008,14 @@ def test_convert_messages_with_string_content() -> None:
         ([[{"type": "text", "text": "  Keep whitespace.\n"}]], [{"text": "  Keep whitespace.\n"}]),
     ],
 )
+@pytest.mark.parametrize("role", ["system", "developer"])
 def test_convert_params_preserves_system_content(
-    contents: list[Any], expected: list[dict[str, Any]] | None, stream: bool
+    contents: list[Any],
+    expected: list[dict[str, Any]] | None,
+    stream: bool,
+    role: str,
 ) -> None:
-    messages = [{"role": "system", "content": content} for content in contents]
+    messages = [{"role": role, "content": content} for content in contents]
     messages.append({"role": "user", "content": "Hello"})
     original_messages = deepcopy(messages)
     params = CompletionParams(model_id="anthropic.claude-sonnet-4", messages=messages, stream=stream)
@@ -1026,21 +1035,23 @@ def test_convert_params_preserves_system_content(
     "content",
     [None, 123, "", [], ["text"], [{"type": "text", "text": ""}], [{"type": "text", "text": 123}]],
 )
-def test_convert_params_rejects_invalid_system_content(content: Any) -> None:
+@pytest.mark.parametrize("role", ["system", "developer"])
+def test_convert_params_rejects_invalid_system_content(content: Any, role: str) -> None:
     params = CompletionParams(
         model_id="anthropic.claude-sonnet-4",
-        messages=[{"role": "system", "content": content}, {"role": "user", "content": "Hello"}],
+        messages=[{"role": role, "content": content}, {"role": "user", "content": "Hello"}],
     )
 
     with pytest.raises(InvalidRequestError, match="System message content"):
         _convert_params(params, {})
 
 
-def test_convert_params_rejects_non_text_system_blocks() -> None:
+@pytest.mark.parametrize("role", ["system", "developer"])
+def test_convert_params_rejects_non_text_system_blocks(role: str) -> None:
     params = CompletionParams(
         model_id="anthropic.claude-sonnet-4",
         messages=[
-            {"role": "system", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}]},
+            {"role": role, "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}]},
             {"role": "user", "content": "Hello"},
         ],
     )
@@ -1049,12 +1060,13 @@ def test_convert_params_rejects_non_text_system_blocks() -> None:
         _convert_params(params, {})
 
 
-def test_convert_params_drops_system_text_annotations() -> None:
+@pytest.mark.parametrize("role", ["system", "developer"])
+def test_convert_params_drops_system_text_annotations(role: str) -> None:
     params = CompletionParams(
         model_id="anthropic.claude-sonnet-4",
         messages=[
             {
-                "role": "system",
+                "role": role,
                 "content": [{"type": "text", "text": "Keep this", "cache_control": {"type": "ephemeral"}}],
             },
             {"role": "user", "content": "Hello"},
@@ -1066,14 +1078,15 @@ def test_convert_params_drops_system_text_annotations() -> None:
     assert result["system"] == [{"text": "Keep this"}]
 
 
-def test_convert_params_hoists_late_system_messages() -> None:
+@pytest.mark.parametrize("role", ["system", "developer"])
+def test_convert_params_hoists_late_system_messages(role: str) -> None:
     params = CompletionParams(
         model_id="anthropic.claude-sonnet-4",
         messages=[
-            {"role": "system", "content": "First"},
+            {"role": role, "content": "First"},
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi"},
-            {"role": "system", "content": "Second"},
+            {"role": role, "content": "Second"},
             {"role": "user", "content": "Again"},
         ],
     )
@@ -1089,8 +1102,9 @@ def test_convert_params_hoists_late_system_messages() -> None:
 
 
 @pytest.mark.parametrize("content", [None, "Message instruction", [{"type": "text", "text": "Message instruction"}]])
-def test_convert_params_preserves_native_system_precedence(content: Any) -> None:
-    messages = [{"role": "system", "content": content}] if content is not None else []
+@pytest.mark.parametrize("role", ["system", "developer"])
+def test_convert_params_preserves_native_system_precedence(content: Any, role: str) -> None:
+    messages = [{"role": role, "content": content}] if content is not None else []
     messages.append({"role": "user", "content": "Hello"})
     params = CompletionParams(model_id="anthropic.claude-sonnet-4", messages=messages)
     kwargs = {"system": [{"text": "Native instruction"}]}
@@ -1101,6 +1115,38 @@ def test_convert_params_preserves_native_system_precedence(content: Any) -> None
     expected = "Native instruction" if content is None else "Message instruction"
     assert result["system"] == [{"text": expected}]
     assert kwargs == original_kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_completion_sends_mixed_developer_and_system_instructions(stream: bool) -> None:
+    messages: list[dict[str, Any] | ChatCompletionMessage] = [
+        {"role": "system", "content": "First"},
+        {"role": "developer", "content": [{"type": "text", "text": "Second"}]},
+        {"role": "user", "content": "Question"},
+        {"role": "developer", "content": "Third"},
+    ]
+    original_messages = deepcopy(messages)
+    client = Mock()
+    event_stream = MagicMock()
+    client.converse_stream.return_value = {"stream": event_stream}
+    client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": "Answer"}]}},
+        "stopReason": "end_turn",
+    }
+    provider = BedrockProvider(client=client)
+
+    result = await provider.acompletion(model="amazon.nova-lite-v1:0", messages=messages, stream=stream)
+    if isinstance(result, AsyncIterator):
+        assert [chunk async for chunk in result] == []
+        event_stream.close.assert_called_once()
+
+    sdk_call = client.converse_stream if stream else client.converse
+    sdk_call.assert_called_once()
+    request = sdk_call.call_args.kwargs
+    assert request["system"] == [{"text": "First"}, {"text": "Second"}, {"text": "Third"}]
+    assert request["messages"] == [{"role": "user", "content": [{"text": "Question"}]}]
+    assert messages == original_messages
 
 
 def test_completion_with_images() -> None:
