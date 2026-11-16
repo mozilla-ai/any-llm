@@ -1,0 +1,151 @@
+name: PR flood guard
+
+# Keep the review queue manageable for contributors from outside the team:
+#  - a newly opened PR that would give its author more than four open PRs is
+#    closed with a comment listing the ones still open, and
+#  - a newly opened PR whose linked issue already has another open PR gets a
+#    warning comment (it stays open, since linked-issue data can misfire).
+# Only the PR that triggered the run is ever closed, so an existing backlog is
+# left alone. Team members and bots are exempt, and a maintainer can opt a PR
+# out with the `skip-pr-limit` label before reopening it.
+# Adapted from deepset-ai/haystack's pr_flood_guard.yml.
+#
+# Use pull_request_target to have write access for PRs from forks. This is
+# safe because the workflow never checks out or executes code from the fork.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-flood-guard-${{ github.event.pull_request.user.login }}
+  cancel-in-progress: false
+  # Queue every event: by default a newer pending run cancels the waiting one,
+  # and that PR would never be checked.
+  queue: max
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close excess PRs and warn about duplicates
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const MAX_OPEN_PRS = 4;
+            const SKIP_LABEL = 'skip-pr-limit';
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const login = pr.user?.login;
+
+            // author_association is unreliable for this (private org members
+            // appear as CONTRIBUTOR or NONE in the payload), so fall back to
+            // the effective repository permission.
+            async function isTeamMember(username) {
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username,
+                });
+                return ['admin', 'maintain', 'write'].includes(data.permission);
+              } catch {
+                return false;
+              }
+            }
+
+            if (!login || pr.user?.type === 'Bot') return;
+            // COLLABORATOR also covers read-only collaborators, so it is left to
+            // the permission check.
+            if (['MEMBER', 'OWNER'].includes(pr.author_association)) return;
+            if (pr.labels?.some((l) => l.name === SKIP_LABEL)) return;
+            if (await isTeamMember(login)) return;
+
+            function commentBody(lines) {
+              return [
+                '<!-- pr-flood-guard -->',
+                `Hi @${login}, thanks for your interest in contributing to any-llm!`,
+                '',
+                ...lines,
+                '',
+                `See the [contributing guidelines](https://github.com/${owner}/${repo}/blob/main/CONTRIBUTING.md#pull-request-limits) for details.`,
+              ].join('\n');
+            }
+
+            const openPrs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const authored = openPrs.filter(
+              (p) => p.user?.login === login && !p.labels?.some((l) => l.name === SKIP_LABEL),
+            );
+            if (authored.length > MAX_OPEN_PRS) {
+              const others = authored
+                .filter((p) => p.number !== pr.number)
+                .map((p) => `#${p.number}`)
+                .join(', ');
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr.number,
+                body: commentBody([
+                  `Contributors can have at most ${MAX_OPEN_PRS} open pull requests at a ` +
+                    `time, and you already have ${others} open, so this PR was closed ` +
+                    'automatically. Once one of those is merged or closed, you are welcome ' +
+                    'to reopen this one.',
+                ]),
+              });
+              await github.rest.pulls.update({
+                owner, repo, pull_number: pr.number, state: 'closed',
+              });
+              core.info(`Closed #${pr.number} by ${login} (${authored.length} open).`);
+              return;
+            }
+
+            // Reopening does not change which issues a PR links, so only warn once.
+            if (context.payload.action !== 'opened') return;
+
+            const result = await github.graphql(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    closingIssuesReferences(first: 10) {
+                      nodes {
+                        number
+                        repository { nameWithOwner }
+                        closedByPullRequestsReferences(first: 20, includeClosedPrs: false) {
+                          nodes { id number state repository { nameWithOwner } }
+                        }
+                      }
+                    }
+                  }
+                }
+              }`,
+              { owner, repo, number: pr.number },
+            );
+            const linkedIssues = result.repository.pullRequest.closingIssuesReferences.nodes.filter(
+              (issue) => issue.repository.nameWithOwner === `${owner}/${repo}`,
+            );
+            const warnings = [];
+            for (const issue of linkedIssues) {
+              const others = issue.closedByPullRequestsReferences.nodes.filter(
+                (other) => other.id !== pr.node_id && other.state === 'OPEN',
+              );
+              if (others.length) {
+                const list = others
+                  .map((o) => `${o.repository.nameWithOwner === `${owner}/${repo}` ? '' : o.repository.nameWithOwner}#${o.number}`)
+                  .join(', ');
+                warnings.push(
+                  `:warning: Issue #${issue.number} is already being addressed by open pull ` +
+                    `request(s) ${list}. Before opening a PR for an issue, please check ` +
+                    'whether one is already linked to it, and consider contributing to ' +
+                    'the existing PR instead. We may close duplicate PRs to keep the ' +
+                    'review queue manageable.',
+                );
+              }
+            }
+            if (!warnings.length) return;
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: pr.number,
+              body: commentBody([warnings.join('\n\n')]),
+            });

@@ -1,0 +1,108 @@
+name: First-time contributor PR limit
+
+# Keep the review queue manageable: a first-time contributor may have at most
+# one open pull request until one of their PRs has been approved or merged.
+# Adapted from deepset-ai/haystack's first_pr_limit.yml.
+#
+# For such an author, every open PR except their oldest is closed with a
+# comment. Team members and bots are exempt. author_association is unreliable
+# for this (private org members appear as CONTRIBUTOR or NONE in the payload),
+# so the effective repository permission is checked as a fallback. A
+# maintainer can opt a PR out by adding the `skip-pr-limit` label and
+# reopening it.
+#
+# Use pull_request_target to have write access for PRs from forks. This is
+# safe because the workflow never checks out or executes code from the fork.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: first-pr-limit-${{ github.event.pull_request.user.login }}
+  cancel-in-progress: false
+  # Queue every event: by default a newer pending run cancels the waiting one,
+  # and that PR would never be checked.
+  queue: max
+
+jobs:
+  limit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close extra PRs from first-time contributors
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const MAX_OPEN_PRS_FIRST_TIME = 1;
+            const SKIP_LABEL = 'skip-pr-limit';
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const login = pr.user?.login;
+
+            async function isTeamMember(username) {
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username,
+                });
+                return ['admin', 'maintain', 'write'].includes(data.permission);
+              } catch {
+                return false;
+              }
+            }
+
+            if (!login || pr.user?.type === 'Bot') return;
+            // COLLABORATOR also covers read-only collaborators, so it is left to
+            // the permission check.
+            if (['MEMBER', 'OWNER'].includes(pr.author_association)) return;
+            if (pr.labels?.some((l) => l.name === SKIP_LABEL)) return;
+            if (await isTeamMember(login)) return;
+
+            // Search filters by merge state and review decision server-side;
+            // only the totals are needed.
+            async function searchCount(qualifiers) {
+              const { data } = await github.rest.search.issuesAndPullRequests({
+                q: `repo:${owner}/${repo} is:pr author:${login} ${qualifiers}`,
+                per_page: 1,
+              });
+              return data.total_count;
+            }
+            if (await searchCount('is:merged') > 0) return;
+            if (await searchCount('review:approved') > 0) return;
+
+            const openPrs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const authored = openPrs
+              .filter((p) => p.user?.login === login)
+              .filter((p) => !p.labels?.some((l) => l.name === SKIP_LABEL))
+              .sort((a, b) => a.number - b.number);
+            if (authored.length <= MAX_OPEN_PRS_FIRST_TIME) return;
+
+            const keep = authored.slice(0, MAX_OPEN_PRS_FIRST_TIME);
+            const toClose = authored.slice(MAX_OPEN_PRS_FIRST_TIME);
+            const keepList = keep.map((p) => `#${p.number}`).join(', ');
+
+            for (const p of toClose) {
+              const body = [
+                '<!-- first-pr-limit -->',
+                `Hi @${login}, thanks for your interest in contributing to any-llm!`,
+                '',
+                `First-time contributors can have at most ${MAX_OPEN_PRS_FIRST_TIME} open pull ` +
+                  'request until one has been approved, so this PR was closed automatically. ' +
+                  `Your open pull request ${keepList} is unaffected. Once a maintainer approves ` +
+                  'it, you are welcome to reopen this one.',
+                '',
+                `See the [contributing guidelines](https://github.com/${owner}/${repo}/blob/main/CONTRIBUTING.md#pull-request-limits) for details.`,
+              ].join('\n');
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: p.number, body,
+              });
+              await github.rest.pulls.update({
+                owner, repo, pull_number: p.number, state: 'closed',
+              });
+              core.info(`Closed #${p.number} by ${login} (keeping ${keepList}).`);
+            }
