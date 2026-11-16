@@ -309,6 +309,7 @@ async def test_avideo_generation_creates_a_background_interaction() -> None:
         input="a paper boat",
         background=True,
         response_format={"type": "video", "aspect_ratio": "16:9", "resolution": "720p"},
+        api_version="v1beta",
         timeout=5,
     )
     assert result.id == "int-123"
@@ -350,7 +351,7 @@ async def test_aretrieve_video_gets_the_interaction() -> None:
 
     result = await provider.aretrieve_video("int-123", timeout=5)
 
-    client.aio.interactions.get.assert_awaited_once_with("int-123", timeout=5)
+    client.aio.interactions.get.assert_awaited_once_with("int-123", timeout=5, api_version="v1beta")
     assert result.done
     assert result.outputs[0].b64_data == VIDEO_B64
 

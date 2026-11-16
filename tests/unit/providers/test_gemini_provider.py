@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import os
 import wave
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
@@ -132,13 +133,29 @@ def test_gemini_api_base_passed_to_client() -> None:
         assert call_kwargs["http_options"].base_url == "https://custom.endpoint.com"
 
 
-def test_gemini_api_base_none_does_not_add_http_options() -> None:
-    """Test that no http_options is added when api_base is None."""
-    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+def test_gemini_pins_v1beta_when_no_version_is_named() -> None:
+    """google-genai 3 defaults to v1, which lacks preview models, so the provider keeps v1beta."""
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client, patch.dict("os.environ", clear=False):
+        os.environ.pop("GOOGLE_GENAI_API_VERSION", None)
         GeminiProvider(api_key="test-key")
-        mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
-        assert "http_options" not in call_kwargs
+        assert call_kwargs["http_options"].api_version == "v1beta"
+        assert call_kwargs["http_options"].base_url is None
+
+
+def test_gemini_keeps_the_version_the_caller_names() -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key", http_options={"api_version": "v1"})
+        assert mock_client.call_args[1]["http_options"].api_version == "v1"
+
+
+def test_gemini_leaves_the_version_to_the_sdk_environment_variable() -> None:
+    with (
+        patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client,
+        patch.dict("os.environ", {"GOOGLE_GENAI_API_VERSION": "v1alpha"}),
+    ):
+        GeminiProvider(api_key="test-key")
+        assert mock_client.call_args[1]["http_options"].api_version is None
 
 
 def test_gemini_api_base_does_not_override_explicit_http_options() -> None:
@@ -171,8 +188,8 @@ def test_gemini_api_base_with_dict_http_options() -> None:
         GeminiProvider(api_key="test-key", api_base="https://custom.endpoint.com", http_options={"timeout": 30})
         mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
-        assert call_kwargs["http_options"]["base_url"] == "https://custom.endpoint.com"
-        assert call_kwargs["http_options"]["timeout"] == 30
+        assert call_kwargs["http_options"].base_url == "https://custom.endpoint.com"
+        assert call_kwargs["http_options"].timeout == 30
 
 
 def test_gemini_api_base_env_var() -> None:
