@@ -574,31 +574,26 @@ class AnyLLM(FilesMixin, ABC):
         return cls.resolve_provider_key(provider), model_name
 
     @staticmethod
-    @abstractmethod
     def _convert_completion_params(params: CompletionParams, **kwargs: Any) -> dict[str, Any]:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
     @staticmethod
-    @abstractmethod
     def _convert_completion_response(response: Any) -> ChatCompletion:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
     @staticmethod
-    @abstractmethod
     def _convert_completion_chunk_response(response: Any, **kwargs: Any) -> ChatCompletionChunk:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
     @staticmethod
-    @abstractmethod
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
 
     @staticmethod
-    @abstractmethod
     def _convert_embedding_response(response: Any) -> CreateEmbeddingResponse:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)

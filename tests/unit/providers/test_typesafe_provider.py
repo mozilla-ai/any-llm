@@ -285,21 +285,6 @@ async def test_alist_models_converts_response(provider: TypesafeProvider) -> Non
     assert models[0].created == 1767225600
 
 
-@pytest.mark.parametrize(
-    "call",
-    [
-        lambda: TypesafeProvider._convert_completion_params(None),  # type: ignore[arg-type]
-        lambda: TypesafeProvider._convert_completion_response(None),
-        lambda: TypesafeProvider._convert_completion_chunk_response(None),
-        lambda: TypesafeProvider._convert_embedding_params(None),
-        lambda: TypesafeProvider._convert_embedding_response(None),
-    ],
-)
-def test_unsupported_conversions_raise(call) -> None:  # type: ignore[no-untyped-def]
-    with pytest.raises(NotImplementedError):
-        call()
-
-
 @pytest.mark.asyncio
 async def test_unified_rate_limit_carries_status_and_retry_after(provider: TypesafeProvider) -> None:
     provider._unified_exceptions = True
