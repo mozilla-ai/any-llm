@@ -1,7 +1,6 @@
 import base64
 import io
 import json
-import os
 import wave
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
@@ -135,8 +134,7 @@ def test_gemini_api_base_passed_to_client() -> None:
 
 def test_gemini_pins_v1beta_when_no_version_is_named() -> None:
     """google-genai 3 defaults to v1, which lacks preview models, so the provider keeps v1beta."""
-    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client, patch.dict("os.environ", clear=False):
-        os.environ.pop("GOOGLE_GENAI_API_VERSION", None)
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
         GeminiProvider(api_key="test-key")
         call_kwargs = mock_client.call_args[1]
         assert call_kwargs["http_options"].api_version == "v1beta"
