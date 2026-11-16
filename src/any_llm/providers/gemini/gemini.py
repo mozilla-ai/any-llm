@@ -58,6 +58,9 @@ def _inline_audio(response: types.GenerateContentResponse) -> types.Blob | None:
     return None
 
 
+_DEFAULT_API_VERSION = "v1beta"
+
+
 class GeminiProvider(GeminiFileMethods, GoogleProvider):
     """Gemini Provider using the Google GenAI Developer API."""
 
@@ -85,28 +88,22 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
-        http_options = kwargs.get("http_options")
-        if isinstance(http_options, dict):
-            configured_api_version = http_options.get("api_version")
-        elif isinstance(http_options, types.HttpOptions):
-            configured_api_version = http_options.api_version
+        http_options = kwargs.pop("http_options", None)
+        if http_options is None:
+            http_options = types.HttpOptions()
         else:
-            configured_api_version = None
-        # Follow the client's configured version, leaving None to the SDK default of
-        # v1beta. Interactions is served on both v1 and v1beta, but v1 does not carry
-        # preview models, so pinning it here would reject models completion() accepts.
+            # Copied rather than mutated, since the caller may share it with other clients.
+            http_options = types.HttpOptions.model_validate(http_options).model_copy()
+        # google-genai 3 moved its default from v1beta to v1, which does not carry
+        # preview models, so a client that names no version (here or through the
+        # SDK's own GOOGLE_GENAI_API_VERSION) keeps v1beta, as before.
         # https://ai.google.dev/gemini-api/docs/api-versions
-        self._interactions_api_version = configured_api_version
-
-        if api_base:
-            http_options = kwargs.pop("http_options", None)
-            if http_options is None:
-                http_options = types.HttpOptions(base_url=api_base)
-            elif isinstance(http_options, dict):
-                http_options.setdefault("base_url", api_base)
-            elif isinstance(http_options, types.HttpOptions) and http_options.base_url is None:
-                http_options.base_url = api_base
-            kwargs["http_options"] = http_options
+        if http_options.api_version is None and not os.getenv("GOOGLE_GENAI_API_VERSION"):
+            http_options.api_version = _DEFAULT_API_VERSION
+        if api_base and http_options.base_url is None:
+            http_options.base_url = api_base
+        kwargs["http_options"] = http_options
+        self._interactions_api_version = http_options.api_version
 
         # Ensure timeout is correctly configured if present.
         if (timeout := kwargs.pop("timeout", None)) is not None:
