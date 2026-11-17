@@ -12,6 +12,7 @@ from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.types.messages import (
     ContentBlockDeltaEvent,
+    MessageDeltaEvent,
     MessageResponse,
     MessageStreamEvent,
     ParsedMessage,
@@ -262,6 +263,60 @@ async def test_messages_tool_result_is_error(
         raise
     assert isinstance(result, MessageResponse)
     assert len(result.content) >= 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.asyncio
+async def test_messages_forced_tool_stops_as_tool_use(
+    provider: LLMProvider,
+    provider_model_map: dict[LLMProvider, str],
+    provider_client_config: dict[LLMProvider, dict[str, Any]],
+    stream: bool,
+) -> None:
+    """A forced tool call ends with stop_reason tool_use, which is what makes a client run the tool.
+
+    Some OpenAI-compatible APIs answer a forced function with finish_reason "stop" rather than
+    "tool_calls", so this covers the mapping from both.
+    """
+    if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
+        pytest.skip(f"{provider} does not support tools, skipping")
+    if provider in (LLMProvider.DEEPSEEK, LLMProvider.MOONSHOT):
+        # Both answer HTTP 400 to a forced tool_choice while thinking is on, and their test models think
+        # by default ("Thinking mode does not support this tool_choice" / "tool_choice 'specified' is
+        # incompatible with thinking enabled").
+        pytest.skip(f"{provider.value} rejects a forced tool_choice while thinking is on")
+
+    try:
+        llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
+        if not llm.SUPPORTS_COMPLETION:
+            pytest.skip(f"{provider.value} does not support completion, skipping")
+        if stream and not llm.SUPPORTS_COMPLETION_STREAMING:
+            pytest.skip(f"{provider.value} does not support streaming")
+        result = await llm.amessages(
+            model=provider_model_map[provider],
+            messages=[{"role": "user", "content": "What is the weather in Paris?"}],
+            max_tokens=1024,
+            tools=[_WEATHER_TOOL],
+            tool_choice={"type": "tool", "name": "get_weather"},
+            stream=stream,
+        )
+        if stream:
+            assert isinstance(result, AsyncIterator)
+            stop_reasons = [event.delta.stop_reason async for event in result if isinstance(event, MessageDeltaEvent)]
+            stop_reason = stop_reasons[-1] if stop_reasons else None
+        else:
+            assert isinstance(result, MessageResponse)
+            stop_reason = result.stop_reason
+    except MissingApiKeyError:
+        if provider in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip(f"{provider.value} API key not provided, skipping")
+    except (httpx.HTTPStatusError, httpx.ConnectError, APIConnectionError):
+        if provider in LOCAL_PROVIDERS and provider not in EXPECTED_PROVIDERS:
+            pytest.skip("Local Model host is not set up, skipping")
+        raise
+
+    assert stop_reason == "tool_use"
 
 
 # Long enough to clear the 4096-token minimum Claude Haiku 4.5 needs before it caches a prefix.
