@@ -1,3 +1,4 @@
+import warnings
 from typing import Any
 
 from typing_extensions import override
@@ -18,6 +19,19 @@ class InceptionProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_COMPLETION_RESPONSE_FORMAT = False
+
+    @override
+    def __init__(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        # FutureWarning because AnyLLM.create builds the provider, and default filters hide a
+        # DeprecationWarning raised from inside the library.
+        warnings.warn(
+            "Inception stops serving the Mercury API after December 28, 2026 "
+            "(https://docs.inceptionlabs.ai/support/wind-down), so the inception provider "
+            "stops working after that date.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        super().__init__(api_key=api_key, api_base=api_base, **kwargs)
 
     @staticmethod
     @override
