@@ -809,14 +809,10 @@ def _create_openai_chunk_from_aws_chunk(
         elif "toolUse" in delta:
             tool_use = delta["toolUse"]
             tool_idx = tool_index_map.get(block_index, 0)
+            # As OpenAI streams a call: the id and name come once, on its first delta.
             tool_call = ChoiceDeltaToolCall(
                 index=tool_idx,
-                id="",
-                type="function",
-                function=ChoiceDeltaToolCallFunction(
-                    name="",
-                    arguments=tool_use.get("input", ""),
-                ),
+                function=ChoiceDeltaToolCallFunction(arguments=tool_use.get("input", "")),
             )
     elif "messageStop" in chunk:
         finish_reason = _map_stop_reason(chunk["messageStop"]["stopReason"])

@@ -87,6 +87,9 @@ async def test_converse_stream_keeps_tool_indices_and_skips_unknown_events() -> 
     assert chunks[0].choices[0].delta.content == "hello"
     tool_calls = [chunk.choices[0].delta.tool_calls for chunk in chunks[1:]]
     assert [calls[0].index for calls in tool_calls if calls] == [0, 0, 1, 1]
+    # A client joins a call's deltas by id, so only the first delta names the call, as OpenAI streams it.
+    assert [calls[0].id for calls in tool_calls if calls] == ["a", None, "b", None]
+    assert [calls[0].function.name for calls in tool_calls if calls and calls[0].function] == ["one", None, "two", None]
     assert event_stream.closed
 
 
