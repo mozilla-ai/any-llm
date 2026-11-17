@@ -38,9 +38,11 @@ def _text(text: str) -> dict[str, Any]:
     return {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": text}}}
 
 
-async def _open_stream(event_stream: _FakeEventStream) -> AsyncIterator[ChatCompletionChunk]:
+async def _open_stream(
+    event_stream: _FakeEventStream, response_metadata: dict[str, Any] | None = None
+) -> AsyncIterator[ChatCompletionChunk]:
     client = Mock()
-    client.converse_stream.return_value = {"stream": event_stream}
+    client.converse_stream.return_value = {"stream": event_stream, "ResponseMetadata": response_metadata or {}}
     provider = BedrockProvider(client=client, unified_exceptions=True)
     stream = await provider.acompletion(model=MODEL, messages=[{"role": "user", "content": "Hello"}], stream=True)
     assert isinstance(stream, AsyncIterator)
@@ -89,6 +91,25 @@ async def test_converse_stream_keeps_tool_indices_and_skips_unknown_events() -> 
 
 
 @pytest.mark.asyncio
+async def test_converse_stream_chunks_share_the_aws_request_id_and_a_creation_time() -> None:
+    """AWS puts no id in the chunks, so each one used to get its own, which broke grouping a stream by id."""
+    event_stream = _FakeEventStream(
+        [
+            {"messageStart": {"role": "assistant"}},
+            _text("hi"),
+            {"messageStop": {"stopReason": "end_turn"}},
+            {"metadata": {"usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}, "metrics": {}}},
+        ]
+    )
+    stream = await _open_stream(event_stream, {"RequestId": "req-1"})
+    chunks = [chunk async for chunk in stream]
+
+    assert {chunk.id for chunk in chunks} == {"req-1"}
+    assert len({chunk.created for chunk in chunks}) == 1
+    assert chunks[0].created > 0
+
+
+@pytest.mark.asyncio
 async def test_converse_stream_reports_usage_on_a_chunk_with_no_choices() -> None:
     """The usage arrives after the finish, on a chunk of its own with no choices, as OpenAI sends it."""
     event_stream = _FakeEventStream(
@@ -129,7 +150,7 @@ async def test_converse_stream_error_is_converted_and_closes_the_stream() -> Non
 async def test_converse_stream_closed_early_closes_the_bedrock_stream() -> None:
     event_stream = _FakeEventStream([_text("first"), _text("second")])
 
-    stream = cast("AsyncGenerator[ChatCompletionChunk]", BedrockProvider._stream_converse(event_stream, MODEL))
+    stream = cast("AsyncGenerator[ChatCompletionChunk]", BedrockProvider._stream_converse(event_stream, MODEL, "req-1"))
     await anext(stream)
     await stream.aclose()
 
@@ -149,7 +170,7 @@ async def test_converse_stream_does_not_block_the_event_loop() -> None:
 
     event_stream = MagicMock()
     event_stream.__iter__.return_value = blocking_events()
-    stream = BedrockProvider._stream_converse(event_stream, MODEL)
+    stream = BedrockProvider._stream_converse(event_stream, MODEL, "req-1")
     read = asyncio.create_task(_next_chunk(stream))
 
     while not reading.is_set():  # noqa: ASYNC110

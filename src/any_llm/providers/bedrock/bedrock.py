@@ -6,6 +6,7 @@ import functools
 import json
 import os
 import threading
+from time import time
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
@@ -54,6 +55,7 @@ try:
         _create_openai_chunk_from_aws_chunk,
         _create_openai_embedding_response_from_aws,
         _parse_s3_uri,
+        _response_id,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -417,16 +419,19 @@ class BedrockProvider(AnyLLM):
         result = await asyncio.to_thread(self._completion, params, **kwargs)
         if isinstance(result, ChatCompletion):
             return result
-        return self._stream_converse(result, params.model_id)
+        return self._stream_converse(result["stream"], params.model_id, _response_id(result))
 
     @staticmethod
-    async def _stream_converse(event_stream: Any, model_id: str) -> AsyncIterator[ChatCompletionChunk]:
+    async def _stream_converse(
+        event_stream: Any, model_id: str, response_id: str
+    ) -> AsyncIterator[ChatCompletionChunk]:
         """Yield the chunks of a Converse response stream, reading each event off the event loop."""
         events = iter(event_stream)
         tool_index_map: dict[int, int] = {}
+        created = int(time())
         try:
             while (item := await asyncio.to_thread(next, events, None)) is not None:
-                chunk = _create_openai_chunk_from_aws_chunk(item, model_id, tool_index_map)
+                chunk = _create_openai_chunk_from_aws_chunk(item, model_id, tool_index_map, response_id, created)
                 if chunk is not None:
                     yield chunk
         finally:
@@ -516,7 +521,7 @@ class BedrockProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | Any:
-        """Return a ``ChatCompletion``, or the raw Converse event stream when ``params.stream`` is set."""
+        """Return a ``ChatCompletion``, or the raw ``converse_stream`` response when ``params.stream`` is set."""
         # boto3's Converse API has no `timeout` parameter; it must be pulled out here so it
         # never reaches `converse`/`converse_stream`, and applied via a client whose connection
         # is configured with that timeout instead (see `_client_for_timeout`).
@@ -525,10 +530,9 @@ class BedrockProvider(AnyLLM):
         client = self._client_for_timeout(timeout)
 
         if params.stream:
-            response_stream = client.converse_stream(
+            return client.converse_stream(
                 **completion_kwargs,
             )
-            return response_stream["stream"]
         response = client.converse(**completion_kwargs)
 
         return self._convert_completion_response(response)
