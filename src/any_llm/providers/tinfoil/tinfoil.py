@@ -57,16 +57,17 @@ class TinfoilProvider(BaseOpenAIProvider):
         if "http_client" in kwargs:
             # The attested HTTP client is what verifies the enclave; replacing it would send
             # requests unverified.
-            raise UnsupportedParameterError(
-                "http_client",
-                self.PROVIDER_NAME,
-                "Tinfoil requests must go through the tinfoil SDK's attested HTTP client.",
-            )
+            param = "http_client"
+            msg = "Tinfoil requests must go through the tinfoil SDK's attested HTTP client."
+            raise UnsupportedParameterError(param, self.PROVIDER_NAME, msg)
         secure_options = {name: kwargs.pop(name) for name in SECURE_CLIENT_OPTIONS if name in kwargs}
         secure_client = SecureClient(base_url=api_base, **secure_options)
+        # The tinfoil SDK builds an httpx client. Newer openai releases annotate `http_client` as an
+        # httpx2 client but still accept httpx ones, which is what the SDK's own AsyncTinfoilAI relies on.
+        http_client: Any = secure_client.make_secure_async_http_client()
         self.client = AsyncOpenAI(
             base_url=api_base or f"https://{secure_client.enclave}/v1/",
             api_key=api_key,
-            http_client=secure_client.make_secure_async_http_client(),
+            http_client=http_client,
             **kwargs,
         )
