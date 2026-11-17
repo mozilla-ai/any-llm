@@ -15,6 +15,7 @@ from any_llm.utils.structured_output import get_json_schema, is_structured_outpu
 MISSING_PACKAGES_ERROR = None
 try:
     import together
+    from together._base_client import make_request_options
 
     from .utils import (
         _convert_batch_job_to_openai,
@@ -52,6 +53,7 @@ _SCHEMA_METADATA_KEYS = ("name", "description", "strict")
 # (https://docs.together.ai/reference/audio-speech). So any-llm's pcm has no equivalent on the
 # unary call made here, and opus, aac and flac have none at all.
 _SPEECH_RESPONSE_FORMATS = frozenset({"mp3", "wav"})
+_REQUEST_OPTION_KEYS = ("extra_headers", "extra_query", "extra_body", "timeout")
 
 
 def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
@@ -75,6 +77,25 @@ def _convert_response_format(response_format: dict[str, Any]) -> dict[str, Any]:
         json_schema = {**metadata, "schema": json_schema or response_format.get("schema") or {}}
     json_schema.setdefault("name", DEFAULT_SCHEMA_NAME)
     return {"type": "json_schema", "json_schema": json_schema}
+
+
+def _match_resolution_spelling(options: dict[str, Any], sent: str) -> None:
+    """Spell a caller's ``resolution`` as ``sent`` when both name the same tier.
+
+    any-llm sends a tier as its short side, so ``4k`` goes out as ``2160p`` and ``720P`` or
+    ``0720p`` as ``720p``. A caller who repeats the shared resolution in another spelling is not
+    changing it.
+    """
+    value = options.get("resolution")
+    if not isinstance(value, str):
+        return
+    tier = value.lower()
+    if tier == "4k":
+        tier = "2160p"
+    elif tier.endswith("p") and tier[:-1].isdecimal():
+        tier = f"{int(tier[:-1])}p"
+    if tier == sent:
+        options["resolution"] = sent
 
 
 class TogetherProvider(AnyLLM):
@@ -220,6 +241,10 @@ class TogetherProvider(AnyLLM):
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
+        if api_base is not None:
+            # SDK 3.x puts the API version in each path (/v1/chat/completions, /v2/videos), so a
+            # base URL ending in /v1, as SDK 2.x expected, would request /v1/v1/chat/completions.
+            api_base = api_base.rstrip("/").removesuffix("/v1")
         self.client = together.AsyncTogether(
             api_key=api_key,
             base_url=api_base,
@@ -288,7 +313,19 @@ class TogetherProvider(AnyLLM):
 
     @override
     async def _alist_models(self, **kwargs: Any) -> Sequence[Model]:
-        models_list = await self.client.models.list(**kwargs)
+        """List the serverless models through ``GET /v1/models``.
+
+        SDK 3.x has no method for this endpoint: its ``models.list`` lists a project's own models,
+        and ``models.list_supported`` lists the base models available for dedicated deployments.
+        Keyword arguments other than the SDK's request options, such as ``dedicated``, become
+        query parameters.
+        """
+        request_options = {key: kwargs.pop(key) for key in _REQUEST_OPTION_KEYS if key in kwargs}
+        models_list = await self.client.get(
+            "/v1/models",
+            cast_to=list[dict[str, Any]],
+            options=make_request_options(query=kwargs, **request_options),
+        )
         return self._convert_list_models_response(models_list)
 
     @override
@@ -346,41 +383,85 @@ class TogetherProvider(AnyLLM):
     def _convert_video_params(params: VideoGenerationParams, **kwargs: Any) -> dict[str, Any]:
         """Convert VideoGenerationParams to kwargs for ``client.videos.create``.
 
-        Together takes the size as ``width``/``height``, the length as a string, and the first
-        and last frames as ``frame_images`` entries, which merge with any the caller passes.
-        ``resolution``, ``ratio`` and ``media.audio_inputs`` are fields the pinned SDK has no
-        argument for, so they ride in ``extra_body`` and merge with whatever the caller passes there.
+        Together takes the size as ``width``/``height`` (or ``resolution`` and ``ratio``) and the
+        length as a string. Image, audio and video inputs go in ``media``: the first and last
+        frames as ``frame_images`` entries, and ``reference_images``, ``audio_inputs`` and
+        ``reference_videos``. A caller's ``media``, passed as a keyword argument or in
+        ``extra_body``, merges with these.
+
+        Raises:
+            InvalidRequestError: If a keyword argument, ``extra_body``, ``media`` or a
+                ``frame_images`` entry sets a field a shared field set, to another value.
+
         """
-        create_kwargs: dict[str, Any] = {"model": params.model_id, "prompt": params.prompt}
+        fields: dict[str, tuple[str, Any]] = {"prompt": ("prompt", params.prompt)}
+        media_fields: dict[str, tuple[str, Any]] = {}
         if params.seconds is not None:
-            create_kwargs["seconds"] = str(params.seconds)
-        extra_body = dict(kwargs.pop("extra_body", None) or {})
+            fields["seconds"] = ("seconds", str(params.seconds))
         if (shape := params.parse_shape()) is not None:
             if shape.dimensions is not None:
-                create_kwargs["width"], create_kwargs["height"] = shape.dimensions
+                width, height = shape.dimensions
+                fields["width"], fields["height"] = ("size", width), ("size", height)
             if params.resolution is not None:
-                extra_body["resolution"] = f"{shape.short_side}p"
+                fields["resolution"] = ("resolution", f"{shape.short_side}p")
             if params.aspect_ratio is not None:
-                extra_body["ratio"] = params.aspect_ratio
+                fields["ratio"] = ("aspect_ratio", params.aspect_ratio)
+        if params.generate_audio is not None:
+            fields["generate_audio"] = ("generate_audio", params.generate_audio)
         if params.seed is not None:
-            create_kwargs["seed"] = params.seed
+            fields["seed"] = ("seed", params.seed)
         if params.negative_prompt is not None:
-            create_kwargs["negative_prompt"] = params.negative_prompt
+            fields["negative_prompt"] = ("negative_prompt", params.negative_prompt)
         if params.reference_images is not None:
-            create_kwargs["reference_images"] = params.reference_images
-        frame_images = list(kwargs.pop("frame_images", None) or [])
-        if params.first_frame is not None:
-            frame_images.append({"input_image": params.first_frame, "frame": "first"})
-        if params.last_frame is not None:
-            frame_images.append({"input_image": params.last_frame, "frame": "last"})
-        if frame_images:
-            create_kwargs["frame_images"] = frame_images
+            media_fields["reference_images"] = ("reference_images", params.reference_images)
         if params.reference_audios is not None:
-            extra_body["media"] = {**(extra_body.get("media") or {}), "audio_inputs": params.reference_audios}
-        if extra_body:
-            create_kwargs["extra_body"] = extra_body
-        create_kwargs.update(kwargs)
-        return create_kwargs
+            media_fields["audio_inputs"] = ("reference_audios", params.reference_audios)
+        if params.reference_videos is not None:
+            videos = [{"video": video} for video in params.reference_videos]
+            media_fields["reference_videos"] = ("reference_videos", videos)
+
+        caller_body = dict(kwargs.pop("extra_body", None) or {})
+        if "resolution" in fields:
+            for options in (kwargs, caller_body):
+                _match_resolution_spelling(options, fields["resolution"][1])
+        # The SDK merges extra_body over the top-level arguments, so it can change them too, and
+        # media there would replace the media below rather than add to it.
+        params.check_provider_options({**fields, "model": ("model_id", params.model_id)}, caller_body)
+        body_media = dict(caller_body.pop("media", None) or {})
+        keyword_media = dict(kwargs.pop("media", None) or {})
+        # A video has one first and one last frame, so a caller's entries for either must be the one any-llm sends.
+        shared_frames = [
+            (role, parameter_name, image)
+            for role, parameter_name, image in (
+                ("first", "first_frame", params.first_frame),
+                ("last", "last_frame", params.last_frame),
+            )
+            if image is not None
+        ]
+        # The keyword media replaces extra_body's key by key, so check each one before it can hide a conflict.
+        for source in (body_media, keyword_media):
+            params.check_provider_options(media_fields, source)
+            for role, parameter_name, image in shared_frames:
+                field = f"frame_images[{role}]"
+                passed = [
+                    entry.get("input_image") for entry in source.get("frame_images") or [] if entry.get("frame") == role
+                ]
+                params.check_provider_options({field: (parameter_name, [image])}, {field: passed} if passed else {})
+        caller_media = body_media | keyword_media
+        frame_images = list(caller_media.pop("frame_images", None) or [])
+        for role, _, image in shared_frames:
+            if not any(entry.get("frame") == role for entry in frame_images):
+                frame_images.append({"input_image": image, "frame": role})
+        media = params.merge_provider_options(media_fields, caller_media)
+        if frame_images:
+            media["frame_images"] = frame_images
+
+        create_kwargs: dict[str, Any] = {"model": params.model_id}
+        if media:
+            create_kwargs["media"] = media
+        if caller_body:
+            create_kwargs["extra_body"] = caller_body
+        return create_kwargs | params.merge_provider_options(fields, kwargs)
 
     @override
     async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:

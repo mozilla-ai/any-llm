@@ -1,5 +1,7 @@
 import dataclasses
+from collections.abc import AsyncIterator
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,9 +10,15 @@ from azure.core.exceptions import HttpResponseError
 
 from any_llm.exceptions import MissingApiKeyError
 from any_llm.providers.azure.azure import AzureProvider
-from any_llm.providers.azure.utils import _convert_model_info_to_list, _convert_response_format
-from any_llm.types.completion import CompletionParams
+from any_llm.providers.azure.utils import (
+    _convert_model_info_to_list,
+    _convert_response_format,
+    _create_openai_chunk_from_azure_chunk,
+)
+from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams
+from any_llm.types.messages import MessageDeltaEvent, MessageStopEvent
 from any_llm.types.model import Model
+from any_llm.utils.streaming import accumulate_chunks
 
 
 @contextmanager
@@ -307,6 +315,18 @@ async def test_alist_models_propagates_http_response_error_for_unsupported_endpo
             await provider._alist_models()
 
 
+def _azure_stream_chunk(delta: dict[str, Any], finish_reason: str | None = None) -> StreamingChatCompletionsUpdate:
+    return StreamingChatCompletionsUpdate(
+        {
+            "id": "chatcmpl-1",
+            "created": 1,
+            "model": "gpt-4.1-nano",
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason, "content_filter_results": {}}],
+        }
+    )
+
+
 def _tool_call_update(tool_call_id: str | None, name: str | None, arguments: str) -> StreamingChatCompletionsUpdate:
     return StreamingChatCompletionsUpdate(
         {
@@ -352,3 +372,75 @@ async def test_azure_streaming_parallel_tool_calls_get_distinct_indexes() -> Non
 
     deltas = [tc for chunk in chunks for tc in (chunk.choices[0].delta.tool_calls or [])]
     assert [tc.index for tc in deltas] == [0, 0, 1, 1]
+
+
+def test_streamed_finish_reason_on_an_empty_delta_is_kept() -> None:
+    """Azure ends a stream with a chunk whose delta is empty and which carries the finish_reason."""
+    azure_chunk = _azure_stream_chunk({}, "stop")
+
+    chunk = _create_openai_chunk_from_azure_chunk(azure_chunk)
+
+    assert len(chunk.choices) == 1
+    assert chunk.choices[0].finish_reason == "stop"
+    assert chunk.choices[0].delta.content is None
+
+
+# Azure OpenAI's tool call stream: arguments arrive over several chunks, and only the last chunk,
+# whose delta is empty, carries the finish_reason.
+AZURE_TOOL_CALL_STREAM: list[dict[str, Any]] = [
+    {
+        "role": "assistant",
+        "tool_calls": [
+            {"index": 0, "id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": ""}}
+        ],
+    },
+    {"tool_calls": [{"index": 0, "function": {"arguments": '{"city": "Paris"}'}}]},
+]
+
+
+def _mock_azure_stream(mock_client: MagicMock) -> None:
+    async def stream() -> AsyncIterator[StreamingChatCompletionsUpdate]:
+        for delta in AZURE_TOOL_CALL_STREAM:
+            yield _azure_stream_chunk(delta)
+        yield _azure_stream_chunk({}, "tool_calls")
+
+    mock_client.complete = AsyncMock(side_effect=lambda **_: stream())
+
+
+@pytest.mark.asyncio
+async def test_streamed_tool_call_accumulates_with_its_finish_reason() -> None:
+    with patch("any_llm.providers.azure.azure.aio.ChatCompletionsClient") as mock_chat_client:
+        _mock_azure_stream(mock_chat_client.return_value)
+        provider = AzureProvider(api_key="test-key", api_base="https://test.example.com")
+
+        stream = await provider.acompletion(
+            model="gpt-4.1-nano", messages=[{"role": "user", "content": "Weather in Paris?"}], stream=True
+        )
+        assert isinstance(stream, AsyncIterator)
+        completion = accumulate_chunks([chunk async for chunk in stream])
+
+    assert completion.choices[0].finish_reason == "tool_calls"
+    tool_calls = completion.choices[0].message.tool_calls
+    assert tool_calls is not None
+    assert isinstance(tool_calls[0], ChatCompletionMessageFunctionToolCall)
+    assert tool_calls[0].function.arguments == '{"city": "Paris"}'
+
+
+@pytest.mark.asyncio
+async def test_streamed_tool_call_completes_a_messages_stream_as_tool_use() -> None:
+    with patch("any_llm.providers.azure.azure.aio.ChatCompletionsClient") as mock_chat_client:
+        _mock_azure_stream(mock_chat_client.return_value)
+        provider = AzureProvider(api_key="test-key", api_base="https://test.example.com")
+
+        stream = await provider.amessages(
+            model="gpt-4.1-nano",
+            messages=[{"role": "user", "content": "Weather in Paris?"}],
+            max_tokens=64,
+            stream=True,
+        )
+        assert isinstance(stream, AsyncIterator)
+        events = [event async for event in stream]
+
+    assert isinstance(events[-1], MessageStopEvent)
+    assert isinstance(events[-2], MessageDeltaEvent)
+    assert events[-2].delta.stop_reason == "tool_use"

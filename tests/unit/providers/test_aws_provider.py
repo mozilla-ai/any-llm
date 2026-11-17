@@ -1133,6 +1133,37 @@ def test_completion_with_images() -> None:
         assert call_args["messages"][0]["content"][1]["image"]["source"]["bytes"] == test_image_data
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        [{"text": "Hello!"}],
+        [{"toolUse": {"toolUseId": "t1", "name": "get_weather", "input": {}}}],
+    ],
+    ids=["text", "tool_call"],
+)
+def test_convert_response_takes_its_id_from_the_aws_request_id(content: list[dict[str, Any]]) -> None:
+    """A Converse body carries no id or creation time, which used to come back as "" and 0."""
+    response: dict[str, Any] = {
+        "output": {"message": {"content": content}},
+        "stopReason": "tool_use" if "toolUse" in content[0] else "end_turn",
+        "ResponseMetadata": {"RequestId": "req-1"},
+    }
+
+    result = _convert_response(response)
+
+    assert result.id == "req-1"
+    assert result.created > 0
+
+
+def test_convert_response_without_a_request_id_mints_one() -> None:
+    response: dict[str, Any] = {"output": {"message": {"content": [{"text": "Hello!"}]}}, "stopReason": "end_turn"}
+
+    first, second = _convert_response(response), _convert_response(response)
+
+    assert first.id.startswith("chatcmpl-")
+    assert first.id != second.id
+
+
 def test_convert_response_extracts_cached_tokens() -> None:
     """Test that cacheReadInputTokens is extracted into prompt_tokens_details."""
     response: dict[str, Any] = {
@@ -1913,6 +1944,22 @@ def test_convert_params_response_format_non_anthropic_model_raises() -> None:
     assert "nova" in str(excinfo.value).lower()
 
 
+@pytest.mark.parametrize(
+    "model_id", [*ANTHROPIC_MODEL_IDS, *GPT_OSS_MODEL_IDS, "amazon.nova-lite-v1:0", "mistral.devstral-2-123b"]
+)
+def test_supports_completion_response_format_agrees_with_convert_params(model_id: str) -> None:
+    """The per-model answer is the one `_convert_params` acts on, so a caller can trust it before sending."""
+    params = CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "hi"}], response_format=_City)
+    try:
+        _convert_params(params, {})
+    except UnsupportedParameterError:
+        accepted = False
+    else:
+        accepted = True
+
+    assert BedrockProvider.supports_completion_response_format(model_id) is accepted
+
+
 def test_convert_params_response_format_combines_with_existing_tools() -> None:
     """User-supplied tools are preserved alongside the synthetic structured-output tool."""
     result = _convert_params(
@@ -2255,6 +2302,10 @@ def test_convert_messages_sends_tool_result_text_parts_as_text_blocks() -> None:
     [
         ('{"temp": 18}', [{"json": {"temp": 18}}]),
         ("18 degrees", [{"text": "18 degrees"}]),
+        ('[{"name": "README.md"}]', [{"text": '[{"name": "README.md"}]'}]),
+        ('"done"', [{"text": '"done"'}]),
+        ("18", [{"text": "18"}]),
+        ("null", [{"text": "null"}]),
     ],
 )
 def test_convert_messages_sends_string_tool_result_as_json_or_text(

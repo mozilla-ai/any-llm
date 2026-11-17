@@ -365,8 +365,11 @@ def _create_openai_chunk_from_anthropic_chunk(
             delta["extra_content"] = {"anthropic": {"stop_details": stop_details}}
 
     elif isinstance(chunk, MessageStopEvent):
+        # The SDK stream helper attaches its accumulated snapshot, which keeps the inference_geo
+        # and service_tier from message_start; the final message_delta usage has neither.
         if hasattr(chunk, "message") and chunk.message.usage:
             chunk_dict["usage"] = _convert_usage(chunk.message.usage)
+            chunk_dict["service_tier"] = chunk.message.usage.service_tier
         # The stop event carries no delta or finish_reason, only usage. Leave choices
         # empty so it matches the trailing usage-only chunk OpenAI-compatible providers emit.
         return ChatCompletionChunk.model_validate(chunk_dict)
@@ -457,6 +460,7 @@ def _convert_usage(usage: Usage) -> CompletionUsage:
         completion_tokens=usage.output_tokens,
         total_tokens=prompt_tokens + usage.output_tokens,
         prompt_tokens_details=details,
+        inference_geo=usage.inference_geo,
     )
 
 
@@ -543,6 +547,7 @@ def _convert_response(response: Message) -> ChatCompletion:
         object="chat.completion",
         choices=[choice],
         usage=usage,
+        service_tier=response.usage.service_tier,
     )
 
 

@@ -17,6 +17,7 @@ class InceptionProvider(BaseOpenAIProvider):
     SUPPORTS_EMBEDDING = False  # Inception doesn't host an embedding model
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT = False
 
     @staticmethod
     @override

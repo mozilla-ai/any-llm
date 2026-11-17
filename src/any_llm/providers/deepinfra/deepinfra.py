@@ -1,4 +1,4 @@
-"""DeepInfra: OpenAI-compatible chat and embeddings, plus video through the native inference API."""
+"""DeepInfra: chat, embeddings, images and audio on the OpenAI-compatible API, video on the native inference API."""
 
 from __future__ import annotations
 
@@ -6,14 +6,15 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from typing_extensions import override
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
 
-from .video import VideoSchema, convert_inference_response, convert_video_params
+from .video import VideoSchema, callback_response, convert_inference_response, convert_video_params
 
 if TYPE_CHECKING:
     from openai._types import RequestOptions
 
+    from any_llm.types.audio import AudioSpeechParams
     from any_llm.types.video import VideoGenerationParams, VideoJob
 
 # A Seedance render takes minutes and DeepInfra holds the request open for all of it, so the
@@ -22,6 +23,8 @@ _VIDEO_REQUEST_TIMEOUT_SECONDS = 900.0
 # Finished jobs live in memory until retrieve_video reads them, so a long-lived process keeps
 # only the newest ones.
 _VIDEO_JOBS_KEPT = 1000
+# The TtsResponseFormat enum of https://docs.deepinfra.com/api-reference/audio/openai-audio-speech
+_SPEECH_RESPONSE_FORMATS = frozenset({"mp3", "opus", "flac", "wav", "pcm"})
 
 
 class DeepinfraProvider(BaseOpenAIProvider):
@@ -36,11 +39,17 @@ class DeepinfraProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = True
     SUPPORTS_MODERATION = True
+    SUPPORTS_IMAGE_GENERATION = True
+    SUPPORTS_AUDIO_TRANSCRIPTION = True
+    SUPPORTS_AUDIO_SPEECH = True
     SUPPORTS_VIDEO_GENERATION = True
 
     _video_jobs: ClassVar[dict[str, VideoJob]] = {}
-    """The newest finished video jobs by id. DeepInfra renders inside the request and has no
-    endpoint to look a request up afterwards, so this is the only place ``retrieve_video`` can read from."""
+    """The newest video jobs by id, finished or waiting on their webhook. DeepInfra has no endpoint to
+    look a request up afterwards, so this is the only place ``retrieve_video`` can read from."""
+
+    _video_api_bases: ClassVar[dict[str, str]] = {}
+    """The API base each webhook job was started on, which a relative ``video_url`` in its callback resolves against."""
 
     _video_schemas: ClassVar[dict[tuple[str, str], VideoSchema]] = {}
     """Each video model's input schema by API root and model, fetched once per process from ``GET /models/{model}``."""
@@ -66,6 +75,28 @@ class DeepinfraProvider(BaseOpenAIProvider):
         return self._video_schemas[key]
 
     @override
+    async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
+        """Generate speech through DeepInfra's OpenAI-compatible ``/audio/speech`` endpoint.
+
+        DeepInfra has no ``instructions`` field and serves no ``aac``, so both raise
+        ``UnsupportedParameterError`` instead of being dropped or failing upstream. ``extra_body``
+        reaches DeepInfra as is, the way it does for every provider.
+        See https://docs.deepinfra.com/api-reference/audio/openai-audio-speech.
+        """
+        if params.instructions is not None:
+            parameter_name = "instructions"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
+        if params.response_format is not None and params.response_format not in _SPEECH_RESPONSE_FORMATS:
+            parameter_name = "response_format"
+            raise UnsupportedParameterError(
+                parameter_name,
+                self.PROVIDER_NAME,
+                f"DeepInfra speech returns {', '.join(sorted(_SPEECH_RESPONSE_FORMATS))}, "
+                f"not {params.response_format!r}.",
+            )
+        return await super()._aspeech(params, **kwargs)
+
+    @override
     async def _avideo_generation(self, params: VideoGenerationParams, **kwargs: Any) -> VideoJob:
         # The OpenAI SDK has no inference resource, so post through its client to keep the
         # provider's auth and error mapping. No retries: a retried render is billed twice.
@@ -76,23 +107,53 @@ class DeepinfraProvider(BaseOpenAIProvider):
         extra_body = kwargs.pop("extra_body", None) or {}
         # The schema fetch shares the caller's deadline but keeps the client's retries: it is a cheap, idempotent GET.
         schema = await self._video_schema(params.model_id, options={"timeout": timeout})
-        body = {**convert_video_params(params, schema, self.PROVIDER_NAME, **kwargs), **extra_body}
-        if "webhook" in body:
-            msg = (
-                "DeepInfra video jobs cannot take a webhook: the reply would be a queued job that "
-                "retrieve_video has no way to read back."
-            )
-            raise InvalidRequestError(msg)
+        body = convert_video_params(params, schema, self.PROVIDER_NAME, **(kwargs | extra_body))
         response = await self.client.post(
             self._inference_url(params.model_id),
             body=body,
             cast_to=dict[str, Any],
             options=options,
         )
+        if "webhook" in body and not response.get("request_id"):
+            # The callback names its job only by request_id, so a queued job without one can never finish.
+            msg = "DeepInfra queued the video job with no request_id, so its webhook callback cannot be matched to it"
+            raise ProviderError(msg)
         job = convert_inference_response(response, model=params.model_id, api_base=str(self.client.base_url))
+        if "webhook" in body:
+            self._video_api_bases[job.id] = str(self.client.base_url)
+        return self._keep_video_job(job)
+
+    @override
+    def _complete_video_job(self, payload: dict[str, Any], *, model: str | None) -> VideoJob:
+        response = callback_response(payload)
+        request_id = str(response["request_id"])
+        if model is None:
+            queued = self._video_jobs.get(request_id)
+            if queued is None:
+                msg = (
+                    f"DeepInfra's webhook callback does not name the model, and {request_id!r} was not "
+                    "started in this process, so pass model."
+                )
+                raise InvalidRequestError(msg)
+            model = queued.model
+        api_base = self._video_api_bases.get(request_id, str(self.client.base_url))
+        job = convert_inference_response(response, model=model, api_base=api_base)
+        return self._keep_video_job(job)
+
+    def _keep_video_job(self, job: VideoJob) -> VideoJob:
+        """Store ``job`` for ``retrieve_video``, dropping the oldest jobs past the limit, and return the stored job.
+
+        A callback can land before the queued reply of its own request, so a job that is not done never
+        replaces a finished one; the finished one is returned instead.
+        """
+        stored = self._video_jobs.get(job.id)
+        if stored is not None and stored.done and not job.done:
+            return stored
         self._video_jobs[job.id] = job
         while len(self._video_jobs) > _VIDEO_JOBS_KEPT:
-            del self._video_jobs[next(iter(self._video_jobs))]
+            oldest = next(iter(self._video_jobs))
+            del self._video_jobs[oldest]
+            self._video_api_bases.pop(oldest, None)
         return job
 
     @override

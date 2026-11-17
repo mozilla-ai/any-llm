@@ -177,6 +177,9 @@ class AnyLLM(FilesMixin, ABC):
     SUPPORTS_MESSAGES_STRUCTURED_OUTPUT_STREAMING: bool = False
     """Whether a Messages `output_format` type can be streamed by this provider."""
 
+    SUPPORTS_MESSAGES_INFERENCE_GEO: bool = False
+    """Whether the Messages API accepts Anthropic's `inference_geo`; other providers reject it."""
+
     SUPPORTS_COMPLETION_N: bool = False
     """Whether the provider can return more than one choice per request (OpenAI's ``n``).
 
@@ -184,6 +187,12 @@ class AnyLLM(FilesMixin, ABC):
     other value reaches only a provider that sets this flag, and is rejected elsewhere rather
     than silently answered with a single choice.
     """
+
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT: bool = True
+    """Whether a chat completion may carry ``response_format``; a provider that clears it rejects one.
+
+    A provider that takes it for only some of its models answers per model in
+    `supports_completion_response_format`."""
 
     PROMPT_CACHE_KEY_SUPPORT: Literal["unsupported", "supported", "passthrough"] = "unsupported"
     """Whether prompt_cache_key is supported, forwarded to a router, or rejected."""
@@ -672,6 +681,19 @@ class AnyLLM(FilesMixin, ABC):
         """
         return cls.SUPPORTS_MESSAGES_NATIVE
 
+    @classmethod
+    def supports_completion_response_format(cls, model: str) -> bool:
+        """Whether a chat completion for `model` may carry ``response_format``.
+
+        When this is False, a request with one raises `UnsupportedParameterError` before it
+        reaches the provider, so a caller can leave the parameter out instead.
+
+        Args:
+            model: The provider's own model id, without a ``provider:`` prefix.
+
+        """
+        return cls.SUPPORTS_COMPLETION_RESPONSE_FORMAT
+
     @abstractmethod
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         msg = "Subclasses must implement this method"
@@ -1021,6 +1043,7 @@ class AnyLLM(FilesMixin, ABC):
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
         container: str | dict[str, Any] | None = None,
+        inference_geo: str | None = None,
         timeout: float | None = None,
         **kwargs: Any,
     ) -> MessageResponse | ParsedMessage[Any] | ParsedBetaMessage[Any] | Iterator[MessageStreamEvent]:
@@ -1048,6 +1071,7 @@ class AnyLLM(FilesMixin, ABC):
                         context_management=context_management,
                         betas=betas,
                         container=container,
+                        inference_geo=inference_geo,
                         timeout=timeout,
                         **kwargs,
                     ),
@@ -1062,6 +1086,7 @@ class AnyLLM(FilesMixin, ABC):
                 context_management=context_management,
                 betas=betas,
                 container=container,
+                inference_geo=inference_geo,
                 timeout=timeout,
                 **kwargs,
             ),
@@ -1094,6 +1119,7 @@ class AnyLLM(FilesMixin, ABC):
         context_management: dict[str, Any] | None = None,
         betas: list[str] | None = None,
         container: str | dict[str, Any] | None = None,
+        inference_geo: str | None = None,
         output_format: type | dict[str, Any] | None = None,
         timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
         **kwargs: Any,
@@ -1129,6 +1155,10 @@ class AnyLLM(FilesMixin, ABC):
                 A string reuses an existing container. An object selects Skills for a fresh
                 container or reuses one while attaching Skills. See
                 [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
+            inference_geo: Anthropic's region to run the request in, such as ``us``. When omitted,
+                Anthropic uses the workspace's ``default_inference_geo``. The response reports where
+                the request ran in ``usage.inference_geo``. Providers without a matching option raise
+                `UnsupportedParameterError`.
             output_format: Structured output, mirroring Anthropic's ``messages.parse``/
                 ``output_config``. Either a Pydantic ``BaseModel``/dataclass **type** (typed
                 ``parsed_output``) or a raw Anthropic ``output_config`` **dict** for non-Pydantic
@@ -1151,6 +1181,8 @@ class AnyLLM(FilesMixin, ABC):
             Streaming calls return an async iterator of MessageStreamEvent.
 
         Raises:
+            UnsupportedParameterError: If `inference_geo` is used with a provider that has no
+                matching option.
             ValueError: If an `output_format` type is combined with `stream=True` for a provider
                 that does not support streaming typed structured output.
             NotImplementedError: If `container`, `context_management`, or `betas` is used
@@ -1188,9 +1220,13 @@ class AnyLLM(FilesMixin, ABC):
             context_management=context_management,
             betas=betas,
             container=container,
+            inference_geo=inference_geo,
             output_format=output_format,
         )
         self._validate_prompt_cache_key(prompt_cache_key)
+        if inference_geo is not None and not self.SUPPORTS_MESSAGES_INFERENCE_GEO:
+            parameter_name = "inference_geo"
+            raise UnsupportedParameterError(parameter_name, self.PROVIDER_NAME)
         # The bridged path forwards these kwargs to _acompletion, so route timeout through the same
         # capability check the completion API uses rather than letting it reach the provider SDK raw.
         self._validate_and_forward_timeout(timeout, kwargs)
@@ -1287,6 +1323,12 @@ class AnyLLM(FilesMixin, ABC):
                 raise
             finally:
                 await aclose_quietly(result)
+
+            if state.started and not state.finished:
+                # Without a finish_reason a complete message cannot be told from a cut one, so end it
+                # like the failure path above: usage, but no stop_reason and no message_stop.
+                yield usage_delta(None)
+                return
 
             # Emit the closing events after the full stream is consumed so trailing-chunk usage is included.
             if state.started:
@@ -2223,8 +2265,10 @@ class AnyLLM(FilesMixin, ABC):
         negative_prompt: str | None = None,
         reference_images: list[str] | None = None,
         reference_audios: list[str] | None = None,
+        reference_videos: list[str] | None = None,
         first_frame: str | None = None,
         last_frame: str | None = None,
+        generate_audio: bool | None = None,
         **kwargs: Any,
     ) -> VideoJob:
         """Start a video generation job asynchronously.
@@ -2244,8 +2288,10 @@ class AnyLLM(FilesMixin, ABC):
             negative_prompt: What the video should not contain.
             reference_images: Image URLs the video should take its subjects or style from.
             reference_audios: Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track.
+            reference_videos: Video URLs the video should take its motion, subjects or style from.
             first_frame: Image URL to start the video from.
             last_frame: Image URL to end the video on.
+            generate_audio: Whether the video carries a sound track. None leaves the provider's default.
             **kwargs: Additional provider-specific arguments that will be passed to the provider's API call.
 
         Returns:
@@ -2266,8 +2312,10 @@ class AnyLLM(FilesMixin, ABC):
             negative_prompt=negative_prompt,
             reference_images=reference_images,
             reference_audios=reference_audios,
+            reference_videos=reference_videos,
             first_frame=first_frame,
             last_frame=last_frame,
+            generate_audio=generate_audio,
         )
         return await self._avideo_generation(params, **kwargs)
 
@@ -2302,6 +2350,31 @@ class AnyLLM(FilesMixin, ABC):
 
     async def _aretrieve_video(self, video_id: str, **kwargs: Any) -> VideoJob:
         msg = "Subclasses must implement _aretrieve_video method"
+        raise NotImplementedError(msg)
+
+    def complete_video_job(self, payload: dict[str, Any], *, model: str | None = None) -> VideoJob:
+        """Finish a video job from the callback its provider posted to the caller's webhook.
+
+        Some providers can deliver a video job to a webhook instead of holding the request open.
+        The caller serves that webhook and passes the body it receives here. The finished job is
+        returned, and ``retrieve_video`` reads it back in the same process. Nothing is sent to the
+        provider, so there is no async twin.
+
+        Args:
+            payload: The JSON body the provider posted to the webhook.
+            model: The model that rendered the job, for a callback that does not name it.
+
+        Returns:
+            The job the callback describes, usually `completed` or `failed`.
+
+        """
+        if not self.SUPPORTS_VIDEO_GENERATION:
+            msg = "Provider doesn't support video generation."
+            raise NotImplementedError(msg)
+        return self._complete_video_job(payload, model=model)
+
+    def _complete_video_job(self, payload: dict[str, Any], *, model: str | None) -> VideoJob:
+        msg = "Provider does not deliver video jobs to a webhook."
         raise NotImplementedError(msg)
 
     def poll_video(

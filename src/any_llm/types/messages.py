@@ -269,6 +269,10 @@ class MessagesParams(BaseModel):
     service_tier: str | None = None
     """The service tier to use for this request."""
 
+    inference_geo: str | None = None
+    """Anthropic's region to run the request in, such as ``us``. When omitted, Anthropic uses the workspace's
+    ``default_inference_geo``; the response reports where it ran in ``usage.inference_geo``."""
+
     container: Annotated[str | dict[str, Any] | None, BeforeValidator(_normalize_container)] = None
     """Container identifier, or an object with optional ``id`` and ``skills``.
 

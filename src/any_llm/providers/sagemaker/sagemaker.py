@@ -50,6 +50,7 @@ class SagemakerProvider(AnyLLM):
     SUPPORTS_EMBEDDING = True
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_RERANK = False
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT = False
 
     # SageMaker serializes completion kwargs into the request body, so a per-request `timeout`
     # would be mis-sent as a payload field rather than honored.

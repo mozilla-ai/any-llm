@@ -55,6 +55,10 @@ class VideoJob(BaseModel):
     """Length of the video in seconds, when the provider reports it."""
     size: str | None = None
     """``WIDTHxHEIGHT`` of the output, when the provider reports it."""
+    cost: float | None = None
+    """What the provider charged for the job, in USD, when it reports it."""
+    tokens: int | None = None
+    """The units the provider bills the job by, when it bills video by tokens and reports them."""
     error: VideoError | None = None
     """Why a `failed` job failed."""
     outputs: list[VideoOutput] = Field(default_factory=list)
@@ -104,14 +108,52 @@ class VideoGenerationParams(BaseModel):
     """Image URLs, provider file URIs or ``data:`` URLs the video takes its subjects or style from."""
     reference_audios: list[str] | None = None
     """Audio URLs the video follows, for lip sync, beat-matched motion or a sound track."""
+    reference_videos: list[str] | None = None
+    """Video URLs or provider file URIs the video takes its motion, subjects or style from."""
     first_frame: str | None = None
     """Image the video starts from, in the same forms as `reference_images`."""
     last_frame: str | None = None
     """Image the video ends on, in the same forms as `reference_images`."""
+    generate_audio: bool | None = None
+    """Whether the video carries a sound track. ``None`` leaves the provider's default."""
 
     def to_api_kwargs(self) -> dict[str, Any]:
         """Convert to kwargs for the provider API call, excluding None values."""
         return {k: v for k, v in self.model_dump(exclude={"model_id"}).items() if v is not None}
+
+    def merge_provider_options(self, fields: dict[str, tuple[str, Any]], options: dict[str, Any]) -> dict[str, Any]:
+        """Return the request fields the shared parameters set, with provider ``options`` laid over them.
+
+        A gateway prices a render from the shared parameters, so an option may repeat a field one
+        of them set but not change it.
+
+        Args:
+            fields: Each request field a shared parameter set, mapped to that parameter's name and the value it set.
+            options: Provider options for the same level of the request.
+
+        Raises:
+            InvalidRequestError: If an option sets one of ``fields`` to another value.
+
+        """
+        self.check_provider_options(fields, options)
+        return {field: value for field, (_, value) in fields.items()} | options
+
+    def check_provider_options(self, fields: dict[str, tuple[str, Any]], options: dict[str, Any]) -> None:
+        """Raise when provider ``options`` set one of ``fields`` to another value than its shared parameter did.
+
+        Args:
+            fields: Each request field a shared parameter set, mapped to that parameter's name and the value it set.
+            options: Provider options that can reach the same request fields.
+
+        Raises:
+            InvalidRequestError: If an option sets one of ``fields`` to another value.
+
+        """
+        for field, (parameter_name, value) in fields.items():
+            if field in options and options[field] != value:
+                shared = getattr(self, parameter_name)
+                msg = f"{parameter_name}={shared!r} conflicts with {field}={options[field]!r}; pass only one of them"
+                raise InvalidRequestError(msg)
 
     def parse_size(self) -> tuple[int, int] | None:
         """Return ``(width, height)`` from ``size``, or ``None`` when no size was given.

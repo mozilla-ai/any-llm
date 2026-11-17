@@ -37,6 +37,8 @@ from any_llm.types.completion import (
     ChatCompletionMessage,
     Choice,
     ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
     ChunkChoice,
     CompletionParams,
     CompletionUsage,
@@ -94,6 +96,18 @@ def test_messages_params_exposes_service_tier_in_schema() -> None:
 
     assert params.service_tier == "standard_only"
     assert "service_tier" in MessagesParams.model_json_schema()["properties"]
+
+
+def test_messages_params_exposes_inference_geo_in_schema() -> None:
+    params = MessagesParams(
+        model="claude-opus-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        max_tokens=100,
+        inference_geo="us",
+    )
+
+    assert params.inference_geo == "us"
+    assert "inference_geo" in MessagesParams.model_json_schema()["properties"]
 
 
 def test_messages_params_exposes_container_in_schema() -> None:
@@ -272,6 +286,33 @@ async def test_amessages_rejects_prompt_cache_key_for_unsupported_provider() -> 
         )
 
     client.converse.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_name", "create_kwargs"),
+    [
+        ("openai", {"api_key": "sk-test"}),
+        ("azureanthropic", {"api_key": "test-key", "api_base": "https://example.services.ai.azure.com/anthropic"}),
+    ],
+)
+async def test_amessages_rejects_inference_geo_for_unsupported_provider(
+    provider_name: str, create_kwargs: dict[str, Any]
+) -> None:
+    provider = AnyLLM.create(provider_name, **create_kwargs)
+
+    with (
+        patch.object(provider, "_amessages", new=AsyncMock()) as mock_amessages,
+        pytest.raises(UnsupportedParameterError, match="inference_geo"),
+    ):
+        await provider.amessages(
+            model="claude-opus-5",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=100,
+            inference_geo="us",
+        )
+
+    mock_amessages.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -815,12 +856,14 @@ async def test_amessages_forwards_typed_messages_params() -> None:
     assert "context_management" in signature(amessages).parameters
     assert "betas" in signature(amessages).parameters
     assert "container" in signature(amessages).parameters
+    assert "inference_geo" in signature(amessages).parameters
     assert "timeout" in signature(amessages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.amessages).parameters
     assert "service_tier" in signature(AnyLLM.amessages).parameters
     assert "context_management" in signature(AnyLLM.amessages).parameters
     assert "betas" in signature(AnyLLM.amessages).parameters
     assert "container" in signature(AnyLLM.amessages).parameters
+    assert "inference_geo" in signature(AnyLLM.amessages).parameters
     assert "timeout" in signature(AnyLLM.amessages).parameters
 
     mock_provider = Mock()
@@ -839,6 +882,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
             context_management=context_management,
             betas=betas,
             container="container_123",
+            inference_geo="us",
             timeout=30,
         )
 
@@ -848,6 +892,7 @@ async def test_amessages_forwards_typed_messages_params() -> None:
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
     assert call_kwargs["container"] == "container_123"
+    assert call_kwargs["inference_geo"] == "us"
     assert call_kwargs["timeout"] == 30
 
 
@@ -892,12 +937,14 @@ def test_messages_forwards_typed_messages_params() -> None:
     assert "context_management" in signature(messages).parameters
     assert "betas" in signature(messages).parameters
     assert "container" in signature(messages).parameters
+    assert "inference_geo" in signature(messages).parameters
     assert "timeout" in signature(messages).parameters
     assert "prompt_cache_key" in signature(AnyLLM.messages).parameters
     assert "service_tier" in signature(AnyLLM.messages).parameters
     assert "context_management" in signature(AnyLLM.messages).parameters
     assert "betas" in signature(AnyLLM.messages).parameters
     assert "container" in signature(AnyLLM.messages).parameters
+    assert "inference_geo" in signature(AnyLLM.messages).parameters
     assert "timeout" in signature(AnyLLM.messages).parameters
 
     mock_provider = Mock()
@@ -916,6 +963,7 @@ def test_messages_forwards_typed_messages_params() -> None:
             context_management=context_management,
             betas=betas,
             container="container_123",
+            inference_geo="us",
             timeout=30,
         )
 
@@ -925,6 +973,7 @@ def test_messages_forwards_typed_messages_params() -> None:
     assert call_kwargs["context_management"] == context_management
     assert call_kwargs["betas"] == betas
     assert call_kwargs["container"] == "container_123"
+    assert call_kwargs["inference_geo"] == "us"
     assert call_kwargs["timeout"] == 30
 
 
@@ -1513,9 +1562,27 @@ async def test_default_amessages_streaming_close_after_failure_flush_is_clean() 
     await result.aclose()
 
 
+@pytest.mark.parametrize(
+    "delta",
+    [
+        ChoiceDelta(content="The capital of France is Par"),
+        ChoiceDelta(
+            tool_calls=[
+                ChoiceDeltaToolCall(
+                    index=0,
+                    id="call_1",
+                    type="function",
+                    function=ChoiceDeltaToolCallFunction(name="get_weather", arguments='{"city": "Par'),
+                )
+            ]
+        ),
+        ChoiceDelta(refusal="I can't help with"),
+    ],
+    ids=["text", "tool_arguments", "refusal"],
+)
 @pytest.mark.asyncio
-async def test_default_amessages_streaming_no_finish_reason_closes_open_block() -> None:
-    """A stream that ends without finish_reason still closes the open block and defaults to end_turn."""
+async def test_default_amessages_streaming_no_finish_reason_is_not_a_completion(delta: ChoiceDelta) -> None:
+    """A stream that ends before any chunk carries a finish_reason was cut short and must not end the message."""
 
     async def mock_stream() -> AsyncIterator[ChatCompletionChunk]:
         yield ChatCompletionChunk(
@@ -1523,7 +1590,8 @@ async def test_default_amessages_streaming_no_finish_reason_closes_open_block() 
             model="gpt-4",
             created=0,
             object="chat.completion.chunk",
-            choices=[ChunkChoice(index=0, delta=ChoiceDelta(content="Hello"), finish_reason=None)],
+            choices=[ChunkChoice(index=0, delta=delta, finish_reason=None)],
+            usage=CompletionUsage(prompt_tokens=100, completion_tokens=10, total_tokens=110),
         )
 
     mock_provider = Mock()
@@ -1543,12 +1611,12 @@ async def test_default_amessages_streaming_no_finish_reason_closes_open_block() 
         "message_start",
         "content_block_start",
         "content_block_delta",
-        "content_block_stop",
         "message_delta",
-        "message_stop",
     ]
-    delta = next(e for e in events if isinstance(e, MessageDeltaEvent))
-    assert delta.delta.stop_reason == "end_turn"
+    delta_event = events[-1]
+    assert isinstance(delta_event, MessageDeltaEvent)
+    assert delta_event.delta.stop_reason is None
+    assert delta_event.usage.output_tokens == 10
 
 
 @pytest.mark.asyncio

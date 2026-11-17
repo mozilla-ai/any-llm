@@ -602,6 +602,7 @@ def messages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     container: str | dict[str, Any] | None = None,
+    inference_geo: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,
     api_key: str | None = None,
@@ -638,6 +639,10 @@ def messages(
             A string reuses an existing container. An object selects Skills for a fresh
             container or reuses one while attaching Skills. See
             [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
+        inference_geo: Anthropic's region to run the request in, such as ``us``. When omitted,
+            Anthropic uses the workspace's ``default_inference_geo``. The response reports where
+            the request ran in ``usage.inference_geo``. Providers without a matching option raise
+            `UnsupportedParameterError`.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -690,6 +695,7 @@ def messages(
         context_management=context_management,
         betas=betas,
         container=container,
+        inference_geo=inference_geo,
         output_format=output_format,
         timeout=timeout,
         **kwargs,
@@ -718,6 +724,7 @@ async def amessages(
     context_management: dict[str, Any] | None = None,
     betas: list[str] | None = None,
     container: str | dict[str, Any] | None = None,
+    inference_geo: str | None = None,
     output_format: type | dict[str, Any] | None = None,
     timeout: float | None = None,  # noqa: ASYNC109  # forwarded to the provider SDK, which owns the timeout
     api_key: str | None = None,
@@ -754,6 +761,10 @@ async def amessages(
             A string reuses an existing container. An object selects Skills for a fresh
             container or reuses one while attaching Skills. See
             [Anthropic's Skills container parameter](https://platform.claude.com/docs/en/build-with-claude/skills-guide#container-parameter).
+        inference_geo: Anthropic's region to run the request in, such as ``us``. When omitted,
+            Anthropic uses the workspace's ``default_inference_geo``. The response reports where
+            the request ran in ``usage.inference_geo``. Providers without a matching option raise
+            `UnsupportedParameterError`.
         output_format: Structured output, mirroring Anthropic's ``messages.parse``/``output_config``.
             Either a Pydantic ``BaseModel``/dataclass **type** (typed ``parsed_output``) or a raw
             Anthropic ``output_config`` **dict** for non-Pydantic JSON schemas (``parsed_output``
@@ -806,6 +817,7 @@ async def amessages(
         context_management=context_management,
         betas=betas,
         container=container,
+        inference_geo=inference_geo,
         output_format=output_format,
         timeout=timeout,
         **kwargs,
@@ -1913,8 +1925,10 @@ def video_generation(
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
+    generate_audio: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -1938,8 +1952,10 @@ def video_generation(
         negative_prompt: What the video should not contain.
         reference_images: Image URLs the video should take its subjects or style from.
         reference_audios: Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track.
+        reference_videos: Video URLs the video should take its motion, subjects or style from.
         first_frame: Image URL to start the video from.
         last_frame: Image URL to end the video on.
+        generate_audio: Whether the video carries a sound track. None leaves the provider's default.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -1967,8 +1983,10 @@ def video_generation(
         negative_prompt=negative_prompt,
         reference_images=reference_images,
         reference_audios=reference_audios,
+        reference_videos=reference_videos,
         first_frame=first_frame,
         last_frame=last_frame,
+        generate_audio=generate_audio,
         **kwargs,
     )
 
@@ -1986,8 +2004,10 @@ async def avideo_generation(
     negative_prompt: str | None = None,
     reference_images: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    reference_videos: list[str] | None = None,
     first_frame: str | None = None,
     last_frame: str | None = None,
+    generate_audio: bool | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     client_args: dict[str, Any] | None = None,
@@ -2011,8 +2031,10 @@ async def avideo_generation(
         negative_prompt: What the video should not contain.
         reference_images: Image URLs the video should take its subjects or style from.
         reference_audios: Audio URLs the video should follow, for lip sync, beat-matched motion or a sound track.
+        reference_videos: Video URLs the video should take its motion, subjects or style from.
         first_frame: Image URL to start the video from.
         last_frame: Image URL to end the video on.
+        generate_audio: Whether the video carries a sound track. None leaves the provider's default.
         api_key: API key for the provider.
         api_base: Base URL for the provider API.
         client_args: Additional provider-specific arguments for client instantiation.
@@ -2040,8 +2062,10 @@ async def avideo_generation(
         negative_prompt=negative_prompt,
         reference_images=reference_images,
         reference_audios=reference_audios,
+        reference_videos=reference_videos,
         first_frame=first_frame,
         last_frame=last_frame,
+        generate_audio=generate_audio,
         **kwargs,
     )
 
@@ -2098,6 +2122,36 @@ async def aretrieve_video(
     """
     llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
     return await llm.aretrieve_video(video_id, **kwargs)
+
+
+def complete_video_job(
+    provider: str | LLMProvider,
+    payload: dict[str, Any],
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    client_args: dict[str, Any] | None = None,
+) -> VideoJob:
+    """Finish a video job from the callback its provider posted to the caller's webhook.
+
+    The caller serves the webhook and passes the body it receives here. Nothing is sent to the
+    provider, so there is no async twin.
+
+    Args:
+        provider: Provider that runs the job (e.g., 'deepinfra')
+        payload: The JSON body the provider posted to the webhook
+        model: The model that rendered the job, for a callback that does not name it
+        api_key: API key for the provider
+        api_base: Base URL for the provider API
+        client_args: Additional provider-specific arguments for client instantiation
+
+    Returns:
+        The job the callback describes, usually `completed` or `failed`.
+
+    """
+    llm = AnyLLM.create(AnyLLM.resolve_provider_key(provider), api_key=api_key, api_base=api_base, **client_args or {})
+    return llm.complete_video_job(payload, model=model)
 
 
 def poll_video(

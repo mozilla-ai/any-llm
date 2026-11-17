@@ -370,6 +370,13 @@ class BaseAnthropicProvider(AnyLLM, ABC):
                     with _translating_nonstreaming_guard(self, params.max_tokens):
                         message = await messages_resource.create(output_config=cast("Any", output_config), **api_kwargs)
                     return self._convert_native_message_to_response(message)
+                if not use_beta and "inference_geo" in api_kwargs:
+                    # The GA messages.parse() helper has no inference_geo parameter either (anthropic
+                    # 1.17), so it rides the body; a value the caller set in extra_body still wins.
+                    api_kwargs["extra_body"] = {
+                        "inference_geo": api_kwargs.pop("inference_geo"),
+                        **(api_kwargs.get("extra_body") or {}),
+                    }
                 with _translating_nonstreaming_guard(self, params.max_tokens):
                     parsed = await messages_resource.parse(output_format=params.output_format, **api_kwargs)
                 return cast("ParsedMessage[Any] | ParsedBetaMessage[Any]", parsed)

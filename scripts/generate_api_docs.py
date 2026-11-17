@@ -624,6 +624,21 @@ async def adownload_video(self, output, **kwargs) -> bytes
 ```"""
     )
 
+    # complete_video_job
+    parts.append("")
+    parts.append("### `complete_video_job()`")
+    parts.append("")
+    parts.append(
+        "Finish a video job from the callback its provider posted to the caller's webhook. "
+        "Nothing is sent to the provider, so there is no async twin."
+    )
+    parts.append("")
+    parts.append(
+        """```
+def complete_video_job(self, payload, *, model=None) -> VideoJob
+```"""
+    )
+
     # create_batch / acreate_batch
     parts.append("")
     parts.append("### `create_batch()` / `acreate_batch()`")
@@ -1975,7 +1990,7 @@ def generate_types_model_page() -> str:
         "",
         "## `Model`",
         "",
-        "Re-exported from `openai.types.model.Model`.",
+        "Extends `openai.types.model.Model` with `context_window`. Any other field a provider sends is kept as an extra attribute.",
         "",
         "**Import:** `from any_llm.types.model import Model`",
         "",
@@ -1984,7 +1999,8 @@ def generate_types_model_page() -> str:
 | `id` | `str` | The model identifier (e.g., `"gpt-4.1-mini"`, `"mistral-small-latest"`). |
 | `created` | `int` | Unix timestamp (seconds) of when the model was created. |
 | `object` | `str` | Always `"model"`. |
-| `owned_by` | `str` | The organization that owns the model. |""",
+| `owned_by` | `str` | The organization that owns the model. |
+| `context_window` | `int \\| None` | How many tokens the model's context holds as this provider serves it, or `None` when its listing does not say. Read from `max_model_len` (vLLM, SGLang), `context_length` (OpenRouter, Together) or `context_window`. A self-hosted engine reports the length it was started with, which can be below the model's own maximum. |""",
         "",
         "## Usage",
         "",
@@ -1993,11 +2009,11 @@ from any_llm import list_models
 
 models = list_models("openai")
 for model in models:
-    print(f"{model.id} (owned by {model.owned_by})")
+    print(f"{model.id} (owned by {model.owned_by}, context {model.context_window})")
 ```""",
         "",
         '{% hint style="info" %}',
-        "The `Model` type is a direct re-export from the OpenAI SDK. any-llm normalizes all provider responses into this format so you get a consistent interface regardless of which provider you query.",
+        "`Model` is a subclass of the OpenAI SDK's `Model`, so it can be used wherever that type is expected. any-llm normalizes all provider responses into this format so you get a consistent interface regardless of which provider you query.",
         "{% endhint %}",
     ]
     return "\n".join(parts) + "\n"
@@ -2223,6 +2239,7 @@ def generate_video_page() -> str:
         (
             "Video generation is slow, so `video_generation` returns a `VideoJob` rather than a video. "
             "`retrieve_video` reads the job again, `poll_video` waits for it, and `download_video` fetches the result. "
+            "`complete_video_job` finishes a job from the callback a provider posted to your webhook. "
             "See [Video Generation](../video.md) for the providers and what each one takes."
         ),
     ]
@@ -2253,6 +2270,23 @@ def generate_video_page() -> str:
                 _param_table(sync_fn, parsed),
             ]
         )
+    complete = api_module.complete_video_job
+    parts.extend(
+        [
+            "",
+            "## Finish a webhook job",
+            "",
+            f"### `any_llm.{complete.__name__}()`",
+            "",
+            "Nothing is sent to the provider, so there is no async variant.",
+            "",
+            _get_signature_block(complete),
+            "",
+            "### Parameters",
+            "",
+            _param_table(complete, _parse_docstring(complete.__doc__)),
+        ]
+    )
     parts.extend(
         [
             "",

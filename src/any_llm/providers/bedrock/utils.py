@@ -2,6 +2,7 @@ import base64
 import json
 from time import time
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
 from any_llm.logging import logger
@@ -554,9 +555,10 @@ def _convert_tool_result_content(message: dict[str, Any]) -> dict[str, Any] | No
     else:
         try:
             content_json = json.loads(message["content"])
-            content = [{"json": content_json}]
         except json.JSONDecodeError:
-            content = [{"text": message["content"]}]
+            content_json = None
+        # A json block holds an object only; Converse refuses an array, a string or a number there.
+        content = [{"json": content_json}] if isinstance(content_json, dict) else [{"text": message["content"]}]
 
     return {"toolResult": {"toolUseId": tool_call_id, "content": content}}
 
@@ -615,8 +617,15 @@ def _extract_usage(usage_data: dict[str, Any]) -> CompletionUsage:
     )
 
 
+def _response_id(response: dict[str, Any]) -> str:
+    """Return the id of a Converse response, whose body carries none: AWS's request id, as Pegasus uses."""
+    return response.get("ResponseMetadata", {}).get("RequestId") or f"chatcmpl-{uuid4().hex}"
+
+
 def _convert_response(response: dict[str, Any]) -> ChatCompletion:
     """Convert AWS Bedrock response to OpenAI format directly."""
+    response_id = _response_id(response)
+    created = int(time())
     choices_out: list[Choice] = []
     usage: CompletionUsage | None = None
 
@@ -666,9 +675,9 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             usage = _extract_usage(response["usage"])
 
         return ChatCompletion(
-            id=response.get("id", ""),
+            id=response_id,
             model=response.get("model", ""),
-            created=response.get("created", 0),
+            created=created,
             object="chat.completion",
             choices=choices_out,
             usage=usage,
@@ -700,9 +709,9 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
             usage = _extract_usage(response["usage"])
 
         return ChatCompletion(
-            id=response.get("id", ""),
+            id=response_id,
             model=response.get("model", ""),
-            created=response.get("created", 0),
+            created=created,
             object="chat.completion",
             choices=choices_out,
             usage=usage,
@@ -730,9 +739,9 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
         usage = _extract_usage(response["usage"])
 
     return ChatCompletion(
-        id=response.get("id", ""),
+        id=response_id,
         model=response.get("model", ""),
-        created=response.get("created", 0),
+        created=created,
         object="chat.completion",
         choices=choices_out,
         usage=usage,
@@ -740,7 +749,11 @@ def _convert_response(response: dict[str, Any]) -> ChatCompletion:
 
 
 def _create_openai_chunk_from_aws_chunk(
-    chunk: dict[str, Any], model: str, tool_index_map: dict[int, int] | None = None
+    chunk: dict[str, Any],
+    model: str,
+    tool_index_map: dict[int, int] | None = None,
+    response_id: str | None = None,
+    created: int | None = None,
 ) -> ChatCompletionChunk | None:
     """Create an OpenAI ChatCompletionChunk from an AWS Bedrock chunk.
 
@@ -749,7 +762,13 @@ def _create_openai_chunk_from_aws_chunk(
         model: The model identifier
         tool_index_map: Optional mapping from contentBlockIndex to tool call index (0-based).
                        This should be passed in and maintained by the caller for multi-turn streaming.
+        response_id: The id every chunk of the stream shares. AWS puts none in the chunks.
+        created: The creation time every chunk of the stream shares.
     """
+    if response_id is None:
+        response_id = f"chatcmpl-{uuid4().hex}"
+    if created is None:
+        created = int(time())
     if tool_index_map is None:
         tool_index_map = {}
 
@@ -757,7 +776,6 @@ def _create_openai_chunk_from_aws_chunk(
     reasoning_content: str | None = None
     finish_reason: _FinishReason | None = None
     tool_call: ChoiceDeltaToolCall | None = None
-    usage: CompletionUsage | None = None
 
     if "contentBlockStart" in chunk:
         block_start = chunk["contentBlockStart"]
@@ -791,22 +809,27 @@ def _create_openai_chunk_from_aws_chunk(
         elif "toolUse" in delta:
             tool_use = delta["toolUse"]
             tool_idx = tool_index_map.get(block_index, 0)
+            # As OpenAI streams a call: the id and name come once, on its first delta.
             tool_call = ChoiceDeltaToolCall(
                 index=tool_idx,
-                id="",
-                type="function",
-                function=ChoiceDeltaToolCallFunction(
-                    name="",
-                    arguments=tool_use.get("input", ""),
-                ),
+                function=ChoiceDeltaToolCallFunction(arguments=tool_use.get("input", "")),
             )
     elif "messageStop" in chunk:
         finish_reason = _map_stop_reason(chunk["messageStop"]["stopReason"])
     elif "messageStart" in chunk:
         content = ""
     elif "metadata" in chunk:
+        # The usage report gets a chunk of its own with no choices, as OpenAI's
+        # ``stream_options.include_usage`` chunk does, so consumers do not read it as content.
         usage_data = chunk["metadata"].get("usage")
-        usage = _extract_usage(usage_data) if usage_data else None
+        return ChatCompletionChunk(
+            id=response_id,
+            choices=[],
+            model=model,
+            created=created,
+            object="chat.completion.chunk",
+            usage=_extract_usage(usage_data) if usage_data else None,
+        )
     else:
         return None
 
@@ -822,12 +845,11 @@ def _create_openai_chunk_from_aws_chunk(
 
     choice = ChunkChoice(delta=delta, finish_reason=finish_reason, index=0)
     return ChatCompletionChunk(
-        id=f"chatcmpl-{time()}",  # AWS doesn't provide an ID in the chunk
+        id=response_id,
         choices=[choice],
         model=model,
-        created=int(time()),
+        created=created,
         object="chat.completion.chunk",
-        usage=usage,
     )
 
 

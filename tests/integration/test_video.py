@@ -81,36 +81,38 @@ async def _finish_video_job(llm: AnyLLM, job: VideoJob) -> None:
     assert len(video) > 1000
 
 
-@pytest.mark.asyncio
-@pytest.mark.timeout(_TEST_TIMEOUT_SECONDS)
-async def test_video_generation_providers_async(
-    provider: LLMProvider,
-    video_provider_model_map: dict[LLMProvider, str],
-    provider_client_config: dict[LLMProvider, dict[str, Any]],
-) -> None:
-    """Every video provider starts a job, reports it by id, and finishes it with a downloadable video."""
-    llm, job = await _start_video_job(provider, video_provider_model_map, provider_client_config, _PROMPT)
-
-    retrieved = await llm.aretrieve_video(job.id)
-    assert retrieved.id == job.id
-
-    await _finish_video_job(llm, job)
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(_TEST_TIMEOUT_SECONDS)
-async def test_video_generation_from_a_first_frame_async(
-    provider: LLMProvider,
-    video_provider_model_map: dict[LLMProvider, str],
-    provider_client_config: dict[LLMProvider, dict[str, Any]],
-) -> None:
-    """Every video provider accepts a first frame and animates it into a downloadable video."""
-    llm, job = await _start_video_job(
-        provider,
-        video_provider_model_map,
-        provider_client_config,
-        _FIRST_FRAME_PROMPT,
-        first_frame=_first_frame(provider),
-    )
-
-    await _finish_video_job(llm, job)
+# Every test below renders a paid video, and the suite runs on each push to main, so they are
+# disabled until the video tests run on a schedule instead.
+# @pytest.mark.asyncio
+# @pytest.mark.timeout(_TEST_TIMEOUT_SECONDS)
+# async def test_video_generation_providers_async(
+#     provider: LLMProvider,
+#     video_provider_model_map: dict[LLMProvider, str],
+#     provider_client_config: dict[LLMProvider, dict[str, Any]],
+# ) -> None:
+#     """Every video provider starts a job, reports it by id, and finishes it with a downloadable video."""
+#     llm, job = await _start_video_job(provider, video_provider_model_map, provider_client_config, _PROMPT)
+#
+#     retrieved = await llm.aretrieve_video(job.id)
+#     assert retrieved.id == job.id
+#
+#     await _finish_video_job(llm, job)
+#
+#
+# @pytest.mark.asyncio
+# @pytest.mark.timeout(_TEST_TIMEOUT_SECONDS)
+# async def test_video_generation_from_a_first_frame_async(
+#     provider: LLMProvider,
+#     video_provider_model_map: dict[LLMProvider, str],
+#     provider_client_config: dict[LLMProvider, dict[str, Any]],
+# ) -> None:
+#     """Every video provider accepts a first frame and animates it into a downloadable video."""
+#     llm, job = await _start_video_job(
+#         provider,
+#         video_provider_model_map,
+#         provider_client_config,
+#         _FIRST_FRAME_PROMPT,
+#         first_frame=_first_frame(provider),
+#     )
+#
+#     await _finish_video_job(llm, job)

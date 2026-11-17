@@ -24,6 +24,7 @@ class MinimaxProvider(XMLReasoningOpenAIProvider):
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_LIST_MODELS = False
     SUPPORTS_EMBEDDING = False
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT = False
 
     @staticmethod
     @override

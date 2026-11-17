@@ -35,6 +35,7 @@ class AnthropicProvider(BaseAnthropicProvider):
     PROVIDER_DOCUMENTATION_URL = "https://docs.anthropic.com/en/home"
 
     SUPPORTS_LIST_MODELS = True
+    SUPPORTS_MESSAGES_INFERENCE_GEO = True
 
     MISSING_PACKAGES_ERROR = MISSING_PACKAGES_ERROR
 

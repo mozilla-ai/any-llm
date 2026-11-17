@@ -211,6 +211,17 @@ async def test_acompletion_forwards_n_to_provider_with_multiple_choices() -> Non
     assert mock_create.call_args.kwargs["n"] == 2
 
 
+def test_supports_completion_response_format_defaults_to_the_provider_flag() -> None:
+    """A provider that does not answer per model answers with SUPPORTS_COMPLETION_RESPONSE_FORMAT for every model."""
+    assert AnyLLM.get_provider_class("openai").supports_completion_response_format("gpt-5-nano") is True
+
+
+@pytest.mark.parametrize("provider", ["inception", "llamafile", "minimax", "sagemaker", "zai"])
+def test_providers_that_reject_response_format_say_so(provider: str) -> None:
+    """Each of these raises UnsupportedParameterError for any completion carrying response_format."""
+    assert AnyLLM.get_provider_class(provider).supports_completion_response_format("any-model") is False
+
+
 def _signed_tool_call_message() -> ChatCompletionMessage:
     """An assistant turn with one tool call carrying gemini's thought_signature in extra_content."""
     return ChatCompletionMessage(

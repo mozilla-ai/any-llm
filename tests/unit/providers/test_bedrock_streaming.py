@@ -38,9 +38,11 @@ def _text(text: str) -> dict[str, Any]:
     return {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": text}}}
 
 
-async def _open_stream(event_stream: _FakeEventStream) -> AsyncIterator[ChatCompletionChunk]:
+async def _open_stream(
+    event_stream: _FakeEventStream, response_metadata: dict[str, Any] | None = None
+) -> AsyncIterator[ChatCompletionChunk]:
     client = Mock()
-    client.converse_stream.return_value = {"stream": event_stream}
+    client.converse_stream.return_value = {"stream": event_stream, "ResponseMetadata": response_metadata or {}}
     provider = BedrockProvider(client=client, unified_exceptions=True)
     stream = await provider.acompletion(model=MODEL, messages=[{"role": "user", "content": "Hello"}], stream=True)
     assert isinstance(stream, AsyncIterator)
@@ -85,7 +87,50 @@ async def test_converse_stream_keeps_tool_indices_and_skips_unknown_events() -> 
     assert chunks[0].choices[0].delta.content == "hello"
     tool_calls = [chunk.choices[0].delta.tool_calls for chunk in chunks[1:]]
     assert [calls[0].index for calls in tool_calls if calls] == [0, 0, 1, 1]
+    # A client joins a call's deltas by id, so only the first delta names the call, as OpenAI streams it.
+    assert [calls[0].id for calls in tool_calls if calls] == ["a", None, "b", None]
+    assert [calls[0].function.name for calls in tool_calls if calls and calls[0].function] == ["one", None, "two", None]
     assert event_stream.closed
+
+
+@pytest.mark.asyncio
+async def test_converse_stream_chunks_share_the_aws_request_id_and_a_creation_time() -> None:
+    """AWS puts no id in the chunks, so each one used to get its own, which broke grouping a stream by id."""
+    event_stream = _FakeEventStream(
+        [
+            {"messageStart": {"role": "assistant"}},
+            _text("hi"),
+            {"messageStop": {"stopReason": "end_turn"}},
+            {"metadata": {"usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}, "metrics": {}}},
+        ]
+    )
+    stream = await _open_stream(event_stream, {"RequestId": "req-1"})
+    chunks = [chunk async for chunk in stream]
+
+    assert {chunk.id for chunk in chunks} == {"req-1"}
+    assert len({chunk.created for chunk in chunks}) == 1
+    assert chunks[0].created > 0
+
+
+@pytest.mark.asyncio
+async def test_converse_stream_reports_usage_on_a_chunk_with_no_choices() -> None:
+    """The usage arrives after the finish, on a chunk of its own with no choices, as OpenAI sends it."""
+    event_stream = _FakeEventStream(
+        [
+            _text("hi"),
+            {"messageStop": {"stopReason": "max_tokens"}},
+            {"metadata": {"usage": {"inputTokens": 18, "outputTokens": 5, "totalTokens": 23}, "metrics": {}}},
+        ]
+    )
+    stream = await _open_stream(event_stream)
+    chunks = [chunk async for chunk in stream]
+
+    finish, usage = chunks[-2:]
+    assert finish.choices[0].finish_reason == "length"
+    assert finish.usage is None
+    assert usage.choices == []
+    assert usage.usage is not None
+    assert (usage.usage.prompt_tokens, usage.usage.completion_tokens, usage.usage.total_tokens) == (18, 5, 23)
 
 
 @pytest.mark.asyncio
@@ -108,7 +153,7 @@ async def test_converse_stream_error_is_converted_and_closes_the_stream() -> Non
 async def test_converse_stream_closed_early_closes_the_bedrock_stream() -> None:
     event_stream = _FakeEventStream([_text("first"), _text("second")])
 
-    stream = cast("AsyncGenerator[ChatCompletionChunk]", BedrockProvider._stream_converse(event_stream, MODEL))
+    stream = cast("AsyncGenerator[ChatCompletionChunk]", BedrockProvider._stream_converse(event_stream, MODEL, "req-1"))
     await anext(stream)
     await stream.aclose()
 
@@ -128,7 +173,7 @@ async def test_converse_stream_does_not_block_the_event_loop() -> None:
 
     event_stream = MagicMock()
     event_stream.__iter__.return_value = blocking_events()
-    stream = BedrockProvider._stream_converse(event_stream, MODEL)
+    stream = BedrockProvider._stream_converse(event_stream, MODEL, "req-1")
     read = asyncio.create_task(_next_chunk(stream))
 
     while not reading.is_set():  # noqa: ASYNC110

@@ -8,11 +8,12 @@ image as a typed ``media`` item and spells it ``720P``, Wan 2.6 takes a ``size``
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, NoReturn
 from uuid import uuid4
 
 from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
-from any_llm.types.video import VideoError, VideoJob, VideoOutput, VideoStatus
+from any_llm.types.video import TERMINAL_VIDEO_STATUSES, VideoError, VideoJob, VideoOutput, VideoStatus
 
 if TYPE_CHECKING:
     from any_llm.types.video import VideoGenerationParams
@@ -26,11 +27,20 @@ _FRAME_FIELDS: dict[str, tuple[str, ...]] = {
     "first_frame": ("first_frame_image", "first_frame"),
     "last_frame": ("last_frame_image", "last_frame"),
 }
-_REFERENCE_IMAGES_FIELD = "reference_images"
 _REFERENCE_AUDIOS_FIELD = "reference_audios"
 # Wan 2.6 and 2.7 take a single clip under a field of their own.
 _SINGLE_AUDIO_FIELDS = ("audio_url", "driving_audio")
 _RATIO_FIELDS = ("aspect_ratio", "ratio")
+# The any-llm field each typed ``media`` item comes from.
+_MEDIA_PARAMETERS = {
+    "first_frame": "first_frame",
+    "last_frame": "last_frame",
+    "reference_image": "reference_images",
+    "reference_video": "reference_videos",
+    "reference_audio": "reference_audios",
+}
+# Seedance and Veo, Pixverse 6, then Wan 3.0. p-video's ``audio`` is a clip URL, so only a boolean counts.
+_GENERATE_AUDIO_FIELDS = ("generate_audio", "generate_audio_switch", "audio")
 
 # DeepInfra's ``inference_status.status`` values. A synchronous call returns ``succeeded``; the
 # others appear with a webhook or when the render fails.
@@ -86,7 +96,8 @@ class _BodyBuilder:
         self.params = params
         self.schema = schema
         self.provider_name = provider_name
-        self.body: dict[str, Any] = {"prompt": params.prompt}
+        # Each body field a shared parameter set, with that parameter's name, so kwargs cannot change it unseen.
+        self.fields: dict[str, tuple[str, Any]] = {"prompt": ("prompt", params.prompt)}
         self.media: list[dict[str, Any]] = []
 
     def reject(self, parameter_name: str) -> NoReturn:
@@ -100,38 +111,47 @@ class _BodyBuilder:
         """A field the schema has under one fixed name."""
         if field not in self.schema.fields:
             self.reject(parameter_name)
-        self.body[field] = value
+        self.fields[field] = (parameter_name, value)
+
+    def switch(self, parameter_name: str, field_names: tuple[str, ...], value: bool) -> None:
+        """A yes or no the model takes as one of its boolean fields."""
+        field = next(
+            (name for name in field_names if (self.schema.fields.get(name) or {}).get("type") == "boolean"), None
+        )
+        if field is None:
+            self.reject(parameter_name)
+        self.fields[field] = (parameter_name, value)
 
     def image(self, parameter_name: str, value: str, field_names: tuple[str, ...], media_type: str) -> None:
         """An image as the model's own field, or as a typed ``media`` item when that is how it takes images."""
         field = next((name for name in field_names if name in self.schema.fields), None)
         if field is not None:
-            self.body[field] = value
+            self.fields[field] = (parameter_name, value)
         elif media_type in self.schema.media_types():
             self.media.append({"type": media_type, "url": value})
         else:
             self.reject(parameter_name)
 
-    def reference_images(self, images: list[str]) -> None:
-        """Reference images as the model's list field, or as typed ``media`` items."""
-        if _REFERENCE_IMAGES_FIELD in self.schema.fields:
-            self.body[_REFERENCE_IMAGES_FIELD] = list(images)
-        elif "reference_image" in self.schema.media_types():
-            self.media.extend({"type": "reference_image", "url": image} for image in images)
+    def references(self, parameter_name: str, urls: list[str], media_type: str) -> None:
+        """References as the model's list field of the same name, or as typed ``media`` items."""
+        if parameter_name in self.schema.fields:
+            self.fields[parameter_name] = (parameter_name, list(urls))
+        elif media_type in self.schema.media_types():
+            self.media.extend({"type": media_type, "url": url} for url in urls)
         else:
-            self.reject("reference_images")
+            self.reject(parameter_name)
 
     def reference_audios(self, audios: list[str]) -> None:
         """Audio as the model's list field, as ``media`` items, or as its single-clip field when there is one clip."""
         if _REFERENCE_AUDIOS_FIELD in self.schema.fields:
-            self.body[_REFERENCE_AUDIOS_FIELD] = list(audios)
+            self.fields[_REFERENCE_AUDIOS_FIELD] = ("reference_audios", list(audios))
         elif "reference_audio" in self.schema.media_types():
             self.media.extend({"type": "reference_audio", "url": audio} for audio in audios)
         elif (field := next((name for name in _SINGLE_AUDIO_FIELDS if name in self.schema.fields), None)) is not None:
             if len(audios) != 1:
                 msg = f"{self.schema.model} takes one audio clip as {field}, not {len(audios)}"
                 raise InvalidRequestError(msg)
-            self.body[field] = audios[0]
+            self.fields[field] = ("reference_audios", audios[0])
         else:
             self.reject("reference_audios")
 
@@ -149,7 +169,7 @@ class _BodyBuilder:
             if f"{width}*{height}" not in sizes:
                 msg = f"{self.schema.model} renders {', '.join(sizes)}, not {shape.described!r}"
                 raise InvalidRequestError(msg)
-            self.body["size"] = f"{width}*{height}"
+            self.fields["size"] = ("size", f"{width}*{height}")
             return
         if shape.short_side is not None:
             self.resolution_tier(shape.short_side, shape.described)
@@ -165,7 +185,7 @@ class _BodyBuilder:
         if resolution is None:
             msg = f"{self.schema.model} renders video with a resolution of {', '.join(resolutions)}, not {described!r}"
             raise InvalidRequestError(msg)
-        self.body["resolution"] = resolution
+        self.fields["resolution"] = ("size" if self.params.size is not None else "resolution", resolution)
 
     def ratio(self, ratio: float, described: str) -> None:
         """The width over height as the nearest ``W:H`` value the model lists."""
@@ -184,10 +204,15 @@ class _BodyBuilder:
         if nearest is None or abs(ratios[nearest] - ratio) / ratio > _ASPECT_RATIO_TOLERANCE:
             msg = f"{self.schema.model} renders video with an aspect ratio of {', '.join(ratios)}, not {described!r}"
             raise InvalidRequestError(msg)
-        self.body[ratio_field] = nearest
+        self.fields[ratio_field] = ("size" if self.params.size is not None else "aspect_ratio", nearest)
 
     def build(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """The request body: every set any-llm field under the model's name, then ``kwargs`` as is."""
+        """The request body: every set any-llm field under the model's name, then ``kwargs`` as is.
+
+        Raises:
+            InvalidRequestError: If ``kwargs`` set a field an any-llm field set, to another value.
+
+        """
         params = self.params
         if params.seconds is not None:
             self.plain("seconds", "duration", params.seconds)
@@ -200,14 +225,31 @@ class _BodyBuilder:
             if (value := getattr(params, parameter_name)) is not None:
                 self.image(parameter_name, value, field_names, parameter_name)
         if params.reference_images:
-            self.reference_images(params.reference_images)
+            self.references("reference_images", params.reference_images, "reference_image")
         if params.reference_audios:
             self.reference_audios(params.reference_audios)
-        # Caller-provided media items merge with the ones any-llm's fields produced.
-        self.media.extend(kwargs.pop("media", None) or [])
-        if self.media:
-            self.body["media"] = self.media
-        return self.body | kwargs
+        if params.reference_videos:
+            self.references("reference_videos", params.reference_videos, "reference_video")
+        if params.generate_audio is not None:
+            self.switch("generate_audio", _GENERATE_AUDIO_FIELDS, params.generate_audio)
+        # Each kind of media item any-llm produced stands for one of its fields, so a caller's items
+        # of that kind must be the same ones; items of any other kind are added.
+        caller_media = list(kwargs.pop("media", None) or [])
+        produced: dict[str, list[Any]] = {}
+        for item in self.media:
+            produced.setdefault(item["type"], []).append(item["url"])
+        passed: dict[str, list[Any]] = {}
+        for item in caller_media:
+            passed.setdefault(item.get("type"), []).append(item.get("url"))
+        params.check_provider_options(
+            {f"media[{kind}]": (_MEDIA_PARAMETERS[kind], urls) for kind, urls in produced.items()},
+            {f"media[{kind}]": urls for kind, urls in passed.items()},
+        )
+        media = [item for item in self.media if item["type"] not in passed] + caller_media
+        body = params.merge_provider_options(self.fields, kwargs)
+        if media:
+            body["media"] = media
+        return body
 
 
 def convert_video_params(
@@ -216,7 +258,8 @@ def convert_video_params(
     """Translate VideoGenerationParams, plus pass-through kwargs, into the body of ``POST /v1/inference/{model}``.
 
     Each any-llm field goes in under whatever name the model's schema gives it. A field the
-    schema has no name for raises ``UnsupportedParameterError``; keyword arguments go in as is.
+    schema has no name for raises ``UnsupportedParameterError``. Keyword arguments go in as is,
+    unless one sets a field an any-llm field set to another value, which raises ``InvalidRequestError``.
     """
     return _BodyBuilder(params, schema, provider_name).build(kwargs)
 
@@ -230,11 +273,44 @@ def _absolute_url(url: str, api_base: str) -> str:
     return f"{scheme}://{host}/{url.lstrip('/')}"
 
 
-def convert_inference_response(response: dict[str, Any], *, model: str, api_base: str) -> VideoJob:
-    """Read a synchronous inference reply as a finished VideoJob.
+def _number(value: object) -> int | float | None:
+    """``value`` when it is a finite JSON number, else None (``bool`` is an ``int`` in Python, so it is excluded)."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        return None
+    return value
 
-    DeepInfra renders inside the request and returns the video URL in the same reply, so the
-    job is already ``completed`` (or ``failed``) when it is first seen.
+
+def callback_response(payload: object) -> dict[str, Any]:
+    """Flatten the body DeepInfra posts to a webhook into the shape of a synchronous inference reply.
+
+    The callback carries ``request_id`` and ``inference_status`` beside a ``results`` object
+    that holds the model's output, which a synchronous reply has at its top level.
+
+    Raises:
+        InvalidRequestError: If the body is not a JSON object with a ``request_id``, or ``results`` is not an object.
+
+    """
+    if not isinstance(payload, dict):
+        msg = f"A DeepInfra webhook callback is a JSON object, not {type(payload).__name__}"
+        raise InvalidRequestError(msg)
+    if not payload.get("request_id"):
+        msg = "The DeepInfra webhook callback has no request_id, so it names no video job"
+        raise InvalidRequestError(msg)
+    results = payload.get("results")
+    if results is None:
+        results = {}
+    elif not isinstance(results, dict):
+        msg = f"The results of a DeepInfra webhook callback are a JSON object, not {type(results).__name__}"
+        raise InvalidRequestError(msg)
+    return {key: value for key, value in payload.items() if key != "results"} | results
+
+
+def convert_inference_response(response: dict[str, Any], *, model: str, api_base: str) -> VideoJob:
+    """Read an inference reply as a VideoJob.
+
+    Without a webhook, DeepInfra renders inside the request and returns the video URL in the
+    same reply, so the job is already ``completed`` (or ``failed``). With one, the reply is the
+    ``queued`` job and the finished one arrives at the webhook.
     """
     inference_status = response.get("inference_status") or {}
     raw_status = str(inference_status.get("status") or "unknown")
@@ -258,10 +334,19 @@ def convert_inference_response(response: dict[str, Any], *, model: str, api_base
         detail = response.get("detail") or response.get("error") or "DeepInfra returned no video."
         error = VideoError(message=str(detail))
 
+    cost: int | float | None = None
+    tokens: int | float | None = None
+    # A queued or running job reports a zero cost, which is not what the render will bill.
+    if status in TERMINAL_VIDEO_STATUSES:
+        cost = _number(inference_status.get("cost"))
+        # The billed token count sits beside inference_status, not in it: cost is out_tokens times the per-token price.
+        tokens = _number(response.get("out_tokens"))
     return VideoJob(
         id=str(response.get("request_id") or f"deepinfra-{uuid4().hex}"),
         model=model,
         status=status,
+        cost=None if cost is None else float(cost),
+        tokens=tokens if isinstance(tokens, int) else None,
         error=error,
         outputs=outputs,
     )
