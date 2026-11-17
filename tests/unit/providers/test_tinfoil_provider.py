@@ -63,7 +63,7 @@ def test_verification_options_go_to_the_secure_client_and_the_rest_to_openai() -
             measurement=measurement,
             transport="tls",
             attestation_bundle_url="https://bundle.example.com",
-            user_cache_secret="secret",
+            user_cache_secret="secret",  # noqa: S106
             max_retries=5,
             default_headers={"X-Test": "1"},
         )
@@ -75,7 +75,7 @@ def test_verification_options_go_to_the_secure_client_and_the_rest_to_openai() -
         measurement=measurement,
         transport="tls",
         attestation_bundle_url="https://bundle.example.com",
-        user_cache_secret="secret",
+        user_cache_secret="secret",  # noqa: S106
     )
     assert provider.client.max_retries == 5
     assert provider.client.default_headers["X-Test"] == "1"
@@ -126,9 +126,7 @@ async def test_completion_is_sent_through_the_attested_http_client() -> None:
                 "object": "chat.completion",
                 "created": 1,
                 "model": "gpt-oss-120b",
-                "choices": [
-                    {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "hi"}}
-                ],
+                "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "hi"}}],
             },
         )
 
@@ -136,9 +134,7 @@ async def test_completion_is_sent_through_the_attested_http_client() -> None:
     with patch("any_llm.providers.tinfoil.tinfoil.SecureClient", return_value=secure_client):
         provider = TinfoilProvider(api_key="test-key")
 
-    response: Any = await provider.acompletion(
-        model="gpt-oss-120b", messages=[{"role": "user", "content": "Say hi"}]
-    )
+    response: Any = await provider.acompletion(model="gpt-oss-120b", messages=[{"role": "user", "content": "Say hi"}])
 
     assert response.choices[0].message.content == "hi"
     assert len(requests) == 1
