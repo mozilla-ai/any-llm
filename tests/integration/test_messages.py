@@ -280,6 +280,11 @@ async def test_messages_forced_tool_stops_as_tool_use(
     """
     if provider in (*LOCAL_PROVIDERS, LLMProvider.PERPLEXITY):
         pytest.skip(f"{provider} does not support tools, skipping")
+    if provider in (LLMProvider.DEEPSEEK, LLMProvider.MOONSHOT):
+        # Both answer HTTP 400 to a forced tool_choice while thinking is on, and their test models think
+        # by default ("Thinking mode does not support this tool_choice" / "tool_choice 'specified' is
+        # incompatible with thinking enabled").
+        pytest.skip(f"{provider.value} rejects a forced tool_choice while thinking is on")
 
     try:
         llm = AnyLLM.create(provider, **provider_client_config.get(provider, {}))
