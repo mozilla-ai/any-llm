@@ -92,6 +92,7 @@ class LLMProvider(StrEnum):
     EDENAI = "edenai"
     ZAI = "zai"
     TELNYX = "telnyx"
+    TINFOIL = "tinfoil"
     TYPESAFE = "typesafe"
 
     @classmethod
