@@ -1,5 +1,8 @@
+import importlib
 from functools import cache
+from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from any_llm import AnyLLM
@@ -31,3 +34,14 @@ def clear_provider_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep unit tests independent of provider credentials and endpoints exported in the developer's shell."""
     for name in _provider_env_vars():
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def offline_tinfoil_verification(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit tests that build every provider from reaching Tinfoil's router and attestation endpoints."""
+    tinfoil_module = importlib.import_module("any_llm.providers.tinfoil.tinfoil")
+    if tinfoil_module.MISSING_PACKAGES_ERROR is not None:
+        return
+    secure_client = MagicMock(enclave="router.tinfoil.example")
+    secure_client.make_secure_async_http_client.side_effect = httpx.AsyncClient
+    monkeypatch.setattr(tinfoil_module, "SecureClient", MagicMock(return_value=secure_client))
