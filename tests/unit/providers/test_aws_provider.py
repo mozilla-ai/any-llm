@@ -38,7 +38,12 @@ from any_llm.providers.bedrock.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_aws_chunk,
 )
-from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionMessageFunctionToolCall,
+    CompletionParams,
+    ReasoningEffort,
+)
 
 
 @contextmanager
@@ -2677,3 +2682,124 @@ async def test_list_models_runs_aws_calls_off_the_event_loop() -> None:
 
     assert calling_threads
     assert event_loop_thread not in calling_threads
+
+
+_CODE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "code_execution",
+        "description": "Run Python code.",
+        "parameters": {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"]},
+    },
+}
+_LLAMA = "us.meta.llama3-3-70b-instruct-v1:0"
+_LLAMA_TEXT_CALL = '{"type": "function", "name": "code_execution", "parameters": {"code": "print(1)"}}'
+_PROFILE_ARN = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123"
+
+
+async def _converse_text(text: str, *, model_id: str = _LLAMA, **params: Any) -> Any:
+    """Complete against a Converse response whose only block is ``text``, as Llama answers a tool call."""
+    client = Mock()
+    client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": text}]}},
+        "stopReason": "end_turn",
+    }
+    provider = BedrockProvider(client=client)
+    with patch.object(provider, "_profile_model_id", return_value="meta.llama3-3-70b-instruct-v1:0"):
+        completion = await provider._acompletion(
+            CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "Run it"}], **params)
+        )
+    assert client.converse.call_args.kwargs["modelId"] == model_id
+    return completion
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_id", [_LLAMA, _PROFILE_ARN])
+async def test_llama_tool_call_written_as_text_becomes_a_tool_call(model_id: str) -> None:
+    completion = await _converse_text(_LLAMA_TEXT_CALL, model_id=model_id, tools=[_CODE_TOOL])
+
+    choice = completion.choices[0]
+    assert choice.finish_reason == "tool_calls"
+    assert choice.message.content is None
+    assert choice.message.tool_calls is not None
+    (call,) = choice.message.tool_calls
+    assert isinstance(call, ChatCompletionMessageFunctionToolCall)
+    assert call.id
+    assert call.function.name == "code_execution"
+    assert json.loads(call.function.arguments) == {"code": "print(1)"}
+
+
+@pytest.mark.asyncio
+async def test_llama_tool_call_without_a_type_becomes_a_tool_call() -> None:
+    completion = await _converse_text(
+        '{"name": "code_execution", "parameters": {"code": "print(1)"}}', tools=[_CODE_TOOL]
+    )
+
+    assert completion.choices[0].finish_reason == "tool_calls"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The digest is 3f2a.",
+        '{"type": "function", "name": "web_search", "parameters": {"query": "x"}}',
+        '{"name": "code_execution", "parameters": {"code": "print(1)"}, "note": "extra"}',
+        '{"name": "code_execution", "parameters": "print(1)"}',
+        '{"name": ["code_execution"], "parameters": {}}',
+        '{"name": "code_execution", "parameters": {"x": NaN}}',
+        '{"name": "code_execution", "parameters": {"x": 1e400}}',
+        "[" * 100_000 + "]" * 100_000,
+        f"Calling it now: {_LLAMA_TEXT_CALL}",
+    ],
+)
+async def test_llama_text_that_is_not_one_declared_call_stays_the_answer(text: str) -> None:
+    completion = await _converse_text(text, tools=[_CODE_TOOL])
+
+    choice = completion.choices[0]
+    assert choice.finish_reason == "stop"
+    assert choice.message.content == text
+    assert choice.message.tool_calls is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model_id", "params"),
+    [
+        (_LLAMA, {}),
+        (_LLAMA, {"tools": [_CODE_TOOL], "tool_choice": "none"}),
+        ("amazon.nova-lite-v1:0", {"tools": [_CODE_TOOL]}),
+    ],
+)
+async def test_text_call_is_left_alone_without_tools_or_off_llama(model_id: str, params: dict[str, Any]) -> None:
+    completion = await _converse_text(_LLAMA_TEXT_CALL, model_id=model_id, **params)
+
+    choice = completion.choices[0]
+    assert choice.finish_reason == "stop"
+    assert choice.message.content == _LLAMA_TEXT_CALL
+    assert choice.message.tool_calls is None
+
+
+@pytest.mark.asyncio
+async def test_llama_tool_use_block_is_returned_as_converse_gave_it() -> None:
+    client = Mock()
+    client.converse.return_value = {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": "tooluse_1", "name": "code_execution", "input": {"code": "1"}}}],
+            }
+        },
+        "stopReason": "tool_use",
+    }
+    provider = BedrockProvider(client=client)
+
+    completion = await provider._acompletion(
+        CompletionParams(model_id=_LLAMA, messages=[{"role": "user", "content": "Run it"}], tools=[_CODE_TOOL])
+    )
+
+    assert isinstance(completion, ChatCompletion)
+    choice = completion.choices[0]
+    assert choice.finish_reason == "tool_calls"
+    assert choice.message.tool_calls is not None
+    assert [call.id for call in choice.message.tool_calls] == ["tooluse_1"]

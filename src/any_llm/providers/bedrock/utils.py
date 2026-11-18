@@ -86,6 +86,59 @@ def _is_gpt_oss_model(model_id: str) -> bool:
     return "openai.gpt-oss" in model_id
 
 
+def _is_llama_model(model_id: str) -> bool:
+    """Return True if the Bedrock model id refers to one of Meta's Llama models."""
+    return "meta.llama" in model_id
+
+
+def _reject_json_constant(constant: str) -> Any:
+    """Refuse ``NaN`` and ``Infinity``, which Python's decoder accepts and JSON does not."""
+    msg = f"{constant} is not JSON"
+    raise ValueError(msg)
+
+
+def _recover_text_tool_call(completion: ChatCompletion, tool_names: set[str]) -> ChatCompletion:
+    """Turn an answer that is only a JSON call to a declared tool into that tool call.
+
+    Llama on Converse sometimes writes the call in its own JSON format,
+    ``{"type": "function", "name": ..., "parameters": {...}}``, as its whole text, which
+    Converse returns as a text block ending the turn rather than as a ``toolUse`` block.
+    Any other text, including JSON that names no declared tool, is left as the answer.
+    """
+    choice = completion.choices[0]
+    message = choice.message
+    if choice.finish_reason != "stop" or message.tool_calls or not message.content:
+        return completion
+    try:
+        call = json.loads(message.content, parse_constant=_reject_json_constant)
+    except (ValueError, RecursionError):
+        return completion
+    if (
+        not isinstance(call, dict)
+        or not set(call) <= {"type", "name", "parameters"}
+        or call.get("type", "function") != "function"
+        or not isinstance(call.get("name"), str)
+        or call["name"] not in tool_names
+        or not isinstance(call.get("parameters"), dict)
+    ):
+        return completion
+    try:
+        # A number too large for a float decodes as inf, which is not JSON either.
+        arguments = json.dumps(call["parameters"], allow_nan=False)
+    except ValueError:
+        return completion
+    message.tool_calls = [
+        ChatCompletionMessageFunctionToolCall(
+            id=f"call_{uuid4().hex}",
+            type="function",
+            function=Function(name=call["name"], arguments=arguments),
+        )
+    ]
+    message.content = None
+    choice.finish_reason = "tool_calls"
+    return completion
+
+
 # gpt-oss takes OpenAI's own `reasoning_effort` field, which Converse forwards from
 # `additionalModelRequestFields`. https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-openai.html
 _GPT_OSS_REASONING_EFFORTS = ("low", "medium", "high")
