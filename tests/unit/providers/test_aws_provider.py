@@ -38,7 +38,12 @@ from any_llm.providers.bedrock.utils import (
     _convert_tool_spec,
     _create_openai_chunk_from_aws_chunk,
 )
-from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams, ReasoningEffort
+from any_llm.types.completion import (
+    ChatCompletion,
+    ChatCompletionMessageFunctionToolCall,
+    CompletionParams,
+    ReasoningEffort,
+)
 
 
 @contextmanager
@@ -2773,3 +2778,28 @@ async def test_text_call_is_left_alone_without_tools_or_off_llama(model_id: str,
     assert choice.finish_reason == "stop"
     assert choice.message.content == _LLAMA_TEXT_CALL
     assert choice.message.tool_calls is None
+
+
+@pytest.mark.asyncio
+async def test_llama_tool_use_block_is_returned_as_converse_gave_it() -> None:
+    client = Mock()
+    client.converse.return_value = {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": "tooluse_1", "name": "code_execution", "input": {"code": "1"}}}],
+            }
+        },
+        "stopReason": "tool_use",
+    }
+    provider = BedrockProvider(client=client)
+
+    completion = await provider._acompletion(
+        CompletionParams(model_id=_LLAMA, messages=[{"role": "user", "content": "Run it"}], tools=[_CODE_TOOL])
+    )
+
+    assert isinstance(completion, ChatCompletion)
+    choice = completion.choices[0]
+    assert choice.finish_reason == "tool_calls"
+    assert choice.message.tool_calls is not None
+    assert [call.id for call in choice.message.tool_calls] == ["tooluse_1"]
