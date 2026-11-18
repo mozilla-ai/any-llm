@@ -431,6 +431,20 @@ def test_convert_models_list_handles_empty_response() -> None:
     assert result == []
 
 
+def test_convert_models_list_accepts_dict_entries() -> None:
+    """The documented dict input is converted rather than raising TypeError on vars()."""
+    raw = {"id": "deepseek-flash"}
+    models = convert_models_list([raw], owned_by="deepseek")
+
+    assert len(models) == 1
+    model = models[0]
+    assert model.id == "deepseek-flash"
+    assert model.object == "model"
+    assert model.owned_by == "deepseek"
+    assert model.created == 0
+    assert raw == {"id": "deepseek-flash"}
+
+
 def test_convert_models_list_round_trip_serialization() -> None:
     """Converted models must survive model_dump_json -> model_validate_json."""
     response = SimpleNamespace(data=[_make_openrouter_model()])

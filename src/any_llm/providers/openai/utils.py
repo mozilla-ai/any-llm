@@ -185,7 +185,13 @@ def convert_models_list(response: Any, *, owned_by: str) -> list[Model]:
     raw_models = response.data if hasattr(response, "data") else response
     result: list[Model] = []
     for model in raw_models:
-        data: dict[str, Any] = model.model_dump() if hasattr(model, "model_dump") else dict(vars(model))
+        data: dict[str, Any]
+        if isinstance(model, dict):
+            data = dict(model)
+        elif hasattr(model, "model_dump"):
+            data = model.model_dump()
+        else:
+            data = dict(vars(model))
         if data.get("object") is None:
             data["object"] = "model"
         if data.get("owned_by") is None:
