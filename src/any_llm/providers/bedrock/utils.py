@@ -86,6 +86,47 @@ def _is_gpt_oss_model(model_id: str) -> bool:
     return "openai.gpt-oss" in model_id
 
 
+def _is_llama_model(model_id: str) -> bool:
+    """Return True if the Bedrock model id refers to one of Meta's Llama models."""
+    return "meta.llama" in model_id
+
+
+def _recover_text_tool_call(completion: ChatCompletion, tool_names: set[str]) -> ChatCompletion:
+    """Turn an answer that is only a JSON call to a declared tool into that tool call.
+
+    Llama on Converse sometimes writes the call in its own JSON format,
+    ``{"type": "function", "name": ..., "parameters": {...}}``, as its whole text, which
+    Converse returns as a text block ending the turn rather than as a ``toolUse`` block.
+    Any other text, including JSON that names no declared tool, is left as the answer.
+    """
+    choice = completion.choices[0]
+    message = choice.message
+    if choice.finish_reason != "stop" or message.tool_calls or not message.content:
+        return completion
+    try:
+        call = json.loads(message.content)
+    except ValueError:
+        return completion
+    if (
+        not isinstance(call, dict)
+        or not set(call) <= {"type", "name", "parameters"}
+        or call.get("type", "function") != "function"
+        or call.get("name") not in tool_names
+        or not isinstance(call.get("parameters"), dict)
+    ):
+        return completion
+    message.tool_calls = [
+        ChatCompletionMessageFunctionToolCall(
+            id=f"call_{uuid4().hex}",
+            type="function",
+            function=Function(name=call["name"], arguments=json.dumps(call["parameters"])),
+        )
+    ]
+    message.content = None
+    choice.finish_reason = "tool_calls"
+    return completion
+
+
 # gpt-oss takes OpenAI's own `reasoning_effort` field, which Converse forwards from
 # `additionalModelRequestFields`. https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-openai.html
 _GPT_OSS_REASONING_EFFORTS = ("low", "medium", "high")

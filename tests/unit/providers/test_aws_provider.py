@@ -2677,3 +2677,82 @@ async def test_list_models_runs_aws_calls_off_the_event_loop() -> None:
 
     assert calling_threads
     assert event_loop_thread not in calling_threads
+
+
+_CODE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "code_execution",
+        "description": "Run Python code.",
+        "parameters": {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"]},
+    },
+}
+_LLAMA = "us.meta.llama3-3-70b-instruct-v1:0"
+_LLAMA_TEXT_CALL = '{"type": "function", "name": "code_execution", "parameters": {"code": "print(1)"}}'
+
+
+def _converse_text(text: str, *, model_id: str = _LLAMA, **params: Any) -> Any:
+    """Complete against a Converse response whose only block is ``text``, as Llama answers a tool call."""
+    client = Mock()
+    client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": text}]}},
+        "stopReason": "end_turn",
+    }
+    provider = BedrockProvider(client=client)
+    return provider._completion(
+        CompletionParams(model_id=model_id, messages=[{"role": "user", "content": "Run it"}], **params)
+    )
+
+
+def test_llama_tool_call_written_as_text_becomes_a_tool_call() -> None:
+    completion = _converse_text(_LLAMA_TEXT_CALL, tools=[_CODE_TOOL])
+
+    choice = completion.choices[0]
+    assert choice.finish_reason == "tool_calls"
+    assert choice.message.content is None
+    assert choice.message.tool_calls is not None
+    (call,) = choice.message.tool_calls
+    assert isinstance(call, ChatCompletionMessageFunctionToolCall)
+    assert call.id
+    assert call.function.name == "code_execution"
+    assert json.loads(call.function.arguments) == {"code": "print(1)"}
+
+
+def test_llama_tool_call_without_a_type_becomes_a_tool_call() -> None:
+    completion = _converse_text('{"name": "code_execution", "parameters": {"code": "print(1)"}}', tools=[_CODE_TOOL])
+
+    assert completion.choices[0].finish_reason == "tool_calls"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The digest is 3f2a.",
+        '{"type": "function", "name": "web_search", "parameters": {"query": "x"}}',
+        '{"name": "code_execution", "parameters": {"code": "print(1)"}, "note": "extra"}',
+        '{"name": "code_execution", "parameters": "print(1)"}',
+        f"Calling it now: {_LLAMA_TEXT_CALL}",
+    ],
+)
+def test_llama_text_that_is_not_one_declared_call_stays_the_answer(text: str) -> None:
+    completion = _converse_text(text, tools=[_CODE_TOOL])
+
+    choice = completion.choices[0]
+    assert choice.finish_reason == "stop"
+    assert choice.message.content == text
+    assert choice.message.tool_calls is None
+
+
+@pytest.mark.parametrize(
+    ("model_id", "params"),
+    [
+        (_LLAMA, {}),
+        (_LLAMA, {"tools": [_CODE_TOOL], "tool_choice": "none"}),
+        ("amazon.nova-lite-v1:0", {"tools": [_CODE_TOOL]}),
+    ],
+)
+def test_text_call_is_left_alone_without_tools_or_off_llama(model_id: str, params: dict[str, Any]) -> None:
+    completion = _converse_text(_LLAMA_TEXT_CALL, model_id=model_id, **params)
+
+    assert completion.choices[0].finish_reason == "stop"
+    assert completion.choices[0].message.content == _LLAMA_TEXT_CALL

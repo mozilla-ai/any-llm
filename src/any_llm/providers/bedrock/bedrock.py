@@ -54,7 +54,9 @@ try:
         _convert_response,
         _create_openai_chunk_from_aws_chunk,
         _create_openai_embedding_response_from_aws,
+        _is_llama_model,
         _parse_s3_uri,
+        _recover_text_tool_call,
         _response_id,
     )
 except ImportError as e:
@@ -535,7 +537,10 @@ class BedrockProvider(AnyLLM):
             )
         response = client.converse(**completion_kwargs)
 
-        return self._convert_completion_response(response)
+        completion = self._convert_completion_response(response)
+        if params.tools and params.tool_choice != "none" and _is_llama_model(params.model_id):
+            completion = _recover_text_tool_call(completion, {tool["function"]["name"] for tool in params.tools})
+        return completion
 
     def _client_for_timeout(self, timeout: float | None) -> Any:
         """Return a boto3 client configured for ``timeout``, building/caching one if needed.
