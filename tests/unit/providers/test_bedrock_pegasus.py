@@ -1,14 +1,21 @@
 """Tests for chat with the TwelveLabs Pegasus video models on Bedrock through InvokeModel."""
 
+import asyncio
 import io
 import json
+import logging
 import threading
+import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, TypeAlias
 from unittest.mock import Mock, patch
 
+import boto3
 import pytest
+from botocore.exceptions import ClientError
+from botocore.stub import Stubber
 from pydantic import BaseModel
 
 from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
@@ -20,6 +27,7 @@ LEGACY_PEGASUS = "us.twelvelabs.pegasus-1-2-v1:0"
 VIDEO_B64 = "AAAAIGZ0eXBpc29t"
 VIDEO_PART = {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{VIDEO_B64}"}}
 REQUEST_ID = "req-123"
+PROFILE_ARN = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/a1b2c3d4e5f6"
 
 Messages: TypeAlias = list[dict[str, Any] | ChatCompletionMessage]
 
@@ -514,3 +522,179 @@ def test_pegasus_completes_synchronously() -> None:
 
     assert isinstance(result, ChatCompletion)
     assert result.choices[0].message.content == "A test pattern."
+
+
+def _profile_response(*model_ids: str) -> dict[str, Any]:
+    return {
+        "inferenceProfileName": "pegasus-team",
+        "inferenceProfileArn": PROFILE_ARN,
+        "inferenceProfileId": "a1b2c3d4e5f6",
+        "status": "ACTIVE",
+        "type": "APPLICATION",
+        "models": [{"modelArn": f"arn:aws:bedrock:us-east-1::foundation-model/{m}"} for m in model_ids],
+    }
+
+
+def _runtime_client() -> Mock:
+    client = Mock()
+    client.invoke_model.side_effect = lambda **_: {
+        "body": io.BytesIO(json.dumps({"message": '{"summary": "bars"}', "stopReason": "stop"}).encode()),
+        "ResponseMetadata": {"RequestId": REQUEST_ID},
+    }
+    client.converse.return_value = {"output": {"message": {"content": [{"text": "response"}]}}}
+    return client
+
+
+@contextmanager
+def _profile_provider(*model_ids: str) -> Iterator[tuple[BedrockProvider, Mock, Any]]:
+    """Yield a provider, its runtime client, and a ``Stubber`` that answers one ``GetInferenceProfile`` call.
+
+    With no ``model_ids``, the stubber answers nothing, so any control-plane call fails the test.
+    """
+    control_client = boto3.client(  # type: ignore[no-untyped-call]
+        "bedrock",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",  # noqa: S106
+    )
+    client = _runtime_client()
+    with Stubber(control_client) as stubber:  # type: ignore[no-untyped-call]
+        if model_ids:
+            stubber.add_response(
+                "get_inference_profile", _profile_response(*model_ids), {"inferenceProfileIdentifier": PROFILE_ARN}
+            )
+        yield BedrockProvider(client=client, control_client=control_client), client, stubber
+        stubber.assert_no_pending_responses()
+
+
+@pytest.mark.asyncio
+async def test_pegasus_application_inference_profile_goes_to_invoke_model() -> None:
+    with _profile_provider("twelvelabs.pegasus-1-5-v1:0", "twelvelabs.pegasus-1-5-v1:0") as (provider, client, _):
+        result = await provider.acompletion(PROFILE_ARN, _messages(), response_format=Summary)
+
+    client.converse.assert_not_called()
+    assert client.invoke_model.call_args.kwargs["modelId"] == PROFILE_ARN
+    assert _sent_body(client.invoke_model)["responseFormat"] == {
+        "type": "json_schema",
+        "jsonSchema": Summary.model_json_schema(),
+    }
+    assert result.model == PROFILE_ARN
+
+
+@pytest.mark.asyncio
+async def test_pegasus_1_2_application_inference_profile_takes_the_schema_without_a_type() -> None:
+    with _profile_provider("twelvelabs.pegasus-1-2-v1:0") as (provider, client, _):
+        await provider.acompletion(PROFILE_ARN, _messages(), response_format=Summary)
+
+    assert _sent_body(client.invoke_model)["responseFormat"] == {"jsonSchema": Summary.model_json_schema()}
+
+
+@pytest.mark.asyncio
+async def test_pegasus_application_inference_profile_is_looked_up_once() -> None:
+    with _profile_provider("twelvelabs.pegasus-1-5-v1:0") as (provider, client, _):
+        await provider.acompletion(PROFILE_ARN, _messages())
+        await provider.acompletion(PROFILE_ARN, _messages())
+
+    assert client.invoke_model.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_application_inference_profile_of_another_model_goes_to_converse() -> None:
+    with _profile_provider("amazon.nova-lite-v1:0") as (provider, client, _):
+        await provider.acompletion(PROFILE_ARN, [{"role": "user", "content": "Hello"}])
+
+    client.invoke_model.assert_not_called()
+    assert client.converse.call_args.kwargs["modelId"] == PROFILE_ARN
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        PEGASUS,
+        "amazon.nova-lite-v1:0",
+        "arn:aws:bedrock:us-east-1:123456789012:provisioned-model/abc123",
+    ],
+)
+@pytest.mark.asyncio
+async def test_only_an_application_inference_profile_is_looked_up(model_id: str) -> None:
+    with _profile_provider() as (provider, _, _):
+        await provider.acompletion(model_id, _messages())
+
+
+@pytest.mark.asyncio
+async def test_a_denied_profile_lookup_goes_to_converse_and_is_not_retried(caplog: pytest.LogCaptureFixture) -> None:
+    with _profile_provider() as (provider, client, stubber):
+        stubber.add_client_error(
+            "get_inference_profile",
+            service_error_code="AccessDeniedException",
+            http_status_code=403,
+            expected_params={"inferenceProfileIdentifier": PROFILE_ARN},
+        )
+        with caplog.at_level(logging.WARNING, logger="any_llm"):
+            await provider.acompletion(PROFILE_ARN, [{"role": "user", "content": "Hello"}])
+            await provider.acompletion(PROFILE_ARN, [{"role": "user", "content": "Hello"}])
+
+    client.invoke_model.assert_not_called()
+    assert client.converse.call_count == 2
+    assert "bedrock:GetInferenceProfile" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_failed_profile_lookup_is_raised() -> None:
+    with _profile_provider() as (provider, client, stubber):
+        stubber.add_client_error(
+            "get_inference_profile",
+            service_error_code="ResourceNotFoundException",
+            http_status_code=404,
+            expected_params={"inferenceProfileIdentifier": PROFILE_ARN},
+        )
+        with pytest.raises(ClientError, match="ResourceNotFoundException"):
+            await provider.acompletion(PROFILE_ARN, _messages())
+
+    client.converse.assert_not_called()
+    client.invoke_model.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_look_up_a_profile_once() -> None:
+    control_client = Mock()
+
+    def slow_lookup(**_: Any) -> dict[str, Any]:
+        time.sleep(0.1)
+        return _profile_response("twelvelabs.pegasus-1-5-v1:0")
+
+    control_client.get_inference_profile.side_effect = slow_lookup
+    client = _runtime_client()
+    provider = BedrockProvider(client=client, control_client=control_client)
+
+    await asyncio.gather(*(provider.acompletion(PROFILE_ARN, _messages()) for _ in range(4)))
+
+    control_client.get_inference_profile.assert_called_once()
+    assert client.invoke_model.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_profile_lookup_applies_the_request_timeout() -> None:
+    runtime_client, control_client = _runtime_client(), Mock()
+    control_client.get_inference_profile.return_value = _profile_response("twelvelabs.pegasus-1-5-v1:0")
+    with patch("boto3.Session") as session_cls:
+        build_client = session_cls.return_value.client
+        build_client.side_effect = lambda service, **_: control_client if service == "bedrock" else runtime_client
+        provider = BedrockProvider(api_key="test-key")
+
+        await provider.acompletion(PROFILE_ARN, _messages(), timeout=5)
+
+    (control_call,) = [call for call in build_client.call_args_list if call.args[0] == "bedrock"]
+    assert control_call.kwargs["config"].connect_timeout == 5
+    assert control_call.kwargs["config"].read_timeout == 5
+    assert control_call.kwargs["config"].signature_version == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_profile_lookup_rejects_a_timeout_on_a_custom_control_client() -> None:
+    with _profile_provider() as (provider, client, _):
+        with pytest.raises(UnsupportedParameterError, match="control_client"):
+            await provider.acompletion(PROFILE_ARN, _messages(), timeout=5)
+
+    client.invoke_model.assert_not_called()
+    client.converse.assert_not_called()

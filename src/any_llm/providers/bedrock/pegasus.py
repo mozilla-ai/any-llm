@@ -60,7 +60,7 @@ def _media_source(part: dict[str, Any], model_id: str, provider_name: str) -> di
     raise InvalidRequestError(msg, provider_name=provider_name)
 
 
-def _prompt_and_video(params: CompletionParams, provider_name: str) -> tuple[str, dict[str, Any]]:
+def _prompt_and_video(params: CompletionParams, model_id: str, provider_name: str) -> tuple[str, dict[str, Any]]:
     """Join the text of the messages into one prompt and find the one video.
 
     Pegasus answers one prompt about one video, so system and developer text goes before the
@@ -93,7 +93,7 @@ def _prompt_and_video(params: CompletionParams, provider_name: str) -> tuple[str
                     raise InvalidRequestError(msg, provider_name=provider_name)
                 texts.append(text)
             elif part.get("type") == "video_url":
-                videos.append(_media_source(part, params.model_id, provider_name))
+                videos.append(_media_source(part, model_id, provider_name))
             else:
                 parameter_name = f"{part.get('type')} content"
                 raise UnsupportedParameterError(parameter_name, provider_name, "Pegasus takes text and one video.")
@@ -160,9 +160,12 @@ def _check_extra_fields(extra_fields: dict[str, Any], provider_name: str) -> Non
 
 
 def pegasus_body(
-    params: CompletionParams, provider_name: str, extra_fields: dict[str, Any] | None = None
+    params: CompletionParams, model_id: str, provider_name: str, extra_fields: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Build the InvokeModel body for a Pegasus model from a chat completion request.
+
+    ``model_id`` names the Pegasus model whose version shapes the body. It differs from
+    ``params.model_id`` when the request names an inference profile ARN.
 
     The video is a ``video_url`` content part whose URL is a base64 data URL, or an ``s3://``
     URI with a ``bucket_owner`` account ID beside it, which Pegasus 1.5 requires.
@@ -171,7 +174,7 @@ def pegasus_body(
     extra_fields = extra_fields or {}
     _check_options(params, provider_name)
     _check_extra_fields(extra_fields, provider_name)
-    prompt, media_source = _prompt_and_video(params, provider_name)
+    prompt, media_source = _prompt_and_video(params, model_id, provider_name)
     body: dict[str, Any] = {"inputPrompt": prompt, "mediaSource": media_source}
     if params.temperature is not None:
         body["temperature"] = params.temperature
@@ -181,7 +184,7 @@ def pegasus_body(
         schema = _json_schema(params.response_format, provider_name)
         if schema is not None:
             response_format: dict[str, Any] = {"jsonSchema": schema}
-            if _PEGASUS_1_2 not in params.model_id:
+            if _PEGASUS_1_2 not in model_id:
                 response_format = {"type": "json_schema", **response_format}
             body["responseFormat"] = response_format
     if clashes := sorted(extra_fields.keys() & body.keys()):
