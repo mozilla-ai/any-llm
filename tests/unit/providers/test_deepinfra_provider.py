@@ -1,11 +1,13 @@
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 
 from any_llm import AnyLLM
+from any_llm.exceptions import UnsupportedParameterError
 from any_llm.providers.deepinfra.deepinfra import DeepinfraProvider
 from any_llm.types.completion import CompletionParams
 from any_llm.types.messages import ContentBlockDeltaEvent, TextDelta
@@ -32,6 +34,9 @@ def test_deepinfra_supports_flags() -> None:
     assert provider.SUPPORTS_MODERATION is True
     assert provider.SUPPORTS_LIST_MODELS is True
     assert provider.SUPPORTS_VIDEO_GENERATION is True
+    assert provider.SUPPORTS_IMAGE_GENERATION is True
+    assert provider.SUPPORTS_AUDIO_TRANSCRIPTION is True
+    assert provider.SUPPORTS_AUDIO_SPEECH is True
 
 
 def test_factory_integration() -> None:
@@ -112,3 +117,155 @@ async def test_deepinfra_streams_messages_output_config_as_json_schema() -> None
         "type": "json_schema",
         "json_schema": {"name": "structured_output", "schema": schema},
     }
+
+
+def _recording_provider(
+    requests: list[httpx.Request], respond: Callable[[httpx.Request], httpx.Response]
+) -> DeepinfraProvider:
+    """A provider whose HTTP calls are recorded in ``requests`` and answered by ``respond``."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        request.read()
+        requests.append(request)
+        return respond(request)
+
+    return DeepinfraProvider(api_key="key", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)))
+
+
+@pytest.mark.asyncio
+async def test_image_generation_posts_to_the_openai_images_endpoint() -> None:
+    """https://docs.deepinfra.com/api-reference/image-generation/openai-images-generations"""
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(
+        requests, lambda _: httpx.Response(200, json={"created": 1, "data": [{"b64_json": "aW1hZ2U="}]})
+    )
+    try:
+        result = await provider.aimage_generation(
+            "black-forest-labs/FLUX-1-schnell",
+            "A lighthouse at dusk",
+            n=2,
+            size="512x512",
+            response_format="url",
+            quality="hd",
+            style="vivid",
+            user="user-1",
+        )
+    finally:
+        await provider.client.close()
+
+    assert result.data is not None
+    assert result.data[0].b64_json == "aW1hZ2U="
+    assert [request.url.path for request in requests] == ["/v1/openai/images/generations"]
+    assert json.loads(requests[0].content) == {
+        "model": "black-forest-labs/FLUX-1-schnell",
+        "prompt": "A lighthouse at dusk",
+        "n": 2,
+        "size": "512x512",
+        "response_format": "url",
+        "quality": "hd",
+        "style": "vivid",
+        "user": "user-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_transcription_uploads_the_clip_with_every_field() -> None:
+    """https://docs.deepinfra.com/api-reference/audio/openai-audio-transcriptions"""
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, json={"text": "hello"}))
+    try:
+        result = await provider.atranscription(
+            "openai/whisper-large-v3",
+            b"RIFF\x24\x00\x00\x00WAVEfmt ",
+            language="en",
+            prompt="A greeting.",
+            response_format="verbose_json",
+            temperature=0.2,
+            timestamp_granularities=["word"],
+        )
+    finally:
+        await provider.client.close()
+
+    assert result.text == "hello"
+    assert [request.url.path for request in requests] == ["/v1/openai/audio/transcriptions"]
+    body = requests[0].content
+    assert b'name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n' in body
+    for name, value in (
+        (b"model", b"openai/whisper-large-v3"),
+        (b"language", b"en"),
+        (b"prompt", b"A greeting."),
+        (b"response_format", b"verbose_json"),
+        (b"temperature", b"0.2"),
+        (b"timestamp_granularities[]", b"word"),
+    ):
+        assert b'name="' + name + b'"\r\n\r\n' + value + b"\r\n" in body
+
+
+@pytest.mark.asyncio
+async def test_transcription_wraps_a_plain_text_reply() -> None:
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(
+        requests, lambda _: httpx.Response(200, text="hello", headers={"content-type": "text/plain"})
+    )
+    try:
+        result = await provider.atranscription(
+            "openai/whisper-large-v3", b"RIFF\x24\x00\x00\x00WAVEfmt ", response_format="text"
+        )
+    finally:
+        await provider.client.close()
+
+    assert result.text == "hello"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", ["mp3", "opus", "flac", "wav", "pcm"])
+async def test_speech_posts_every_field_and_returns_the_audio(response_format: str) -> None:
+    """https://docs.deepinfra.com/api-reference/audio/openai-audio-speech"""
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, content=b"audio-bytes"))
+    try:
+        result = await provider.aspeech(
+            "hexgrad/Kokoro-82M",
+            "Hello there",
+            "af_bella",
+            response_format=response_format,  # type: ignore[arg-type]
+            speed=1.5,
+        )
+    finally:
+        await provider.client.close()
+
+    assert result == b"audio-bytes"
+    assert [request.url.path for request in requests] == ["/v1/openai/audio/speech"]
+    assert json.loads(requests[0].content) == {
+        "model": "hexgrad/Kokoro-82M",
+        "input": "Hello there",
+        "voice": "af_bella",
+        "response_format": response_format,
+        "speed": 1.5,
+    }
+
+
+@pytest.mark.asyncio
+async def test_speech_rejects_instructions() -> None:
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, content=b"audio-bytes"))
+    try:
+        with pytest.raises(UnsupportedParameterError, match="instructions"):
+            await provider.aspeech("hexgrad/Kokoro-82M", "Hello", "af_bella", instructions="Speak slowly")
+    finally:
+        await provider.client.close()
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_speech_rejects_aac() -> None:
+    requests: list[httpx.Request] = []
+    provider = _recording_provider(requests, lambda _: httpx.Response(200, content=b"audio-bytes"))
+    try:
+        with pytest.raises(UnsupportedParameterError, match="aac"):
+            await provider.aspeech("hexgrad/Kokoro-82M", "Hello", "af_bella", response_format="aac")
+    finally:
+        await provider.client.close()
+
+    assert requests == []

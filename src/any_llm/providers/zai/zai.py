@@ -29,6 +29,7 @@ class ZaiProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_PDF = False
     SUPPORTS_EMBEDDING = False
     SUPPORTS_LIST_MODELS = True
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT = False
 
     @staticmethod
     @override

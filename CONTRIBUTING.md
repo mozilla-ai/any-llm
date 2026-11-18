@@ -362,6 +362,16 @@ git push origin feature/example-provider
 5. Fill out the [PR template](pull_request_template.md) completely
 6. Click "Create Pull Request"
 
+### Pull Request Limits
+
+To keep the review queue manageable, contributors outside the maintainer team have limits on open pull requests:
+
+- Until one of your pull requests has been approved or merged, you can have **1** open pull request. Newer ones are closed automatically.
+- After that, you can have at most **4** open pull requests at a time. A pull request past that limit is closed automatically.
+- If the issue you link already has an open pull request, you will get a warning comment. Consider contributing to the existing pull request instead.
+
+You are welcome to reopen a closed pull request once you are under the limit.
+
 
 ## Review Process
 

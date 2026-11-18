@@ -4,9 +4,31 @@ from pathlib import Path
 import pytest
 
 from any_llm.constants import LLMProvider
+from any_llm.exceptions import (
+    AuthenticationError,
+    InsufficientFundsError,
+    MissingApiKeyError,
+    ModelNotFoundError,
+    UnsupportedParameterError,
+)
 from tests.constants import EXPECTED_PROVIDERS
 
 _INTEGRATION_DIR = Path(__file__).parent
+
+# Failures a retry cannot fix: exhausted credits (402), revoked access (401/403), retired models
+# (404) and rejected requests (400/422). Retrying each of these 5 times with a 10s delay was most of
+# the suite's wall time, so they fail on the first attempt. Most provider SDK errors are not mapped to
+# any-llm exceptions and render as "<Class>: Error code: <status> - ..." (OpenAI-style SDKs) or
+# "ClientError: <status> ..." (google-genai), so those are matched by message.
+_NON_RETRYABLE_ERRORS: list[type[BaseException] | str] = [
+    AuthenticationError,
+    InsufficientFundsError,
+    MissingApiKeyError,
+    ModelNotFoundError,
+    UnsupportedParameterError,
+    r"Error code: (40[0-4]|422)\b",
+    r"^ClientError: (40[0-4]|422)\b",
+]
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -15,7 +37,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # when they run together, so the retry is limited to items under this directory.
     for item in items:
         if _INTEGRATION_DIR in item.path.parents:
-            item.add_marker(pytest.mark.flaky(reruns=5, reruns_delay=10))
+            item.add_marker(pytest.mark.flaky(reruns=5, reruns_delay=10, rerun_except=_NON_RETRYABLE_ERRORS))
 
 
 # otari is a hosted gateway (like openrouter). It has no server started in CI by default, so its
