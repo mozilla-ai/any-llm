@@ -420,6 +420,8 @@ class BedrockProvider(AnyLLM):
             return await self._apegasus_completion(params, model_id, **kwargs)
         result = await asyncio.to_thread(self._completion, params, **kwargs)
         if isinstance(result, ChatCompletion):
+            if params.tools and params.tool_choice != "none" and _is_llama_model(model_id):
+                return _recover_text_tool_call(result, {tool["function"]["name"] for tool in params.tools})
             return result
         return self._stream_converse(result["stream"], params.model_id, _response_id(result))
 
@@ -537,10 +539,7 @@ class BedrockProvider(AnyLLM):
             )
         response = client.converse(**completion_kwargs)
 
-        completion = self._convert_completion_response(response)
-        if params.tools and params.tool_choice != "none" and _is_llama_model(params.model_id):
-            completion = _recover_text_tool_call(completion, {tool["function"]["name"] for tool in params.tools})
-        return completion
+        return self._convert_completion_response(response)
 
     def _client_for_timeout(self, timeout: float | None) -> Any:
         """Return a boto3 client configured for ``timeout``, building/caching one if needed.
