@@ -135,12 +135,6 @@ class GroqProvider(AnyLLM):
     async def _stream_async_completion(
         self, params: CompletionParams, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
-        # Groq does not currently support streaming structured outputs.
-        # See https://console.groq.com/docs/structured-outputs
-        if params.stream and params.response_format:
-            msg = "stream and response_format"
-            raise UnsupportedParameterError(msg, self.PROVIDER_NAME)
-
         completion_kwargs = self._convert_completion_params(params, **kwargs)
         stream: GroqAsyncStream[GroqChatCompletionChunk] = await self.client.chat.completions.create(
             model=params.model_id,
