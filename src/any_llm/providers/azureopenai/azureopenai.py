@@ -31,6 +31,9 @@ class AzureopenaiProvider(OpenAIFileMethods, BaseOpenAIProvider):
     PROVIDER_NAME = "azureopenai"
     PROVIDER_DOCUMENTATION_URL = "https://learn.microsoft.com/azure/foundry/openai/api-version-lifecycle"
     SUPPORTS_RESPONSES = True
+    # Azure serves OpenAI's own Responses API, so keep its Response, as OpenaiProvider does:
+    # a ResponseResource drops usage.input_tokens_details.cache_write_tokens.
+    _NORMALIZES_RESPONSES = False
     _MESSAGES_TOOLS_THINKING_VIA_RESPONSES = True
     SUPPORTS_LIST_MODELS = True
     SUPPORTS_COMPLETION_PDF = False
