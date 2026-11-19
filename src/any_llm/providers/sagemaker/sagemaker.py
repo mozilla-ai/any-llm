@@ -142,7 +142,8 @@ class SagemakerProvider(AnyLLM):
             return result
 
         async def _stream() -> AsyncIterator[ChatCompletionChunk]:
-            for chunk in result:
+            # The SageMaker event stream does blocking network reads; pull each chunk off the event loop.
+            while (chunk := await asyncio.to_thread(next, result, None)) is not None:
                 yield chunk
 
         return _stream()
