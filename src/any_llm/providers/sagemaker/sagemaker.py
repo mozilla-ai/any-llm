@@ -142,7 +142,8 @@ class SagemakerProvider(AnyLLM):
             return result
 
         async def _stream() -> AsyncIterator[ChatCompletionChunk]:
-            for chunk in result:
+            chunks = iter(result)
+            while (chunk := await asyncio.to_thread(next, chunks, None)) is not None:
                 yield chunk
 
         return _stream()
