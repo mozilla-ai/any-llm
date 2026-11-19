@@ -12,13 +12,22 @@ import pytest
 from ollama import ChatResponse as OllamaChatResponse
 from ollama import Message as OllamaMessage
 
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, ProviderError
 from any_llm.providers.ollama.ollama import OllamaProvider
 from any_llm.providers.ollama.utils import (
     _create_chat_completion_from_ollama_response,
     _create_openai_chunk_from_ollama_chunk,
 )
 from any_llm.types.completion import ChatCompletion, ChatCompletionChunk, CompletionParams
+
+
+async def _completed_stream() -> AsyncIterator[OllamaChatResponse]:
+    yield OllamaChatResponse(
+        model="llama3.1",
+        message=OllamaMessage(role="assistant", content=""),
+        done=True,
+        done_reason="stop",
+    )
 
 
 @pytest.mark.asyncio
@@ -40,10 +49,6 @@ async def test_completion_converts_output_token_limits_to_num_predict(
     num_predict: int | None,
     expected_num_predict: int | None,
 ) -> None:
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     provider_kwargs = {} if num_predict is None else {"num_predict": num_predict}
     params = CompletionParams(
         model_id="llama3.1",
@@ -56,7 +61,7 @@ async def test_completion_converts_output_token_limits_to_num_predict(
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+        provider.client.chat = AsyncMock(return_value=_completed_stream() if stream else Mock())
 
         if stream:
             result = await provider._acompletion(params, **provider_kwargs)
@@ -477,14 +482,10 @@ async def test_streaming_completion_passes_format_top_level() -> None:
     class TestOutput:
         name: str
 
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+        provider.client.chat = AsyncMock(return_value=_completed_stream())
 
         result = await provider._acompletion(
             CompletionParams(
@@ -507,14 +508,10 @@ async def test_streaming_completion_passes_format_top_level() -> None:
 async def test_streaming_completion_translates_json_object_format() -> None:
     """Test that OpenAI-style {"type": "json_object"} is translated to "json" when streaming."""
 
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+        provider.client.chat = AsyncMock(return_value=_completed_stream())
 
         result = await provider._acompletion(
             CompletionParams(
@@ -544,14 +541,10 @@ async def test_streaming_completion_passes_tools_top_level() -> None:
         }
     ]
 
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+        provider.client.chat = AsyncMock(return_value=_completed_stream())
 
         result = await provider._acompletion(
             CompletionParams(
@@ -641,6 +634,7 @@ async def test_streaming_assigns_distinct_tool_call_indices() -> None:
             _make_stream_chunk(tool_name="find", tool_arguments={"query": "diode connected nmos"}),
             _make_stream_chunk(tool_name="find", tool_arguments={"query": "5t nmos ota"}),
             _make_stream_chunk(tool_name="find", tool_arguments={"query": "source follower"}),
+            _make_stream_chunk(done=True, done_reason="stop"),
         ]
     )
 
@@ -772,14 +766,10 @@ async def test_reasoning_effort_auto_leaves_think_unset(reasoning_effort: str | 
 async def test_streaming_completion_passes_think_level_top_level() -> None:
     """Test that the leveled `think` is passed as a top-level kwarg to client.chat(), not in options."""
 
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter())
+        provider.client.chat = AsyncMock(return_value=_completed_stream())
 
         result = await provider._acompletion(
             CompletionParams(
@@ -806,16 +796,12 @@ def test_per_request_timeout_is_declared_unsupported() -> None:
 async def _sent_messages(messages: list[dict[str, Any]], stream: bool) -> list[dict[str, Any]]:
     """Run a completion against a mocked client and return the messages it received."""
 
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     params = CompletionParams(model_id="qwen3:0.6b", messages=messages, stream=stream)
 
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+        provider.client.chat = AsyncMock(return_value=_completed_stream() if stream else Mock())
 
         if stream:
             result = await provider._acompletion(params)
@@ -1148,6 +1134,40 @@ async def test_completion_normalizes_sdk_done_reason(
         await provider.client._client.aclose()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_partial_chunk", [False, True])
+async def test_streaming_completion_raises_if_ollama_never_reports_done(has_partial_chunk: bool) -> None:
+    partial = {
+        "model": "llama3.2",
+        "message": {"role": "assistant", "content": "Half an answer"},
+        "done": False,
+    }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/chat"
+        assert json.loads(request.content)["stream"] is True
+        return httpx.Response(
+            200,
+            content=json.dumps(partial) + "\n" if has_partial_chunk else "",
+            headers={"content-type": "application/x-ndjson"},
+        )
+
+    provider = OllamaProvider(api_base="http://ollama.test", transport=httpx.MockTransport(handle))
+    try:
+        stream = await provider.acompletion(
+            model="llama3.2", messages=[{"role": "user", "content": "Hello"}], stream=True
+        )
+        assert isinstance(stream, AsyncIterator)
+        if has_partial_chunk:
+            chunk = await anext(stream)
+            assert chunk.choices[0].delta.content == "Half an answer"
+            assert chunk.choices[0].finish_reason is None
+        with pytest.raises(ProviderError, match="before Ollama sent done=true"):
+            await anext(stream)
+    finally:
+        await provider.client._client.aclose()
+
+
 @pytest.mark.parametrize("done_reason", [None, "load", "unload", "stop", "length"])
 def test_completion_normalization_preserves_tool_call_precedence(done_reason: str | None) -> None:
     response = OllamaChatResponse(
@@ -1204,10 +1224,6 @@ def test_convert_completion_params_keeps_explicit_num_ctx() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stream", [False, True])
 async def test_completion_omits_num_ctx_when_unset(stream: bool) -> None:
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     params = CompletionParams(
         model_id="llama3.1",
         messages=[{"role": "user", "content": "Hello"}],
@@ -1217,7 +1233,7 @@ async def test_completion_omits_num_ctx_when_unset(stream: bool) -> None:
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+        provider.client.chat = AsyncMock(return_value=_completed_stream() if stream else Mock())
 
         if stream:
             result = await provider._acompletion(params)
@@ -1235,10 +1251,6 @@ async def test_completion_omits_num_ctx_when_unset(stream: bool) -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stream", [False, True])
 async def test_completion_passes_explicit_num_ctx(stream: bool) -> None:
-    async def empty_async_iter() -> AsyncIterator[None]:
-        return
-        yield
-
     params = CompletionParams(
         model_id="llama3.1",
         messages=[{"role": "user", "content": "Hello"}],
@@ -1248,7 +1260,7 @@ async def test_completion_passes_explicit_num_ctx(stream: bool) -> None:
     with patch.object(OllamaProvider, "_init_client"):
         provider = OllamaProvider(api_key=None)
         provider.client = Mock()
-        provider.client.chat = AsyncMock(return_value=empty_async_iter() if stream else Mock())
+        provider.client.chat = AsyncMock(return_value=_completed_stream() if stream else Mock())
 
         if stream:
             result = await provider._acompletion(params, num_ctx=4096)
