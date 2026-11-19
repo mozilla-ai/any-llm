@@ -115,3 +115,31 @@ def test_vertex_embedding_keeps_original_contents(inputs: str | list[str]) -> No
     converted = VertexaiProvider._convert_embedding_params(inputs, config=config)
     assert converted["contents"] is inputs
     assert converted["config"] is config
+
+
+def test_convert_embedding_params_maps_dimensions_to_output_dimensionality() -> None:
+    from any_llm.providers.gemini import GeminiProvider
+
+    converted = GeminiProvider._convert_embedding_params("hi", dimensions=256)
+
+    assert "dimensions" not in converted
+    assert converted["config"].output_dimensionality == 256
+
+
+def test_convert_embedding_params_merges_dimensions_into_existing_config() -> None:
+    from any_llm.providers.gemini import GeminiProvider
+
+    from_object = GeminiProvider._convert_embedding_params(
+        "hi", dimensions=64, config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
+    )
+    from_dict = GeminiProvider._convert_embedding_params("hi", dimensions=64, config={"task_type": "RETRIEVAL_QUERY"})
+
+    assert from_object["config"].output_dimensionality == 64
+    assert from_object["config"].task_type == "RETRIEVAL_QUERY"
+    assert from_dict["config"] == {"task_type": "RETRIEVAL_QUERY", "output_dimensionality": 64}
+
+
+def test_convert_embedding_params_without_dimensions_adds_no_config() -> None:
+    from any_llm.providers.gemini import GeminiProvider
+
+    assert GeminiProvider._convert_embedding_params("hi") == {"contents": "hi"}

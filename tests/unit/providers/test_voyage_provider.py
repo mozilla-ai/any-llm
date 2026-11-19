@@ -136,3 +136,17 @@ def test_convert_embedding_response_default_model() -> None:
     ) as mock_convert:
         VoyageProvider._convert_embedding_response({"result": mock_result})
         mock_convert.assert_called_once_with("voyage-model", mock_result)
+
+
+def test_convert_embedding_params_maps_dimensions_to_output_dimension() -> None:
+    from any_llm.providers.voyage import VoyageProvider
+
+    converted = VoyageProvider._convert_embedding_params("hi", dimensions=256)
+
+    assert converted == {"texts": ["hi"], "output_dimension": 256}
+
+
+def test_convert_embedding_params_without_dimensions_omits_output_dimension() -> None:
+    from any_llm.providers.voyage import VoyageProvider
+
+    assert VoyageProvider._convert_embedding_params(["a"]) == {"texts": ["a"]}

@@ -91,7 +91,10 @@ class VoyageProvider(AnyLLM):
         """Convert embedding parameters for Voyage."""
         if isinstance(params, str):
             params = [params]
-        converted_params = {"texts": params}
+        converted_params: dict[str, Any] = {"texts": params}
+        dimensions = kwargs.pop("dimensions", None)
+        if dimensions is not None:
+            converted_params["output_dimension"] = dimensions
         converted_params.update(kwargs)
         return converted_params
 

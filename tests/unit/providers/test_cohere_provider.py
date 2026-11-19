@@ -1495,3 +1495,18 @@ def test_streaming_tool_plan_delta_without_text_carries_no_content() -> None:
     result = _create_openai_chunk_from_cohere_chunk(ToolPlanDeltaV2ChatStreamResponse(), "command-a-03-2025")
 
     assert result.choices[0].delta.content is None
+
+
+def test_convert_embedding_params_maps_dimensions_to_output_dimension() -> None:
+    from any_llm.providers.cohere import CohereProvider
+
+    converted = CohereProvider._convert_embedding_params("hi", dimensions=256)
+
+    assert converted["output_dimension"] == 256
+    assert "dimensions" not in converted
+
+
+def test_convert_embedding_params_without_dimensions_omits_output_dimension() -> None:
+    from any_llm.providers.cohere import CohereProvider
+
+    assert "output_dimension" not in CohereProvider._convert_embedding_params("hi")

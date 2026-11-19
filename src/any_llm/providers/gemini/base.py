@@ -400,8 +400,18 @@ class GoogleProvider(AnyLLM):
     @override
     def _convert_embedding_params(params: Any, **kwargs: Any) -> dict[str, Any]:
         """Convert embedding parameters for Google API."""
-        converted_params = {"contents": params}
+        converted_params: dict[str, Any] = {"contents": params}
+        dimensions = kwargs.pop("dimensions", None)
         converted_params.update(kwargs)
+        if dimensions is not None:
+            config = converted_params.get("config")
+            if config is None:
+                config = types.EmbedContentConfig(output_dimensionality=dimensions)
+            elif isinstance(config, dict):
+                config = {**config, "output_dimensionality": dimensions}
+            else:
+                config = config.model_copy(update={"output_dimensionality": dimensions})
+            converted_params["config"] = config
         return converted_params
 
     @staticmethod

@@ -127,6 +127,9 @@ class CohereProvider(AnyLLM):
         converted: dict[str, Any] = {"texts": params}
         converted["input_type"] = kwargs.pop("input_type", "search_document")
         converted["embedding_types"] = kwargs.pop("embedding_types", ["float"])
+        dimensions = kwargs.pop("dimensions", None)
+        if dimensions is not None:
+            converted["output_dimension"] = dimensions
         converted.update(kwargs)
         return converted
 
