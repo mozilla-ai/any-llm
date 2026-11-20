@@ -32,7 +32,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
     choices = []
     hf_choices = chunk.choices
 
-    for i, hf_choice in enumerate(hf_choices):
+    for hf_choice in hf_choices:
         hf_delta = hf_choice.delta
 
         delta_dict: dict[str, Any] = {}
@@ -83,7 +83,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
             delta.tool_calls = openai_tool_calls
 
         choice = ChunkChoice(
-            index=i,
+            index=hf_choice.index,
             delta=delta,
             finish_reason=cast(
                 "Literal['stop', 'length', 'tool_calls', 'content_filter', 'function_call'] | None",
