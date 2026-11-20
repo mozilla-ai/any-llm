@@ -25,8 +25,8 @@ from .image import convert_responses_to_images, edit_request, generation_request
 
 _FILES_API_HOST = "generativelanguage.googleapis.com"
 
-# A Gemini TTS model answers with one inline blob of headerless 16-bit mono PCM whose MIME type
-# carries the rate, such as ``audio/L16;codec=pcm;rate=24000``.
+# Legacy Gemini TTS models return headerless 16-bit mono PCM with the rate
+# in the MIME type (for example ``audio/L16;codec=pcm;rate=24000``).
 _PCM_RATE_PATTERN = re.compile(r"rate=(\d+)")
 _PCM_DEFAULT_RATE = 24000
 _PCM_SAMPLE_WIDTH = 2
@@ -221,15 +221,14 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
     async def _aspeech(self, params: AudioSpeechParams, **kwargs: Any) -> bytes:
         """Generate speech with a Gemini TTS model through ``generateContent``.
 
-        Gemini has no speech endpoint. Its TTS models (``gemini-2.5-flash-preview-tts``,
-        ``gemini-2.5-pro-preview-tts``, ``gemini-3.1-flash-tts-preview``) answer a
-        ``generateContent`` call whose config asks for the audio modality and names one of the
-        prebuilt voices such as ``Kore``; further ``GenerateContentConfig`` fields pass through
-        ``kwargs``. The reply is headerless 16-bit mono PCM, returned as-is for ``pcm`` and
-        wrapped in a WAV container for ``wav``, the default. Gemini encodes nothing else, so mp3,
-        opus, aac and flac raise ``UnsupportedParameterError``. Delivery is steered by the text
-        itself (``Say cheerfully: ...``) and there is no rate control, so ``instructions`` and
-        ``speed`` raise too. See https://ai.google.dev/gemini-api/docs/speech-generation.
+        Gemini has no speech endpoint. Its TTS models answer a ``generateContent`` call
+        configured for audio with a prebuilt voice such as ``Kore``; further
+        ``GenerateContentConfig`` fields pass through ``kwargs``. Gemini 3.8 TTS returns native
+        WAV, while older preview models return headerless 16-bit mono PCM. For ``wav``,
+        the default, native WAV is preserved and raw PCM is wrapped. For ``pcm``, only
+        samples are returned. MP3, Opus, AAC and FLAC are not supported by this adapter.
+        ``instructions`` and ``speed`` are not translated into Gemini settings.
+        See https://ai.google.dev/gemini-api/docs/speech-generation.
         """
         if params.instructions is not None:
             parameter_name = "instructions"
@@ -273,6 +272,16 @@ class GeminiProvider(GeminiFileMethods, GoogleProvider):
                 f"(finish_reason={finish_reason}, block_reason={block_reason})."
             )
             raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
+        mime_type = (audio.mime_type or "").partition(";")[0].lower()
+        if mime_type in {"audio/wav", "audio/x-wav"}:
+            if response_format == "wav":
+                return audio.data
+            try:
+                with wave.open(io.BytesIO(audio.data), "rb") as handle:
+                    return handle.readframes(handle.getnframes())
+            except (EOFError, wave.Error) as exc:
+                msg = "Gemini returned invalid WAV audio."
+                raise ProviderError(msg, provider_name=self.PROVIDER_NAME) from exc
         if response_format == "pcm":
             return audio.data
         return _pcm_to_wav(audio.data, audio.mime_type)
