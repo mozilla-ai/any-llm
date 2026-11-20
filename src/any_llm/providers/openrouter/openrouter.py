@@ -5,7 +5,8 @@ from typing_extensions import override
 
 from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.openai.base import BaseOpenAIProvider
-from any_llm.providers.openrouter.utils import _convert_models_list, build_reasoning_directive, convert_rerank_response
+from any_llm.providers.openai.utils import convert_models_list
+from any_llm.providers.openrouter.utils import build_reasoning_directive, convert_rerank_response
 from any_llm.types.completion import CompletionParams
 from any_llm.types.model import Model
 from any_llm.types.rerank import RerankResponse
@@ -42,7 +43,7 @@ class OpenrouterProvider(BaseOpenAIProvider):
     @override
     def _convert_list_models_response(response: Any) -> Sequence[Model]:
         """Convert OpenRouter list models response to valid Model objects."""
-        return _convert_models_list(response)
+        return convert_models_list(response, owned_by=OpenrouterProvider.PROVIDER_NAME)
 
     @staticmethod
     @override

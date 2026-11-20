@@ -19,8 +19,8 @@ from any_llm.exceptions import (
     RateLimitError,
     UnsupportedParameterError,
 )
+from any_llm.providers.openai.utils import convert_models_list
 from any_llm.providers.openrouter import OpenrouterProvider
-from any_llm.providers.openrouter.utils import _convert_models_list
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -398,7 +398,7 @@ def _make_openrouter_model(**overrides: object) -> Model:
 def test_convert_models_list_fills_missing_object_and_owned_by() -> None:
     """Models with None object/owned_by are rebuilt with valid defaults."""
     response = SimpleNamespace(data=[_make_openrouter_model()])
-    result = _convert_models_list(response)
+    result = convert_models_list(response, owned_by="openrouter")
 
     assert len(result) == 1
     model = result[0]
@@ -411,7 +411,7 @@ def test_convert_models_list_fills_missing_object_and_owned_by() -> None:
 def test_convert_models_list_preserves_existing_owned_by() -> None:
     """When the API does provide owned_by, it should be kept."""
     response = SimpleNamespace(data=[_make_openrouter_model(owned_by="qwen")])
-    result = _convert_models_list(response)
+    result = convert_models_list(response, owned_by="openrouter")
 
     assert result[0].owned_by == "qwen"
 
@@ -419,22 +419,36 @@ def test_convert_models_list_preserves_existing_owned_by() -> None:
 def test_convert_models_list_defaults_created_to_zero_when_none() -> None:
     """A None created timestamp falls back to 0."""
     response = SimpleNamespace(data=[_make_openrouter_model(created=None)])
-    result = _convert_models_list(response)
+    result = convert_models_list(response, owned_by="openrouter")
 
     assert result[0].created == 0
 
 
 def test_convert_models_list_handles_empty_response() -> None:
     response = SimpleNamespace(data=[])
-    result = _convert_models_list(response)
+    result = convert_models_list(response, owned_by="openrouter")
 
     assert result == []
+
+
+def test_convert_models_list_accepts_dict_entries() -> None:
+    """The documented dict input is converted rather than raising TypeError on vars()."""
+    raw = {"id": "deepseek-flash"}
+    models = convert_models_list([raw], owned_by="deepseek")
+
+    assert len(models) == 1
+    model = models[0]
+    assert model.id == "deepseek-flash"
+    assert model.object == "model"
+    assert model.owned_by == "deepseek"
+    assert model.created == 0
+    assert raw == {"id": "deepseek-flash"}
 
 
 def test_convert_models_list_round_trip_serialization() -> None:
     """Converted models must survive model_dump_json -> model_validate_json."""
     response = SimpleNamespace(data=[_make_openrouter_model()])
-    models = _convert_models_list(response)
+    models = convert_models_list(response, owned_by="openrouter")
 
     for model in models:
         json_data = model.model_dump_json()
@@ -477,7 +491,7 @@ def test_convert_models_list_preserves_extra_openrouter_fields() -> None:
         pricing={"prompt": "0.001", "completion": "0.002"},
     )
     response = SimpleNamespace(data=[model])
-    result = _convert_models_list(response)
+    result = convert_models_list(response, owned_by="openrouter")
 
     assert len(result) == 1
     converted = result[0]

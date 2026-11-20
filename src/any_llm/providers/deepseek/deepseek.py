@@ -17,6 +17,7 @@ from any_llm.providers.deepseek.utils import (
     _preprocess_messages,
 )
 from any_llm.providers.openai.base import BaseOpenAIProvider
+from any_llm.providers.openai.utils import convert_models_list
 from any_llm.types.completion import ChatCompletion
 from any_llm.types.messages import MessageResponse
 from any_llm.utils.messages_compat import (
@@ -28,13 +29,14 @@ from any_llm.utils.messages_compat import (
 from any_llm.utils.structured_output import normalize_output_config
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Sequence
 
     from anthropic.types.beta.parsed_beta_message import ParsedBetaMessage
     from anthropic.types.parsed_message import ParsedMessage
 
     from any_llm.types.completion import ChatCompletionChunk, CompletionParams, ReasoningEffort
     from any_llm.types.messages import MessagesParams, MessageStreamEvent
+    from any_llm.types.model import Model
 
 # Each entry maps an any-llm effort to DeepSeek's top-level effort and thinking toggle.
 # DeepSeek Chat accepts low, high, and max, maps medium and xhigh to high, and does not
@@ -113,6 +115,19 @@ class DeepseekProvider(BaseOpenAIProvider):
             base_url=_derive_anthropic_base(resolved_base),
             **anthropic_client_kwargs(kwargs),
         )
+
+    @staticmethod
+    @override
+    def _convert_list_models_response(response: Any) -> Sequence[Model]:
+        """Convert DeepSeek's list models response to valid ``Model`` objects.
+
+        DeepSeek's ``/models`` endpoint omits ``created``, which the OpenAI ``Model``
+        schema requires (https://api-docs.deepseek.com/api/list-models). The OpenAI
+        SDK constructs such objects leniently, so without this every DeepSeek
+        listing fails validation. DeepSeek-specific extras (``context_window``,
+        ``name``, ...) are preserved for the ``Model`` class to read.
+        """
+        return convert_models_list(response, owned_by=DeepseekProvider.PROVIDER_NAME)
 
     @override
     def _reasoning_effort_for_model(
