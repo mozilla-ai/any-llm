@@ -217,6 +217,7 @@ def make_hf_chunk(
         delta_mock.reasoning = reasoning
 
     choice_mock = Mock()
+    choice_mock.index = 0
     choice_mock.delta = delta_mock
     choice_mock.finish_reason = finish_reason
 
@@ -325,6 +326,44 @@ def test_create_openai_chunk_without_usage() -> None:
 
     assert result.usage is None
     assert result.choices[0].delta.content == "Hello"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("indexes", [[1], [1, 0], [0], []])
+async def test_stream_preserves_choice_indexes(indexes: list[int]) -> None:
+    from huggingface_hub.inference._generated.types.chat_completion import (
+        ChatCompletionStreamOutput,
+        ChatCompletionStreamOutputChoice,
+        ChatCompletionStreamOutputDelta,
+    )
+
+    async def stream() -> AsyncGenerator[ChatCompletionStreamOutput]:
+        yield ChatCompletionStreamOutput(
+            id="hf-chunk",
+            created=0,
+            model="test-model",
+            system_fingerprint="",
+            choices=[
+                ChatCompletionStreamOutputChoice(
+                    index=index,
+                    delta=ChatCompletionStreamOutputDelta(role="assistant", content=f"choice {index}"),
+                    finish_reason="stop",
+                )
+                for index in indexes
+            ],
+        )
+
+    with mock_huggingface_provider() as mock_huggingface:
+        mock_huggingface.return_value.chat_completion.return_value = stream()
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        result = await provider.acompletion(
+            model="test-model", messages=[{"role": "user", "content": "Hello"}], stream=True, n=2
+        )
+        chunks = [chunk async for chunk in result]
+
+    assert [(choice.index, choice.delta.content) for chunk in chunks for choice in chunk.choices] == [
+        (index, f"choice {index}") for index in indexes
+    ]
 
 
 def _make_openai_response(text: str):  # type: ignore[no-untyped-def]
