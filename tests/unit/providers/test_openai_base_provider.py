@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from openai import AsyncStream
+from openai.types.model import Model as OpenAIModel
 from openai.types.responses import (
     ResponseCompactionItem,
     ResponseCompletedEvent,
@@ -1871,3 +1872,45 @@ async def test_transcription_wraps_text_formats_in_a_transcription(
     assert isinstance(result, Transcription)
     assert result.text == "hello there\n"
     assert f'name="response_format"\r\n\r\n{response_format}\r\n'.encode() in requests[0].content
+
+
+@patch("any_llm.providers.openai.base.AsyncOpenAI")
+def test_list_models_fills_fields_a_gateway_omits(mock_openai_class: MagicMock) -> None:
+    class ListModelsProvider(BaseOpenAIProvider):
+        SUPPORTS_LIST_MODELS = True
+        PROVIDER_NAME = "ListModelsProvider"
+        ENV_API_KEY_NAME = "TEST_API_KEY"
+        PROVIDER_DOCUMENTATION_URL = "https://example.com"
+
+    # The SDK builds its objects without validating, as it does for TokenHub's
+    # listing, which has no owned_by.
+    listed = OpenAIModel.model_construct(
+        id="glm-5.3", object="model", name="GLM-5.3", created=1786665600, context_length=1024000
+    )
+    mock_client = AsyncMock()
+    mock_client.models.list.return_value.data = [listed]
+    mock_openai_class.return_value = mock_client
+
+    [model] = ListModelsProvider(api_key="test-key").list_models()
+
+    assert model.id == "glm-5.3"
+    assert model.owned_by == "unknown"
+    assert model.created == 1786665600
+    assert model.context_window == 1024000
+
+
+def test_convert_list_models_response_fills_every_omitted_field() -> None:
+    [model] = BaseOpenAIProvider._convert_list_models_response([{"id": "bare-model"}])
+
+    assert model.object == "model"
+    assert model.owned_by == "unknown"
+    assert model.created == 0
+
+
+def test_convert_list_models_response_keeps_stated_fields() -> None:
+    [model] = BaseOpenAIProvider._convert_list_models_response(
+        [{"id": "gpt-4", "object": "model", "created": 1687882411, "owned_by": "openai"}]
+    )
+
+    assert model.owned_by == "openai"
+    assert model.created == 1687882411

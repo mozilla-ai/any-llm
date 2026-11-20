@@ -65,6 +65,25 @@ if TYPE_CHECKING:
     from openai._types import RequestOptions
 
 
+def _validate_listed_model(model: Any) -> Model:
+    """Validate one ``/models`` entry, filling the OpenAI fields a gateway left out.
+
+    The OpenAI SDK builds its objects without validating, so an entry missing
+    ``owned_by``, ``created`` or ``object`` (TokenHub omits ``owned_by``) only
+    fails here, where it would otherwise refuse the whole listing.
+    """
+    if isinstance(model, Model):
+        return model
+    data: dict[str, Any] = model.model_dump() if isinstance(model, BaseModel) else dict(model)
+    if data.get("object") is None:
+        data["object"] = "model"
+    if data.get("owned_by") is None:
+        data["owned_by"] = "unknown"
+    if data.get("created") is None:
+        data["created"] = 0
+    return Model.model_validate(data)
+
+
 class OpenAIChunkStream(AsyncIterator[ChatCompletionChunk]):
     """Convert an OpenAI SDK chunk stream and close it on every exit.
 
@@ -241,12 +260,12 @@ class BaseOpenAIProvider(AnyLLM):
         """Convert OpenAI list models response to OpenAI format (passthrough)."""
         if hasattr(response, "data"):
             # Validate each model in the data
-            return [Model.model_validate(model) if not isinstance(model, Model) else model for model in response.data]
+            return [_validate_listed_model(model) for model in response.data]
         # If it's already a sequence of our Model type, return it
         if isinstance(response, (list, tuple)) and all(isinstance(item, Model) for item in response):
             return response
         # Otherwise, validate each item
-        return [Model.model_validate(item) if not isinstance(item, Model) else item for item in response]
+        return [_validate_listed_model(item) for item in response]
 
     @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
