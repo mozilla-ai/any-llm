@@ -61,6 +61,62 @@ async def test_huggingface_with_max_tokens() -> None:
 
 
 @pytest.mark.asyncio
+async def test_huggingface_reasoning_effort_travels_in_extra_body() -> None:
+    """The inference client has no `reasoning_effort` argument, so it goes through `extra_body`."""
+    with mock_huggingface_provider() as mock_huggingface:
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="high",
+            )
+        )
+
+    call_kwargs = mock_huggingface.return_value.chat_completion.call_args.kwargs
+    assert "reasoning_effort" not in call_kwargs
+    assert call_kwargs["extra_body"] == {"reasoning_effort": "high"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", ["auto", "none"])
+async def test_huggingface_unspecified_reasoning_effort_is_dropped(reasoning_effort: str) -> None:
+    with mock_huggingface_provider() as mock_huggingface:
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
+            )
+        )
+
+    call_kwargs = mock_huggingface.return_value.chat_completion.call_args.kwargs
+    assert "reasoning_effort" not in call_kwargs
+    assert "extra_body" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_huggingface_reasoning_effort_merges_with_caller_extra_body() -> None:
+    with mock_huggingface_provider() as mock_huggingface:
+        provider = HuggingfaceProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash",
+                messages=[{"role": "user", "content": "Hello"}],
+                reasoning_effort="medium",
+            ),
+            extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+        )
+
+    call_kwargs = mock_huggingface.return_value.chat_completion.call_args.kwargs
+    assert call_kwargs["extra_body"] == {
+        "chat_template_kwargs": {"enable_thinking": True},
+        "reasoning_effort": "medium",
+    }
+
+
+@pytest.mark.asyncio
 async def test_huggingface_with_timeout() -> None:
     api_key = "test-api-key"
     messages = [{"role": "user", "content": "Hello"}]
