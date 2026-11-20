@@ -4,7 +4,7 @@ import json
 import wave
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from typing import Any, cast
+from typing import Any, Literal, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -4616,6 +4616,40 @@ async def test_speech_pcm_returns_the_raw_samples() -> None:
         )
 
     assert result == PCM_FRAMES
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response_format", [None, "wav", "pcm"])
+async def test_speech_preserves_native_wav_and_returns_only_samples_for_pcm(
+    response_format: Literal["wav", "pcm"] | None,
+) -> None:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(24000)
+        handle.writeframes(PCM_FRAMES)
+    wav_bytes = buffer.getvalue()
+    with _mock_speech_client(_audio_response(wav_bytes, mime_type="audio/wav")) as generate:
+        provider = GeminiProvider(api_key="test-key")
+        result = await provider._aspeech(
+            AudioSpeechParams(
+                model_id="gemini-3.8-flash-tts", input="hello", voice="Kore", response_format=response_format
+            )
+        )
+
+    assert result == (PCM_FRAMES if response_format == "pcm" else wav_bytes)
+    assert generate.call_args.kwargs["model"] == "gemini-3.8-flash-tts"
+
+
+@pytest.mark.asyncio
+async def test_speech_rejects_malformed_wav_when_extracting_pcm() -> None:
+    with _mock_speech_client(_audio_response(b"not a WAV", mime_type="audio/wav")):
+        provider = GeminiProvider(api_key="test-key")
+        with pytest.raises(ProviderError, match="invalid WAV audio"):
+            await provider._aspeech(
+                AudioSpeechParams(model_id="gemini-3.8-flash-tts", input="hello", voice="Kore", response_format="pcm")
+            )
 
 
 @pytest.mark.asyncio
