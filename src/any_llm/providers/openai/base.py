@@ -101,6 +101,7 @@ class OpenAIChunkStream(AsyncIterator[ChatCompletionChunk]):
         self._iterator = aiter(response)
         self._convert = convert
         self._closed = False
+        self._open_choices: set[int] = set()
 
     @override
     def __aiter__(self) -> "OpenAIChunkStream":
@@ -111,10 +112,25 @@ class OpenAIChunkStream(AsyncIterator[ChatCompletionChunk]):
         if self._closed:
             raise StopAsyncIteration
         try:
-            return self._convert(await anext(self._iterator))
+            chunk = self._convert(await anext(self._iterator))
+        except StopAsyncIteration:
+            await self.aclose()
+            if self._open_choices:
+                msg = (
+                    "The stream ended before the provider sent a finish_reason for choice(s) "
+                    f"{sorted(self._open_choices)}; the response is incomplete."
+                )
+                raise ProviderError(msg) from None
+            raise
         except BaseException:
             await self.aclose()
             raise
+        for choice in chunk.choices:
+            if choice.finish_reason is None:
+                self._open_choices.add(choice.index)
+            else:
+                self._open_choices.discard(choice.index)
+        return chunk
 
     async def aclose(self) -> None:
         if not self._closed:
