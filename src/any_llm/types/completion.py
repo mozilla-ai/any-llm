@@ -78,11 +78,19 @@ class CompletionTokensDetails(OpenAICompletionTokensDetails):
         return _dump_foreign_model(cls, value)
 
 
+class ServerToolUsage(BaseModel):
+    """Calls to tools the provider ran itself during the request, named as in Anthropic's usage."""
+
+    web_search_requests: int | None = None
+    """Web searches the provider ran, each one a query it sent to its search engine."""
+
+
 class CompletionUsage(OpenAICompletionUsage):
     prompt_tokens_details: PromptTokensDetails | None = None
     completion_tokens_details: CompletionTokensDetails | None = None
     inference_geo: str | None = None
     """The region the request ran in, as Anthropic reports it (such as ``us`` or ``global``)."""
+    server_tool_use: ServerToolUsage | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -92,11 +100,14 @@ class CompletionUsage(OpenAICompletionUsage):
     # Unannotated on purpose: pydantic takes the serialization JSON schema from the return
     # annotation, and only an unannotated wrap serializer keeps the model's own field schema.
     @model_serializer(mode="wrap")
-    def _omit_unreported_inference_geo(self, handler: SerializerFunctionWrapHandler):  # type: ignore[no-untyped-def]
-        """Keep the OpenAI usage shape for providers that report no region."""
+    def _omit_unreported_extensions(self, handler: SerializerFunctionWrapHandler):  # type: ignore[no-untyped-def]
+        """Keep the OpenAI usage shape for providers that report no region or server tool use."""
         data = handler(self)
-        if self.inference_geo is None and isinstance(data, dict):
-            data.pop("inference_geo", None)
+        if isinstance(data, dict):
+            if self.inference_geo is None:
+                data.pop("inference_geo", None)
+            if self.server_tool_use is None:
+                data.pop("server_tool_use", None)
         return data
 
 

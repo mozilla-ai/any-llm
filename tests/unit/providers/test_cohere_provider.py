@@ -4,6 +4,13 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from cohere.types import Usage as CohereUsage
 from cohere.types import UsageTokens
+from cohere.v2.types import (
+    MessageEndV2ChatStreamResponse,
+    ToolCallDeltaV2ChatStreamResponse,
+    ToolCallEndV2ChatStreamResponse,
+    ToolCallStartV2ChatStreamResponse,
+    ToolPlanDeltaV2ChatStreamResponse,
+)
 from pydantic import BaseModel
 
 from any_llm.exceptions import ProviderError, UnsupportedParameterError
@@ -14,6 +21,7 @@ from any_llm.providers.cohere.utils import (
     _patch_messages,
 )
 from any_llm.types.completion import CompletionParams, CreateEmbeddingResponse, ReasoningEffort
+from any_llm.utils.streaming import accumulate_chunks
 
 
 def _mk_provider() -> Any:
@@ -1452,3 +1460,38 @@ def test_streaming_message_end_maps_cached_tokens() -> None:
     assert result.usage is not None
     assert result.usage.prompt_tokens_details is not None
     assert result.usage.prompt_tokens_details.cached_tokens == 2048
+
+
+def test_streaming_tool_plan_is_reported_as_content() -> None:
+    """Streaming: the tool plan Cohere sends before a tool call is content, as in the non-streamed response."""
+    events = [
+        ToolPlanDeltaV2ChatStreamResponse.model_validate({"delta": {"message": {"tool_plan": "I will look up "}}}),
+        ToolPlanDeltaV2ChatStreamResponse.model_validate({"delta": {"message": {"tool_plan": "the weather."}}}),
+        ToolCallStartV2ChatStreamResponse.model_validate(
+            {
+                "index": 0,
+                "delta": {"message": {"tool_calls": {"id": "call_1", "function": {"name": "get_weather"}}}},
+            }
+        ),
+        ToolCallDeltaV2ChatStreamResponse.model_validate(
+            {"index": 0, "delta": {"message": {"tool_calls": {"function": {"arguments": '{"city": "Paris"}'}}}}}
+        ),
+        ToolCallEndV2ChatStreamResponse.model_validate({"index": 0}),
+        MessageEndV2ChatStreamResponse.model_validate({"delta": {"finish_reason": "TOOL_CALL"}}),
+    ]
+
+    completion = accumulate_chunks(
+        _create_openai_chunk_from_cohere_chunk(event, "command-a-03-2025") for event in events
+    )
+
+    message = completion.choices[0].message
+    assert message.content == "I will look up the weather."
+    assert message.tool_calls is not None
+    assert message.tool_calls[0].function.arguments == '{"city": "Paris"}'  # type: ignore[union-attr]
+    assert completion.choices[0].finish_reason == "tool_calls"
+
+
+def test_streaming_tool_plan_delta_without_text_carries_no_content() -> None:
+    result = _create_openai_chunk_from_cohere_chunk(ToolPlanDeltaV2ChatStreamResponse(), "command-a-03-2025")
+
+    assert result.choices[0].delta.content is None

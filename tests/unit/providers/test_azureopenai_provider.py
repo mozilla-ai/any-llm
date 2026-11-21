@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from openai.types.responses import Response
 
 from any_llm.exceptions import MissingApiKeyError, UnsupportedParameterError
 from any_llm.providers.azureopenai.azureopenai import AzureopenaiProvider
@@ -367,6 +368,54 @@ async def test_azureopenai_sends_responses_to_v1() -> None:
     assert [request.url.path for request in requests] == ["/openai/v1/responses"]
     assert [request.headers["Authorization"] for request in requests] == ["Bearer api-key"]
     assert json.loads(requests[0].read()) == {"input": "Hello", "model": "deployment-name"}
+
+
+@pytest.mark.asyncio
+async def test_azureopenai_responses_keeps_its_own_response_with_every_field() -> None:
+    """Azure's reply stays an openai Response: a ResponseResource would drop cache_write_tokens."""
+    reply = {
+        "id": "resp-test",
+        "object": "response",
+        "created_at": 1,
+        "model": "deployment-name",
+        "output": [],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        # the fields a real reply carries, so the ResponseResource conversion would succeed
+        "status": "completed",
+        "truncation": "disabled",
+        "text": {"format": {"type": "text"}},
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "presence_penalty": 0.0,
+        "frequency_penalty": 0.0,
+        "top_logprobs": 0,
+        "store": True,
+        "background": False,
+        "service_tier": "default",
+        "usage": {
+            "input_tokens": 10,
+            "input_tokens_details": {"cached_tokens": 2, "cache_write_tokens": 8},
+            "output_tokens": 1,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 11,
+        },
+    }
+    provider = AzureopenaiProvider(
+        api_key="api-key",
+        api_base="https://resource.openai.azure.com",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(_HTTP_OK, json=reply))),
+        max_retries=0,
+    )
+    try:
+        response = await provider.aresponses(model="deployment-name", input_data="Hello")
+    finally:
+        await provider.client.close()
+
+    assert isinstance(response, Response)
+    assert response.usage is not None
+    assert response.usage.input_tokens_details.cache_write_tokens == 8
 
 
 @pytest.mark.asyncio

@@ -22,6 +22,7 @@ class LlamafileProvider(BaseOpenAIProvider):
     SUPPORTS_COMPLETION_STREAMING = False
     SUPPORTS_COMPLETION_IMAGE = False
     SUPPORTS_COMPLETION_PDF = False
+    SUPPORTS_COMPLETION_RESPONSE_FORMAT = False
 
     @override
     def _verify_and_set_api_key(self, api_key: str | None = None) -> str | None:

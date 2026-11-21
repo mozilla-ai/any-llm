@@ -44,6 +44,7 @@ from any_llm.types.completion import (
     Function,
     PromptTokensDetails,
     ReasoningEffort,
+    ServerToolUsage,
 )
 
 TEST_IMAGE_BYTES = b"test-image-bytes"
@@ -131,13 +132,28 @@ def test_gemini_api_base_passed_to_client() -> None:
         assert call_kwargs["http_options"].base_url == "https://custom.endpoint.com"
 
 
-def test_gemini_api_base_none_does_not_add_http_options() -> None:
-    """Test that no http_options is added when api_base is None."""
+def test_gemini_pins_v1beta_when_no_version_is_named() -> None:
+    """google-genai 3 defaults to v1, which lacks preview models, so the provider keeps v1beta."""
     with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
         GeminiProvider(api_key="test-key")
-        mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
-        assert "http_options" not in call_kwargs
+        assert call_kwargs["http_options"].api_version == "v1beta"
+        assert call_kwargs["http_options"].base_url is None
+
+
+def test_gemini_keeps_the_version_the_caller_names() -> None:
+    with patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client:
+        GeminiProvider(api_key="test-key", http_options={"api_version": "v1"})
+        assert mock_client.call_args[1]["http_options"].api_version == "v1"
+
+
+def test_gemini_leaves_the_version_to_the_sdk_environment_variable() -> None:
+    with (
+        patch("any_llm.providers.gemini.gemini.genai.Client") as mock_client,
+        patch.dict("os.environ", {"GOOGLE_GENAI_API_VERSION": "v1alpha"}),
+    ):
+        GeminiProvider(api_key="test-key")
+        assert mock_client.call_args[1]["http_options"].api_version is None
 
 
 def test_gemini_api_base_does_not_override_explicit_http_options() -> None:
@@ -170,8 +186,8 @@ def test_gemini_api_base_with_dict_http_options() -> None:
         GeminiProvider(api_key="test-key", api_base="https://custom.endpoint.com", http_options={"timeout": 30})
         mock_client.assert_called_once()
         call_kwargs = mock_client.call_args[1]
-        assert call_kwargs["http_options"]["base_url"] == "https://custom.endpoint.com"
-        assert call_kwargs["http_options"]["timeout"] == 30
+        assert call_kwargs["http_options"].base_url == "https://custom.endpoint.com"
+        assert call_kwargs["http_options"].timeout == 30
 
 
 def test_gemini_api_base_env_var() -> None:
@@ -3830,6 +3846,71 @@ def test_convert_response_combines_cached_and_audio_input_tokens() -> None:
     usage = _convert_response_to_response_dict(response)["usage"]
 
     assert usage["prompt_tokens_details"] == PromptTokensDetails(cached_tokens=3000, audio_tokens=3000)
+
+
+def _grounded_response(web_search_queries: list[str] | None) -> types.GenerateContentResponse:
+    response = _make_gemini_response([types.Part(text="It is sunny.")], types.FinishReason.STOP)
+    assert response.candidates is not None
+    response.candidates[0].grounding_metadata = types.GroundingMetadata(web_search_queries=web_search_queries)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=20, candidates_token_count=5, total_token_count=25
+    )
+    return response
+
+
+def test_convert_response_reports_grounding_queries_as_web_search_requests() -> None:
+    response = _grounded_response(["weather paris", "weather paris tomorrow"])
+
+    completion = GeminiProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-3-flash")
+    )
+
+    assert completion.usage is not None
+    assert completion.usage.server_tool_use == ServerToolUsage(web_search_requests=2)
+    assert completion.usage.model_dump()["server_tool_use"] == {"web_search_requests": 2}
+
+
+def test_streaming_chunk_reports_grounding_queries_as_web_search_requests() -> None:
+    chunk = _create_openai_chunk_from_google_chunk(_grounded_response(["weather paris"]))
+
+    assert chunk.usage is not None
+    assert chunk.usage.server_tool_use == ServerToolUsage(web_search_requests=1)
+
+
+def test_convert_response_sums_grounding_queries_across_candidates() -> None:
+    response = _grounded_response(["a"])
+    assert response.candidates is not None
+    response.candidates.append(
+        types.Candidate(index=1, grounding_metadata=types.GroundingMetadata(web_search_queries=["b", "c"]))
+    )
+
+    usage = _convert_response_to_response_dict(response)["usage"]
+
+    assert usage["server_tool_use"] == ServerToolUsage(web_search_requests=3)
+
+
+@pytest.mark.parametrize("web_search_queries", [None, []], ids=["no-queries", "empty-queries"])
+def test_convert_response_omits_server_tool_use_without_grounding_queries(
+    web_search_queries: list[str] | None,
+) -> None:
+    usage = _convert_response_to_response_dict(_grounded_response(web_search_queries))["usage"]
+
+    assert "server_tool_use" not in usage
+
+
+def test_convert_response_without_grounding_keeps_the_openai_usage_shape() -> None:
+    response = _make_gemini_response([types.Part(text="Hi.")], types.FinishReason.STOP)
+    response.usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=3, candidates_token_count=1, total_token_count=4
+    )
+
+    completion = GeminiProvider._convert_completion_response(
+        (_convert_response_to_response_dict(response), "gemini-3-flash")
+    )
+
+    assert completion.usage is not None
+    assert completion.usage.server_tool_use is None
+    assert "server_tool_use" not in completion.usage.model_dump()
 
 
 def test_convert_response_without_thought_tokens() -> None:

@@ -124,6 +124,14 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any, model: str) -> ChatComple
             elif hasattr(content_obj, "thinking") and content_obj.thinking:
                 delta["reasoning"] = {"content": content_obj.thinking}
 
+    elif chunk_type == "tool-plan-delta":
+        # The text Cohere writes before its tool calls, which _convert_response returns as content.
+        chunk_delta = getattr(chunk, "delta", None)
+        chunk_message = getattr(chunk_delta, "message", None)
+        tool_plan = getattr(chunk_message, "tool_plan", None)
+        if tool_plan:
+            delta["content"] = tool_plan
+
     elif chunk_type == "tool-call-start":
         if (
             hasattr(chunk, "delta")

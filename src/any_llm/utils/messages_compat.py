@@ -792,7 +792,7 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
     the last text part) on the text block. No text block is added to carry that signature alone,
     except the empty one a response with no other content gets anyway. Code execution items
     become ``server_tool_use`` and ``code_execution_tool_result`` blocks (see
-    ``_code_execution_blocks``).
+    ``_code_execution_blocks``). A normal ``stop`` with tool-use blocks requests tool execution.
     """
     content_blocks: list[MessageContentBlock] = []
     stop_reason: StopReason = "end_turn"
@@ -834,6 +834,12 @@ def chat_completion_to_message_response(completion: ChatCompletion) -> MessageRe
                 )
 
         stop_reason = "refusal" if msg.refusal else _finish_reason_to_stop_reason(choice.finish_reason)
+        if (
+            stop_reason == "end_turn"
+            and choice.finish_reason == "stop"
+            and any(isinstance(block, ToolUseBlock) for block in content_blocks)
+        ):
+            stop_reason = "tool_use"
 
     if not content_blocks:
         content_blocks.append(_text_block("", text_signature))
@@ -902,6 +908,8 @@ class StreamingState:
         self.cache_creation_input_tokens: int | None = None
         self.cache_creation: CacheCreation | None = None
         self.stop_reason: StopReason | None = None
+        self.finished = False
+        """Whether a chunk carried a finish_reason, which a stream cut short never does."""
         self.tool_call_id: str | None = None
         self.tool_call_name: str | None = None
         self.tool_block_indexes: dict[int, int] = {}
@@ -922,7 +930,8 @@ def chat_completion_chunk_to_message_stream_events(
     """Convert a ChatCompletionChunk to a list of MessageStreamEvents.
 
     This is stateful: it tracks the current content block index and type to emit
-    the correct lifecycle events (start/delta/stop).
+    the correct lifecycle events (start/delta/stop). A normal ``stop`` after tool-use blocks
+    requests tool execution, even when those blocks have already closed.
 
     Gemini state follows the non-streaming conversion where the event stream has room for it. A
     tool_use ``content_block_start`` carries the tool call's ``extra_content`` when the fragment
@@ -1122,10 +1131,13 @@ def chat_completion_chunk_to_message_stream_events(
                     )
 
     if choice.finish_reason:
+        state.finished = True
         _close_current_block(state, events)
         # OpenAI ends a streamed refusal with finish_reason="stop", which must not mask the refusal.
         if state.stop_reason != "refusal":
             state.stop_reason = _finish_reason_to_stop_reason(choice.finish_reason)
+            if choice.finish_reason == "stop" and state.tool_call_blocks:
+                state.stop_reason = "tool_use"
 
     return events
 

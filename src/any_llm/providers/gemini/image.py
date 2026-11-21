@@ -6,8 +6,6 @@ import base64
 import re
 import time
 from math import gcd
-from os import PathLike
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from google.genai import types
@@ -20,7 +18,14 @@ from any_llm.exceptions import (
     ProviderError,
     UnsupportedParameterError,
 )
-from any_llm.types.image import Image, ImageEditParams, ImageGenerationParams, ImagesResponse, sniff_image_format
+from any_llm.types.image import (
+    Image,
+    ImageEditParams,
+    ImageGenerationParams,
+    ImagesResponse,
+    read_image_content,
+    sniff_image_format,
+)
 
 from .base import GoogleProvider
 
@@ -189,28 +194,6 @@ def generation_request(params: ImageGenerationParams, provider_name: str, **kwar
     return {"model": params.model_id, "contents": params.prompt, "config": config}, count
 
 
-def _read_bytes(content: Any, provider_name: str) -> bytes:
-    if isinstance(content, bytes):
-        return content
-    if isinstance(content, PathLike):
-        path = Path(content)
-        try:
-            return path.read_bytes()
-        except (OSError, ValueError) as exc:
-            msg = f"Cannot read image path {str(path)!r}: {getattr(exc, 'strerror', None) or exc}"
-            raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
-    try:
-        data = content.read()
-    except (OSError, ValueError) as exc:
-        # ValueError is what reading a closed file raises.
-        msg = f"Cannot read image file object: {exc}"
-        raise InvalidRequestError(msg, original_exception=exc, provider_name=provider_name) from exc
-    if not isinstance(data, bytes):
-        msg = "Image file objects must be opened in binary mode"
-        raise InvalidRequestError(msg, provider_name=provider_name)
-    return data
-
-
 def _image_part(image: FileTypes, provider_name: str) -> types.Part:
     content_type: str | None = None
     if isinstance(image, tuple):
@@ -218,7 +201,7 @@ def _image_part(image: FileTypes, provider_name: str) -> types.Part:
         content_type = image[2] if len(image) > 2 else None
     else:
         content = image
-    data = _read_bytes(content, provider_name)
+    data = read_image_content(content, provider_name)
     if content_type is None and (sniffed := sniff_image_format(data)) is not None:
         content_type = sniffed[1]
     if content_type is None:
