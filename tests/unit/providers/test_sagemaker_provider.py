@@ -37,3 +37,16 @@ def test_convert_params_omits_unset_sampling_params() -> None:
 
     assert "temperature" not in result
     assert "top_p" not in result
+
+
+def test_convert_params_keeps_system_messages_in_messages() -> None:
+    """The OpenAI chat schema served by SageMaker containers reads system prompts from `messages` only."""
+    messages = [
+        {"role": "system", "content": "Answer in French."},
+        {"role": "user", "content": "hi"},
+        {"role": "system", "content": "Be brief."},
+    ]
+    result = _convert_params(CompletionParams(model_id="model-id", messages=messages), {})
+
+    assert result["messages"] == messages
+    assert "system" not in result

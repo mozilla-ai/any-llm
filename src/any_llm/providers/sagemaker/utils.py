@@ -24,18 +24,9 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     """Convert CompletionParams to kwargs for SageMaker API."""
     result_kwargs: dict[str, Any] = kwargs.copy()
 
-    messages = []
-    system_message = None
-
-    for message in params.messages:
-        if message["role"] == "system":
-            system_message = message["content"]
-        else:
-            messages.append(message)
-
-    result_kwargs["messages"] = messages
-    if system_message:
-        result_kwargs["system"] = system_message
+    # SageMaker LLM containers (TGI, vLLM, LMI) serve the OpenAI chat schema, which takes system
+    # prompts as messages. TGI and vLLM ignore a top-level "system" field, so it was lost.
+    result_kwargs["messages"] = list(params.messages)
 
     if params.max_tokens:
         result_kwargs["max_tokens"] = params.max_tokens
