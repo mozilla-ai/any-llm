@@ -120,9 +120,6 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
 
     result_kwargs: dict[str, Any] = kwargs.copy()
 
-    if params.reasoning_effort in ("auto", "none"):
-        params.reasoning_effort = None
-
     if params.response_format is not None:
         result_kwargs["response_format"] = type_to_response_format_param(response_format=params.response_format)  # type: ignore[arg-type]
 
@@ -132,6 +129,14 @@ def _convert_params(params: CompletionParams, **kwargs: dict[str, Any]) -> dict[
             exclude={"model_id", "messages", "response_format", "parallel_tool_calls"},
         )
     )
+
+    # `AsyncInferenceClient.chat_completion` has no `reasoning_effort` argument, but the
+    # router reads the field from the request body, so it travels through `extra_body`.
+    reasoning_effort = result_kwargs.pop("reasoning_effort", None)
+    if reasoning_effort not in (None, "auto", "none"):
+        extra_body = dict(result_kwargs.get("extra_body") or {})
+        extra_body["reasoning_effort"] = reasoning_effort
+        result_kwargs["extra_body"] = extra_body
 
     result_kwargs["model"] = params.model_id
     result_kwargs["messages"] = params.messages
