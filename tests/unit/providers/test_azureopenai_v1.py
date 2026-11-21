@@ -346,7 +346,7 @@ def test_sync_chat_responses_and_streaming() -> None:
             provider.completion(model="deployment", messages=messages).choices[0].message.content == "Hello from Azure"
         )
         assert provider.responses(model="deployment", input_data="Hello").id == "resp-test"
-        assert len(list(provider.completion(model="deployment", messages=messages, stream=True))) == 1
+        assert len(list(provider.completion(model="deployment", messages=messages, stream=True))) == 2
         assert len(requests) == 3
     finally:
         asyncio.run(provider.client.close())
@@ -492,7 +492,7 @@ class TrackedStream(httpx.AsyncByteStream):
     @override
     async def __aiter__(self) -> AsyncIterator[bytes]:
         if self.api == "chat":
-            yield _CHAT_STREAM.split(b"data: [DONE]")[0]
+            yield _CHAT_STREAM.split(b"\n\n")[0] + b"\n\n"
         else:
             yield (
                 b'data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg",'
@@ -504,6 +504,8 @@ class TrackedStream(httpx.AsyncByteStream):
         if self.mode == "cancellation":
             self.waiting.set()
             await asyncio.Event().wait()
+        if self.api == "chat":
+            yield _CHAT_STREAM.split(b"\n\n")[1] + b"\n\n"
         yield b"data: [DONE]\n\n"
 
     @override
@@ -552,7 +554,8 @@ async def test_stream_releases_transport(mode: str, api: str) -> None:
             with pytest.raises(asyncio.CancelledError):
                 await task
         elif mode == "exhaustion":
-            assert [chunk async for chunk in stream] == []
+            remaining = [chunk async for chunk in stream]
+            assert len(remaining) == (1 if api == "chat" else 0)
         assert body.closed
     finally:
         await provider.client.close()

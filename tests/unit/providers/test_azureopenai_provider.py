@@ -35,6 +35,8 @@ _CHAT_STREAM = (
     b'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,'
     b'"model":"deployment-name","choices":[{"index":0,"delta":{"role":"assistant",'
     b'"content":"Hello"},"finish_reason":null}]}\n\n'
+    b'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,'
+    b'"model":"deployment-name","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
     b"data: [DONE]\n\n"
 )
 _RESPONSES_RESPONSE = {
@@ -347,7 +349,7 @@ async def test_azureopenai_supports_async_entra_provider_and_chat_sse() -> None:
 
     assert [request.url.path for request in requests] == ["/openai/v1/chat/completions"]
     assert [request.headers["Authorization"] for request in requests] == ["Bearer async-entra-token"]
-    assert [chunk.choices[0].delta.content for chunk in chunks] == ["Hello"]
+    assert [chunk.choices[0].delta.content for chunk in chunks] == ["Hello", None]
 
 
 @pytest.mark.asyncio
