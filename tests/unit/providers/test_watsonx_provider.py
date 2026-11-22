@@ -139,6 +139,33 @@ async def test_watsonx_with_dataclass_response_format() -> None:
 
 
 @_SKIP_PYTHON_314
+@pytest.mark.asyncio
+async def test_watsonx_response_format_keeps_content_parts() -> None:
+    from dataclasses import dataclass
+
+    @dataclass
+    class TestOutput:
+        name: str
+
+    image_part = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+    text_part = {"type": "text", "text": "Who is this?"}
+    messages = [{"role": "user", "content": [text_part, image_part]}]
+
+    with mock_watsonx_provider() as (mock_model_instance, _mock_convert_response, _mock_model_inference):
+        provider = WatsonxProvider(api_key="test-api-key")
+        await provider._acompletion(
+            CompletionParams(model_id="test-model", messages=messages, response_format=TestOutput)
+        )
+
+        content = mock_model_instance.achat.call_args[1]["messages"][0]["content"]
+        assert isinstance(content, list)
+        assert content[0]["type"] == "text"
+        assert "JSON object" in content[0]["text"]
+        assert "name" in content[0]["text"]
+        assert content[1:] == [text_part, image_part]
+
+
+@_SKIP_PYTHON_314
 def test_watsonx_SUPPORTS_COMPLETION_STREAMING() -> None:
     """Test that WatsonxProvider correctly advertises streaming support."""
     provider = WatsonxProvider(api_key="test-key")
