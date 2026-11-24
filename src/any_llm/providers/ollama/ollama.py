@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import InvalidRequestError
+from any_llm.exceptions import InvalidRequestError, ProviderError
 from any_llm.logging import logger
 from any_llm.utils.embedding import apply_encoding_format, pop_encoding_format
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
@@ -262,7 +262,9 @@ class OllamaProvider(AnyLLM):
         # into a single, invalid JSON string. Assign a stream-global,
         # monotonically increasing index so each tool call stays in its own slot.
         tool_call_index = 0
+        received_done = False
         async for chunk in response:
+            received_done = received_done or chunk.done is True
             converted = self._convert_completion_chunk_response(chunk)
             for choice in converted.choices:
                 delta = choice.delta
@@ -276,6 +278,10 @@ class OllamaProvider(AnyLLM):
                 if choice.finish_reason == "stop" and tool_call_index > 0:
                     choice.finish_reason = "tool_calls"
             yield converted
+
+        if not received_done:
+            msg = "Completion stream ended before Ollama sent done=true."
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
 
     @override
     async def _acompletion(
