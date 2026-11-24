@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from openai import AsyncStream
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.model import Model as OpenAIModel
 from openai.types.responses import (
     ResponseCompactionItem,
@@ -916,15 +917,23 @@ async def test_stream_releases_transport(mode: str, api: str, provider_type: typ
 
 
 def _chunk_stream(*chunks: tuple[int, str | None]) -> tuple[OpenAIChunkStream, AsyncMock]:
-    async def iterate() -> AsyncIterator[Any]:
+    async def iterate() -> AsyncIterator[OpenAIChatCompletionChunk]:
         for index, finish_reason in chunks:
-            yield MagicMock(choices=[MagicMock(index=index, finish_reason=finish_reason)])
+            yield OpenAIChatCompletionChunk.model_validate(
+                {
+                    "id": "chatcmpl-test",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": "gpt-5.6",
+                    "choices": [{"index": index, "delta": {"content": "Hi"}, "finish_reason": finish_reason}],
+                }
+            )
 
     response = MagicMock(spec=AsyncStream)
     response.__aiter__.side_effect = iterate
     close = AsyncMock()
     setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
-    return OpenAIChunkStream(response, lambda chunk: chunk), close
+    return OpenAIChunkStream(response, BaseOpenAIProvider._convert_completion_chunk_response), close
 
 
 @pytest.mark.asyncio
