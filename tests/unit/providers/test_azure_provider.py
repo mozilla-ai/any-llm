@@ -14,6 +14,7 @@ from any_llm.providers.azure.utils import (
     _convert_model_info_to_list,
     _convert_response_format,
     _create_openai_chunk_from_azure_chunk,
+    _ToolCallIndexer,
 )
 from any_llm.types.completion import ChatCompletionMessageFunctionToolCall, CompletionParams
 from any_llm.types.messages import MessageDeltaEvent, MessageStopEvent
@@ -397,3 +398,80 @@ async def test_streamed_tool_call_completes_a_messages_stream_as_tool_use() -> N
     assert isinstance(events[-1], MessageStopEvent)
     assert isinstance(events[-2], MessageDeltaEvent)
     assert events[-2].delta.stop_reason == "tool_use"
+
+
+def _mock_azure_deltas(mock_client: MagicMock, deltas: list[dict[str, Any]]) -> None:
+    async def stream() -> AsyncIterator[StreamingChatCompletionsUpdate]:
+        for delta in deltas:
+            yield _azure_stream_chunk(delta)
+        yield _azure_stream_chunk({}, "tool_calls")
+
+    mock_client.complete = AsyncMock(side_effect=lambda **_: stream())
+
+
+async def _stream_tool_calls(deltas: list[dict[str, Any]]) -> tuple[list[int], list[tuple[str, str]]]:
+    with patch("any_llm.providers.azure.azure.aio.ChatCompletionsClient") as mock_chat_client:
+        _mock_azure_deltas(mock_chat_client.return_value, deltas)
+        provider = AzureProvider(api_key="test-key", api_base="https://test.example.com")
+
+        stream = await provider.acompletion(
+            model="gpt-4.1-nano", messages=[{"role": "user", "content": "Weather and time?"}], stream=True
+        )
+        assert isinstance(stream, AsyncIterator)
+        chunks = [chunk async for chunk in stream]
+
+    indexes = [tc.index for chunk in chunks for tc in (chunk.choices[0].delta.tool_calls or [])]
+    tool_calls = accumulate_chunks(chunks).choices[0].message.tool_calls
+    assert tool_calls is not None
+    calls = []
+    for tc in tool_calls:
+        assert isinstance(tc, ChatCompletionMessageFunctionToolCall)
+        calls.append((tc.function.name, tc.function.arguments))
+    return indexes, calls
+
+
+@pytest.mark.asyncio
+async def test_parallel_tool_calls_without_a_wire_index_get_distinct_indexes() -> None:
+    deltas: list[dict[str, Any]] = [
+        {"tool_calls": [{"id": "call_a", "type": "function", "function": {"name": "get_weather", "arguments": ""}}]},
+        {"tool_calls": [{"function": {"arguments": '{"city": "Paris"}'}}]},
+        {"tool_calls": [{"id": "call_b", "type": "function", "function": {"name": "get_time", "arguments": ""}}]},
+        {"tool_calls": [{"function": {"arguments": '{"tz": "CET"}'}}]},
+    ]
+
+    indexes, calls = await _stream_tool_calls(deltas)
+
+    assert indexes == [0, 0, 1, 1]
+    assert calls == [("get_weather", '{"city": "Paris"}'), ("get_time", '{"tz": "CET"}')]
+
+
+@pytest.mark.asyncio
+async def test_streamed_tool_call_keeps_the_wire_index() -> None:
+    """Both calls open in one chunk, then the first one continues: only the wire index says which."""
+    deltas: list[dict[str, Any]] = [
+        {
+            "tool_calls": [
+                {"index": 0, "id": "call_a", "type": "function", "function": {"name": "get_weather", "arguments": ""}},
+                {"index": 1, "id": "call_b", "type": "function", "function": {"name": "get_time", "arguments": ""}},
+            ]
+        },
+        {"tool_calls": [{"index": 0, "function": {"arguments": '{"city": "Paris"}'}}]},
+        {"tool_calls": [{"index": 1, "function": {"arguments": '{"tz": "CET"}'}}]},
+    ]
+
+    indexes, calls = await _stream_tool_calls(deltas)
+
+    assert indexes == [0, 1, 0, 1]
+    assert calls == [("get_weather", '{"city": "Paris"}'), ("get_time", '{"tz": "CET"}')]
+
+
+def test_tool_call_indexer_continues_a_repeated_id_and_tracks_each_choice() -> None:
+    indexer = _ToolCallIndexer()
+
+    assert indexer.index_for(0, None) == 0
+    assert indexer.index_for(0, "call_a") == 0
+    assert indexer.index_for(0, "call_a") == 0
+    assert indexer.index_for(0, "call_b") == 1
+    assert indexer.index_for(0, None) == 1
+    assert indexer.index_for(1, "call_c") == 0
+    assert indexer.index_for(1, None) == 0
