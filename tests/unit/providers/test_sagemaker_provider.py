@@ -117,3 +117,61 @@ def test_stream_chunk_maps_choices_finish_reason(raw: str | None, expected: str 
     assert chunk.choices[0].finish_reason == expected
     assert chunk.choices[0].delta.content == "hi"
     assert chunk.choices[0].delta.tool_calls is None
+
+
+def test_stream_chunk_preserves_nonzero_tool_call_index() -> None:
+    event = _event({"choices": [{"delta": {"tool_calls": [{"index": 2, "function": {"arguments": "{}"}}]}}]})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    tool_calls = chunk.choices[0].delta.tool_calls
+    assert tool_calls is not None
+    assert tool_calls[0].index == 2
+
+
+def test_stream_chunk_keeps_supplied_tool_call_type_without_function() -> None:
+    event = _event({"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_3", "type": "function"}]}}]})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    tool_calls = chunk.choices[0].delta.tool_calls
+    assert tool_calls is not None
+    assert tool_calls[0].type == "function"
+    assert tool_calls[0].function is None
+
+
+def test_stream_chunk_tool_call_type_is_none_without_type_or_function() -> None:
+    event = _event({"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_4"}]}}]})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    tool_calls = chunk.choices[0].delta.tool_calls
+    assert tool_calls is not None
+    assert tool_calls[0].type is None
+
+
+def test_stream_chunk_is_finished_keeps_tool_calls_finish_reason() -> None:
+    event = _event({"choices": [{"delta": {}, "finish_reason": "tool_calls"}], "is_finished": True})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    assert chunk.choices[0].finish_reason == "tool_calls"
+
+
+def test_stream_chunk_is_finished_defaults_to_stop() -> None:
+    event = _event({"token": {"text": "done"}, "is_finished": True})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    assert chunk.choices[0].finish_reason == "stop"
+
+
+def test_stream_chunk_uses_payload_id_and_created() -> None:
+    event = _event({"id": "chatcmpl-abc", "created": 1700000000, "choices": [{"delta": {"content": "hi"}}]})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    assert chunk.id == "chatcmpl-abc"
+    assert chunk.created == 1700000000
+
+
+def test_stream_chunk_falls_back_to_generated_id_and_created() -> None:
+    event = _event({"choices": [{"delta": {"content": "hi"}}]})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    assert chunk.id.startswith("chatcmpl-")
+    assert chunk.created > 0

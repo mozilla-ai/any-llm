@@ -166,7 +166,7 @@ def _create_openai_chunk_from_sagemaker_chunk(event: dict[str, Any], model: str)
                 ChoiceDeltaToolCall(
                     index=tc.get("index", i),
                     id=tc.get("id"),
-                    type="function" if tc.get("function") else None,
+                    type="function" if tc.get("type") == "function" or tc.get("function") else None,
                     function=ChoiceDeltaToolCallFunction(
                         name=tc["function"].get("name"),
                         arguments=tc["function"].get("arguments"),
@@ -184,17 +184,17 @@ def _create_openai_chunk_from_sagemaker_chunk(event: dict[str, Any], model: str)
         elif finish_reason_raw:
             finish_reason = "stop"
 
-    if payload.get("is_finished"):
+    if payload.get("is_finished") and finish_reason is None:
         finish_reason = "stop"
 
     delta = ChoiceDelta(content=content, role="assistant", tool_calls=tool_calls)
     choice = ChunkChoice(delta=delta, finish_reason=finish_reason, index=0)
 
     return ChatCompletionChunk(
-        id=f"chatcmpl-{int(time())}",
+        id=payload.get("id") or f"chatcmpl-{int(time())}",
         choices=[choice],
         model=model,
-        created=int(time()),
+        created=payload.get("created") or int(time()),
         object="chat.completion.chunk",
     )
 
