@@ -1168,6 +1168,23 @@ async def test_streaming_completion_raises_if_ollama_never_reports_done(has_part
         await provider.client._client.aclose()
 
 
+def test_sync_streaming_completion_raises_if_ollama_never_reports_done() -> None:
+    async def chunk_iter() -> AsyncIterator[Mock]:
+        yield _make_stream_chunk()
+
+    with patch.object(OllamaProvider, "_init_client"):
+        provider = OllamaProvider(api_key=None)
+        provider.client = Mock()
+        provider.client.chat = AsyncMock(return_value=chunk_iter())
+
+        stream = provider.completion(model="llama3.1", messages=[{"role": "user", "content": "Hello"}], stream=True)
+        assert isinstance(stream, Iterator)
+        first = next(stream)
+        assert first.choices[0].finish_reason is None
+        with pytest.raises(ProviderError, match="before Ollama sent done=true"):
+            next(stream)
+
+
 @pytest.mark.parametrize("done_reason", [None, "load", "unload", "stop", "length"])
 def test_completion_normalization_preserves_tool_call_precedence(done_reason: str | None) -> None:
     response = OllamaChatResponse(
