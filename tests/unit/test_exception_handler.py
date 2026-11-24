@@ -418,11 +418,27 @@ def test_convert_exception_prefers_retry_after_from_the_response_over_ms_on_the_
     assert result.retry_after == "9"
 
 
-@pytest.mark.parametrize("value", ["soon", "-5", "nan", "inf", "", True, 1.5, object()])
+@pytest.mark.parametrize(
+    "value", ["soon", "-5", "nan", "inf", "", "1e1000000", "1e999999", "1e-999999", True, 1.5, object()]
+)
 def test_convert_exception_rejects_unusable_retry_after_ms_values(value: object) -> None:
     error = _ResponseStatusError(429, "Rate limit exceeded")
     error.response.headers = {"retry-after-ms": value}  # type: ignore[attr-defined]
     result = convert_exception(error, "openai")
+    assert isinstance(result, RateLimitError)
+    assert result.retry_after is None
+
+
+@pytest.mark.parametrize(
+    "details",
+    [None, "quota exceeded", {"error": "quota exceeded"}, {"error": {"details": "RetryInfo"}}, {"error": {}}],
+    ids=["none", "string-body", "string-error", "string-details", "no-details"],
+)
+def test_convert_exception_ignores_a_details_body_without_retry_info(details: object) -> None:
+    error = _ResponseStatusError(429, "Rate limit exceeded")
+    error.response.headers = {}  # type: ignore[attr-defined]
+    error.details = details  # type: ignore[attr-defined]
+    result = convert_exception(error, "gemini")
     assert isinstance(result, RateLimitError)
     assert result.retry_after is None
 
