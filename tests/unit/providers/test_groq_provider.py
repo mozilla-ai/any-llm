@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from pydantic import BaseModel
 
@@ -794,8 +795,6 @@ async def test_chat_and_responses_use_configured_base_url(
     base_url: str | None,
     expected_root: str,
 ) -> None:
-    import httpx
-
     from any_llm.providers.groq.groq import GroqProvider
 
     monkeypatch.delenv("GROQ_BASE_URL", raising=False)
@@ -820,8 +819,7 @@ async def test_chat_and_responses_use_configured_base_url(
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http_client:
-        client_args = {"base_url": base_url} if base_url is not None else {}
-        provider = GroqProvider(api_key="test-api-key", api_base=api_base, http_client=http_client, **client_args)
+        provider = GroqProvider(api_key="test-api-key", api_base=api_base, http_client=http_client, base_url=base_url)
         await provider.acompletion("test-model", [{"role": "user", "content": "hello"}])
         await provider.aresponses("test-model", "hello")
 
