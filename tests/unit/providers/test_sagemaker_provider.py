@@ -1,4 +1,7 @@
 import json
+from typing import Any
+
+import pytest
 
 from any_llm.providers.sagemaker.sagemaker import SagemakerProvider
 from any_llm.providers.sagemaker.utils import _convert_params, _create_openai_chunk_from_sagemaker_chunk
@@ -41,7 +44,7 @@ def test_convert_params_omits_unset_sampling_params() -> None:
     assert "top_p" not in result
 
 
-def _event(payload: dict) -> dict:
+def _event(payload: dict[str, Any]) -> dict[str, Any]:
     return {"PayloadPart": {"Bytes": json.dumps(payload).encode("utf-8")}}
 
 
@@ -101,3 +104,16 @@ def test_stream_chunk_without_function_keeps_index() -> None:
     assert tool_calls is not None
     assert tool_calls[0].index == 0
     assert tool_calls[0].function is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("length", "length"), ("tool_calls", "tool_calls"), ("stop", "stop"), ("content_filter", "stop"), (None, None)],
+)
+def test_stream_chunk_maps_choices_finish_reason(raw: str | None, expected: str | None) -> None:
+    event = _event({"choices": [{"delta": {"content": "hi"}, "finish_reason": raw}]})
+    chunk = _create_openai_chunk_from_sagemaker_chunk(event, "m")
+    assert chunk is not None
+    assert chunk.choices[0].finish_reason == expected
+    assert chunk.choices[0].delta.content == "hi"
+    assert chunk.choices[0].delta.tool_calls is None

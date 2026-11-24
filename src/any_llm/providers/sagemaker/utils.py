@@ -177,10 +177,12 @@ def _create_openai_chunk_from_sagemaker_chunk(event: dict[str, Any], model: str)
                 for i, tc in enumerate(delta["tool_calls"])
             ]
         finish_reason_raw = payload["choices"][0].get("finish_reason")
-        if finish_reason_raw:
-            finish_reason = "length" if finish_reason_raw == "length" else "stop"
-            if finish_reason_raw == "tool_calls":
-                finish_reason = "tool_calls"
+        if finish_reason_raw == "length":
+            finish_reason = "length"
+        elif finish_reason_raw == "tool_calls":
+            finish_reason = "tool_calls"
+        elif finish_reason_raw:
+            finish_reason = "stop"
 
     if payload.get("is_finished"):
         finish_reason = "stop"
