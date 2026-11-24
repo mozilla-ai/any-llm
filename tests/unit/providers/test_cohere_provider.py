@@ -1506,6 +1506,7 @@ def test_streaming_tool_plan_delta_without_text_carries_no_content() -> None:
         ({"top_p": 0.5}, {"p": 0.5}),
         ({"max_completion_tokens": 64}, {"max_tokens": 64}),
         ({"max_tokens": 32, "max_completion_tokens": 64}, {"max_tokens": 64}),
+        ({"max_tokens": 32}, {"max_tokens": 32}),
     ],
 )
 async def test_openai_style_params_are_renamed_for_chat(
@@ -1524,3 +1525,30 @@ async def test_openai_style_params_are_renamed_for_chat(
         assert name not in sent
     for name, value in cohere_params.items():
         assert sent[name] == value
+
+
+@pytest.mark.asyncio
+async def test_openai_style_params_are_renamed_for_chat_stream() -> None:
+    provider = _mk_provider()
+
+    async def _stream() -> Any:
+        if False:
+            yield None
+
+    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+        result = await provider.acompletion(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            stop="END",
+            top_p=0.5,
+            max_completion_tokens=64,
+            stream=True,
+        )
+        assert [chunk async for chunk in result] == []
+
+    sent = mock_chat_stream.call_args.kwargs
+    for name in ("stop", "top_p", "max_completion_tokens"):
+        assert name not in sent
+    assert sent["stop_sequences"] == ["END"]
+    assert sent["p"] == 0.5
+    assert sent["max_tokens"] == 64
