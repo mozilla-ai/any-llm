@@ -146,7 +146,7 @@ def test_convert_video_params_maps_every_field_to_togethers_names() -> None:
 
 def test_convert_video_params_sends_resolution_and_ratio_as_arguments() -> None:
     params = VideoGenerationParams(
-        model_id="ByteDance/Seedance-2.5", prompt="penguins", resolution="480P", aspect_ratio="16:9"
+        model_id="ByteDance/Seedance-2.5", prompt="penguins", resolution="480p", aspect_ratio="16:9"
     )
     assert TogetherProvider._convert_video_params(params, extra_body={"output_quality": 30}) == {
         "model": "ByteDance/Seedance-2.5",
@@ -154,6 +154,15 @@ def test_convert_video_params_sends_resolution_and_ratio_as_arguments() -> None:
         "resolution": "480p",
         "ratio": "16:9",
         "extra_body": {"output_quality": 30},
+    }
+
+
+def test_convert_video_params_keeps_an_uppercase_resolution() -> None:
+    params = VideoGenerationParams(model_id="Wan-AI/wan2.7-r2v", prompt="penguins", resolution="720P")
+    assert TogetherProvider._convert_video_params(params) == {
+        "model": "Wan-AI/wan2.7-r2v",
+        "prompt": "penguins",
+        "resolution": "720P",
     }
 
 
@@ -165,6 +174,8 @@ def test_convert_video_params_sends_resolution_and_ratio_as_arguments() -> None:
         ("720p", {"extra_body": {"resolution": "0720p"}}, {"resolution": "720p", "extra_body": {"resolution": "720p"}}),
         ("0720p", {"resolution": "720p"}, {"resolution": "720p"}),
         ("4K", {"extra_body": {"resolution": "4k"}}, {"resolution": "2160p", "extra_body": {"resolution": "2160p"}}),
+        ("0720P", {"resolution": "720p"}, {"resolution": "720P"}),
+        ("720P", {"extra_body": {"resolution": "720p"}}, {"resolution": "720P", "extra_body": {"resolution": "720P"}}),
     ],
 )
 def test_convert_video_params_accepts_a_resolution_spelled_another_way(
