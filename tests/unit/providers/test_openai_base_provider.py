@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from openai import AsyncStream
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.model import Model as OpenAIModel
 from openai.types.responses import (
     ResponseCompactionItem,
@@ -853,6 +854,11 @@ class _TrackedStream(httpx.AsyncByteStream):
         if self.mode == "cancellation":
             self.waiting.set()
             await asyncio.Event().wait()
+        if self.api == "chat":
+            yield (
+                b'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"gpt-5.6",'
+                b'"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+            )
         yield b"data: [DONE]\n\n"
 
     @override
@@ -903,10 +909,59 @@ async def test_stream_releases_transport(mode: str, api: str, provider_type: typ
             with pytest.raises(asyncio.CancelledError):
                 await task
         elif mode == "exhaustion":
-            assert [chunk async for chunk in stream] == []
+            remaining = [chunk async for chunk in stream]
+            assert len(remaining) == (1 if api == "chat" else 0)
         assert body.closed
     finally:
         await provider.client.close()
+
+
+def _chunk_stream(*chunks: tuple[int, str | None]) -> tuple[OpenAIChunkStream, AsyncMock]:
+    async def iterate() -> AsyncIterator[OpenAIChatCompletionChunk]:
+        for index, finish_reason in chunks:
+            yield OpenAIChatCompletionChunk.model_validate(
+                {
+                    "id": "chatcmpl-test",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": "gpt-5.6",
+                    "choices": [{"index": index, "delta": {"content": "Hi"}, "finish_reason": finish_reason}],
+                }
+            )
+
+    response = MagicMock(spec=AsyncStream)
+    response.__aiter__.side_effect = iterate
+    close = AsyncMock()
+    setattr(response, "aclose" if hasattr(response, "aclose") else "close", close)
+    return OpenAIChunkStream(response, BaseOpenAIProvider._convert_completion_chunk_response), close
+
+
+@pytest.mark.asyncio
+async def test_chunk_stream_raises_when_stream_ends_before_finish_reason() -> None:
+    stream, close = _chunk_stream((0, None), (0, None))
+    assert len([await anext(stream), await anext(stream)]) == 2
+    with pytest.raises(ProviderError, match=r"finish_reason for choice\(s\) \[0\]"):
+        await anext(stream)
+    close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_chunk_stream_accepts_stream_with_finish_reason() -> None:
+    stream, _ = _chunk_stream((0, None), (0, "stop"))
+    assert len([chunk async for chunk in stream]) == 2
+
+
+@pytest.mark.asyncio
+async def test_chunk_stream_requires_finish_reason_for_every_choice() -> None:
+    stream, _ = _chunk_stream((0, None), (1, None), (0, "stop"))
+    with pytest.raises(ProviderError, match=r"\[1\]"):
+        [chunk async for chunk in stream]
+
+
+@pytest.mark.asyncio
+async def test_chunk_stream_allows_empty_stream() -> None:
+    stream, _ = _chunk_stream()
+    assert [chunk async for chunk in stream] == []
 
 
 @pytest.mark.asyncio
