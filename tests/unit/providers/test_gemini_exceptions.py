@@ -103,10 +103,24 @@ def test_rate_limit_reads_retry_delay_from_retry_info(delay: str, expected: str)
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "soon"},),
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "-5s"},),
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "1e1000000s"},),
+        ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "1e999999s"},),
+        ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "20"},),
+        ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "s"},),
         ({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": 20},),
         ({"@type": "type.googleapis.com/google.rpc.Help", "retryDelay": "20s"},),
     ],
-    ids=["no-retry-info", "no-delay", "not-a-duration", "negative", "overflowing", "not-a-string", "other-type"],
+    ids=[
+        "no-retry-info",
+        "no-delay",
+        "not-a-duration",
+        "negative",
+        "overflowing",
+        "too-large",
+        "no-unit",
+        "unit-only",
+        "not-a-string",
+        "other-type",
+    ],
 )
 def test_rate_limit_without_a_usable_retry_delay_has_no_retry_after(details: tuple[object, ...]) -> None:
     result = convert_exception(_quota_error(*details), "gemini")

@@ -278,12 +278,16 @@ def _header_value(exception: Exception, names: tuple[str, ...]) -> str | None:
 
 _RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo"
 
+# Fixed-point formatting writes out every digit of the exponent, so a value such
+# as "1e999999" would become a megabyte-long string; no real delay needs this many.
+_MAX_DELAY_EXPONENT = 18
+
 
 def _to_seconds(value: str, per_second: int) -> str | None:
     """Convert a count of 1/per_second-second units to a decimal seconds string, or None if it is not a valid count."""
     try:
         count = Decimal(value.strip())
-        if not count.is_finite() or count < 0:
+        if not count.is_finite() or count < 0 or abs(count.adjusted()) > _MAX_DELAY_EXPONENT:
             return None
         return format(count / per_second, "f")
     except DecimalException:  # not a number, or too large to divide
