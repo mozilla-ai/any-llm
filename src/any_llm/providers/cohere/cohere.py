@@ -79,6 +79,13 @@ class CohereProvider(AnyLLM):
             exclude_none=True,
             exclude={"model_id", "messages", "response_format", "stream", "stream_options", "reasoning_effort"},
         )
+        # Cohere's chat endpoint names these differently from the OpenAI parameters CompletionParams uses.
+        if (stop := converted_params.pop("stop", None)) is not None:
+            converted_params["stop_sequences"] = [stop] if isinstance(stop, str) else stop
+        if (top_p := converted_params.pop("top_p", None)) is not None:
+            converted_params["p"] = top_p
+        if (max_completion_tokens := converted_params.pop("max_completion_tokens", None)) is not None:
+            converted_params["max_tokens"] = max_completion_tokens
         if params.reasoning_effort != "auto":
             if params.reasoning_effort is None or params.reasoning_effort == "none":
                 converted_params["thinking"] = {"type": "disabled"}
