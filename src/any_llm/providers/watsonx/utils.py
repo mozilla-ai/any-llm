@@ -146,10 +146,13 @@ Please respond with a JSON object that matches the following schema:
 {json.dumps(schema, indent=2)}
 
 Return the JSON object only, no other text, do not wrap it in ```json or ```.
-
-{original_content}
 """
-        modified_messages[-1]["content"] = json_instruction
+        content: str | list[Any]
+        if isinstance(original_content, list):
+            content = [{"type": "text", "text": json_instruction}, *original_content]
+        else:
+            content = f"{json_instruction}\n{original_content}\n"
+        modified_messages[-1] = {**modified_messages[-1], "content": content}
     else:
         msg = "Last message is not a user message"
         raise ValueError(msg)
