@@ -131,10 +131,9 @@ def _convert_response(response_data: ChatCompletions) -> ChatCompletion:
 class _ToolCallIndexer:
     """Track the OpenAI ``index`` of each streamed tool call across the chunks of one stream.
 
-    The Azure AI Inference SDK does not expose an index on streamed tool call updates. A call opens
-    with a delta that carries its ``id`` and name, and the deltas that follow carry only more
-    arguments (the id is empty). A call therefore gets the next index when its id is new, and a delta
-    without an id continues the call that came last.
+    Used only when the service sends no ``index`` of its own. A call opens with a delta that carries
+    its ``id`` and name, and the deltas that follow carry only more arguments (no id). A call therefore
+    gets the next index when its id is new, and a delta without an id continues the call that came last.
     """
 
     def __init__(self) -> None:
@@ -157,7 +156,8 @@ def _create_openai_chunk_from_azure_chunk(
 
     Pass the same ``indexer`` for every chunk of a stream so parallel tool calls keep distinct indexes.
     """
-    indexer = indexer or _ToolCallIndexer()
+    if indexer is None:
+        indexer = _ToolCallIndexer()
     openai_choices = []
     choices = azure_chunk.choices
 
@@ -187,9 +187,13 @@ def _create_openai_chunk_from_azure_chunk(
                         arguments=function_data.arguments,
                     )
 
+                # The SDK model has no index field, but the raw mapping keeps the one the service sends
+                # (Azure OpenAI sends one); the indexer covers a service that does not.
+                wire_index = tool_call.get("index")
+                index = wire_index if isinstance(wire_index, int) else indexer.index_for(choice.index, tool_call.id)
                 delta_tool_calls.append(
                     ChoiceDeltaToolCall(
-                        index=indexer.index_for(choice.index, tool_call.id),
+                        index=index,
                         id=tool_call.id,
                         type="function",
                         function=function,
