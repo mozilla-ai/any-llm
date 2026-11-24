@@ -202,6 +202,36 @@ async def test_together_response_format_on_strict_model() -> None:
     assert "paris" in parsed.city_name.lower()
 
 
+@pytest.mark.asyncio
+async def test_groq_streamed_response_format() -> None:
+    """Groq streams strict json_schema output on chat completions (issue #1627).
+
+    Groq's structured-outputs page still says streaming is unsupported, but the API
+    accepts and honors it, so this pins the real behavior.
+    """
+
+    class CityResponse(BaseModel):
+        city_name: str
+
+    try:
+        llm = AnyLLM.create(LLMProvider.GROQ)
+        stream = await llm.acompletion(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": "What is the capital of France?"}],
+            response_format=CityResponse,
+            stream=True,
+        )
+    except MissingApiKeyError:
+        if LLMProvider.GROQ in EXPECTED_PROVIDERS:
+            raise
+        pytest.skip("Groq API key not provided, skipping")
+
+    assert not isinstance(stream, ChatCompletion)
+    content = "".join([chunk.choices[0].delta.content or "" async for chunk in stream if chunk.choices])
+    output = CityResponse.model_validate_json(content)
+    assert "paris" in output.city_name.lower()
+
+
 _COHERE_CITY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {"city_name": {"type": "string"}},
