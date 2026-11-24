@@ -1,12 +1,14 @@
 import sys
 from collections.abc import AsyncIterable, AsyncIterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
-from any_llm.providers.watsonx.utils import _convert_streaming_chunk
+from any_llm.providers.watsonx.utils import _convert_streaming_chunk, _convert_structured_type_to_watsonx_json
 from any_llm.providers.watsonx.watsonx import WatsonxProvider
 from any_llm.types.completion import CompletionParams
 
@@ -138,23 +140,28 @@ async def test_watsonx_with_dataclass_response_format() -> None:
         assert "value" in modified_messages[0]["content"]
 
 
+@dataclass
+class _NameDataclass:
+    name: str
+
+
+class _NameModel(BaseModel):
+    name: str
+
+
 @_SKIP_PYTHON_314
 @pytest.mark.asyncio
-async def test_watsonx_response_format_keeps_content_parts() -> None:
-    from dataclasses import dataclass
-
-    @dataclass
-    class TestOutput:
-        name: str
-
+@pytest.mark.parametrize("response_format", [_NameDataclass, _NameModel])
+async def test_watsonx_response_format_keeps_content_parts(response_format: type) -> None:
     image_part = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
     text_part = {"type": "text", "text": "Who is this?"}
-    messages = [{"role": "user", "content": [text_part, image_part]}]
+    original_message = {"role": "user", "content": [text_part, image_part]}
+    messages = [original_message]
 
     with mock_watsonx_provider() as (mock_model_instance, _mock_convert_response, _mock_model_inference):
         provider = WatsonxProvider(api_key="test-api-key")
         await provider._acompletion(
-            CompletionParams(model_id="test-model", messages=messages, response_format=TestOutput)
+            CompletionParams(model_id="test-model", messages=messages, response_format=response_format)
         )
 
         content = mock_model_instance.achat.call_args[1]["messages"][0]["content"]
@@ -163,6 +170,14 @@ async def test_watsonx_response_format_keeps_content_parts() -> None:
         assert "JSON object" in content[0]["text"]
         assert "name" in content[0]["text"]
         assert content[1:] == [text_part, image_part]
+        assert original_message["content"] == [text_part, image_part]
+
+
+def test_convert_structured_type_to_watsonx_json_requires_user_last_message() -> None:
+    messages = [{"role": "assistant", "content": "Hi"}]
+
+    with pytest.raises(ValueError, match="Last message is not a user message"):
+        _convert_structured_type_to_watsonx_json(_NameModel, messages)
 
 
 @_SKIP_PYTHON_314
