@@ -48,7 +48,7 @@ def _dump_foreign_model(model_cls: type[BaseModel], value: Any) -> Any:
 
 
 class PromptTokensDetails(OpenAIPromptTokensDetails):
-    """OpenAI prompt token breakdown extended with the TTL split of cache writes.
+    """OpenAI prompt token breakdown extended with cache writes, their TTL split, and cached audio.
 
     As in OpenAI, ``cached_tokens`` and ``cache_write_tokens`` are subsets of ``prompt_tokens``.
     ``cached_audio_tokens`` is the part of ``cached_tokens`` that is audio, so it is a subset of
