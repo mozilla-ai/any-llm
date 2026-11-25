@@ -3,6 +3,9 @@ from typing import Any, Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
+from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
+from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
 
 from any_llm.providers.openai.xml_reasoning import (
     get_chunk_content,
@@ -10,6 +13,7 @@ from any_llm.providers.openai.xml_reasoning import (
     set_chunk_reasoning,
     wrap_chunks_with_xml_reasoning,
 )
+from any_llm.providers.openai.xml_reasoning_utils import convert_chat_completion_chunk_with_xml_reasoning
 from any_llm.types.completion import (
     ChatCompletionChunk,
     ChoiceDelta,
@@ -569,3 +573,37 @@ def test_strip_extra_content_returns_fully_kept_message_as_same_object() -> None
 def test_strip_extra_content_drops_empty_or_malformed_side_channel(extra_content: object) -> None:
     messages: list[dict[str, Any]] = [{"role": "assistant", "content": "ok", "extra_content": extra_content}]
     assert strip_extra_content(messages, keep_namespaces=("google",)) == [{"role": "assistant", "content": "ok"}]
+
+
+def _openai_chunk(content: str, chunk_id: str) -> OpenAIChatCompletionChunk:
+    return OpenAIChatCompletionChunk(
+        id=chunk_id,
+        choices=[
+            OpenAIChunkChoice(
+                finish_reason=None,
+                index=0,
+                delta=OpenAIChoiceDelta(role="assistant", content=content),
+            )
+        ],
+        created=1234567890,
+        model="test-model",
+        object="chat.completion.chunk",
+    )
+
+
+@pytest.mark.asyncio
+async def test_chunk_converter_keeps_unclosed_think_for_later_deltas() -> None:
+    """Stateless chunk conversion must not strip a lone opening tag (issue #1671 review)."""
+    converted = [
+        convert_chat_completion_chunk_with_xml_reasoning(_openai_chunk(content, f"c{index}"))
+        for index, content in enumerate(("<think>", "one", "</think>answer"))
+    ]
+
+    assert converted[0].choices[0].delta.content == "<think>"
+    assert converted[0].choices[0].delta.reasoning is None
+    assert converted[1].choices[0].delta.content == "one"
+    assert converted[2].choices[0].delta.content == "</think>answer"
+
+    # With the opening tag preserved, the stateful parser still matches a complete message.
+    result = await _collect_chunks(wrap_chunks_with_xml_reasoning(_async_iter_chunks(converted)))
+    assert _accumulate(result) == ("answer", "one")

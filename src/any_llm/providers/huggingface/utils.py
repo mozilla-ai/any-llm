@@ -43,7 +43,7 @@ def _create_openai_chunk_from_huggingface_chunk(chunk: HuggingFaceChatCompletion
         if hasattr(hf_delta, "reasoning"):
             delta_dict["reasoning"] = hf_delta.reasoning
 
-        normalize_reasoning_from_provider_fields_and_xml_tags(delta_dict)
+        normalize_reasoning_from_provider_fields_and_xml_tags(delta_dict, extract_unclosed_tags=False)
 
         openai_role = None
         if delta_dict.get("role"):

@@ -255,7 +255,11 @@ def replay_reasoning_content_as_reasoning(messages: list[dict[str, Any]]) -> lis
     return result
 
 
-def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str, Any]) -> None:
+def normalize_reasoning_from_provider_fields_and_xml_tags(
+    message_dict: dict[str, Any],
+    *,
+    extract_unclosed_tags: bool = True,
+) -> None:
     """Extract and normalize reasoning from provider fields and XML tags.
 
     This function mutates the message_dict in place:
@@ -267,6 +271,10 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
     Args:
         message_dict: A dictionary representing a message with 'content' and
                      optionally 'reasoning' fields.
+        extract_unclosed_tags: When True (the default for complete messages), an
+            opening tag with no matching closer is treated as truncated reasoning.
+            Streamed deltas must pass False: each chunk is normalized alone, so
+            stripping a lone ``<think>`` would hide the open tag from later deltas.
 
     """
     if isinstance(message_dict.get("reasoning"), dict) and "content" in message_dict["reasoning"]:
@@ -296,8 +304,26 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
                 reasoning_content = f"{reasoning_content}\n{extracted_reasoning}"
             else:
                 reasoning_content = extracted_reasoning
-            content = think_pattern.sub("", content).strip()
+            content = think_pattern.sub("", content)
 
+        # Streaming flushes an unterminated block as reasoning (issue #1671), so do the same here.
+        # Per-chunk deltas opt out. Only an opener after the last completed closer counts, so a
+        # mismatched pair such as `<think>keep</thinking> answer` stays in content.
+        if extract_unclosed_tags:
+            last_closer_end = max((closer.end() for closer in re.finditer(rf"</(?:{tag_names})>", content)), default=0)
+            unclosed = re.compile(rf"<(?:{tag_names})>").search(content, last_closer_end)
+            if unclosed is not None:
+                extracted_unclosed = content[unclosed.end() :]
+                if extracted_unclosed:
+                    if reasoning_content:
+                        reasoning_content = f"{reasoning_content}\n{extracted_unclosed}"
+                    else:
+                        reasoning_content = extracted_unclosed
+                content = content[: unclosed.start()]
+
+        # Trim only after removing a closed block, as before; text ahead of an unclosed tag keeps
+        # its whitespace, matching what the stream yields.
+        content = content.strip() if matches else content
         message_dict["content"] = content
 
     if reasoning_content is not None:

@@ -70,7 +70,7 @@ def convert_chat_completion_chunk_with_xml_reasoning(
         for choice in choices:
             delta = choice.get("delta") if isinstance(choice, dict) else None
             if isinstance(delta, dict):
-                normalize_reasoning_from_provider_fields_and_xml_tags(delta)
+                normalize_reasoning_from_provider_fields_and_xml_tags(delta, extract_unclosed_tags=False)
 
     response_dict["object"] = "chat.completion.chunk"
     return ChatCompletionChunk.model_validate(response_dict)
