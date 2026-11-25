@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, ProviderError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.messages import (
@@ -297,10 +297,22 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         return _convert_models_list(response)
 
     async def _stream_completion_async(self, **kwargs: Any) -> AsyncIterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
+        """Handle streaming completion. Extracted to avoid generator issues.
+
+        ``message_delta`` can carry a stop reason before the stream is finished. ``message_stop``
+        is the event that ends every complete Anthropic stream, so a connection that closes
+        without it is a cut-off response. Chunks already received are yielded first.
+        """
+        received_message_stop = False
         async with self.client.messages.stream(**kwargs) as anthropic_stream:
             async for event in anthropic_stream:
+                if event.type == "message_stop":
+                    received_message_stop = True
                 yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
+
+        if not received_message_stop:
+            msg = "Completion stream ended before Anthropic sent message_stop."
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
 
     @override
     async def _acompletion(
@@ -398,7 +410,10 @@ class BaseAnthropicProvider(AnyLLM, ABC):
     async def _stream_messages_async(
         self, *, use_beta: bool = False, **kwargs: Any
     ) -> AsyncIterator[MessageStreamEvent]:
-        """Stream Anthropic Messages API and yield SDK event types directly."""
+        """Stream Anthropic Messages API and yield SDK event types directly.
+
+        As in ``_stream_completion_async``, a stream without ``message_stop`` was cut off.
+        """
         event_types: dict[str, type[MessageStreamEvent]] = {
             "message_start": MessageStartEvent,
             "message_delta": MessageDeltaEvent,
@@ -410,11 +425,18 @@ class BaseAnthropicProvider(AnyLLM, ABC):
 
         messages_resource: Any = self.client.beta.messages if use_beta else self.client.messages
 
+        received_message_stop = False
         async with messages_resource.stream(**kwargs) as stream:
             async for event in stream:
+                if event.type == "message_stop":
+                    received_message_stop = True
                 event_model = event_types.get(event.type)
                 if event_model is not None:
                     yield event_model.model_validate(event, from_attributes=True)
+
+        if not received_message_stop:
+            msg = "Messages stream ended before Anthropic sent message_stop."
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
 
     @staticmethod
     def _convert_native_message_to_response(message: Message) -> MessageResponse:

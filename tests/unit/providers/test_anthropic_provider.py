@@ -1,8 +1,9 @@
+import asyncio
 import dataclasses
 import json
 import logging
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Self, cast, get_args
@@ -31,8 +32,9 @@ from anthropic.types.model_info import ModelInfo
 from anthropic.types.raw_message_delta_event import Delta
 from anthropic.types.stop_reason import StopReason
 from pydantic import BaseModel
+from typing_extensions import override
 
-from any_llm.exceptions import InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.providers.anthropic.anthropic import AnthropicProvider
 from any_llm.providers.anthropic.utils import (
     DEFAULT_MAX_TOKENS,
@@ -1194,16 +1196,15 @@ async def test_stream_with_response_format_passes_output_config() -> None:
         "json_schema": {"name": "Foo", "schema": schema},
     }
 
-    async def empty_events() -> AsyncIterator[Any]:
-        if False:
-            yield None
+    async def stopped_events() -> AsyncIterator[Any]:
+        yield MessageStopEvent(type="message_stop")
 
     @asynccontextmanager
-    async def empty_stream() -> AsyncIterator[AsyncIterator[Any]]:
-        yield empty_events()
+    async def stopped_stream() -> AsyncIterator[AsyncIterator[Any]]:
+        yield stopped_events()
 
     with mock_anthropic_provider() as mock_anthropic:
-        mock_anthropic.return_value.messages.stream = Mock(return_value=empty_stream())
+        mock_anthropic.return_value.messages.stream = Mock(return_value=stopped_stream())
         provider = AnthropicProvider(api_key=api_key)
         stream = cast(
             "AsyncIterator[Any]",
@@ -2528,6 +2529,280 @@ async def test_stream_usage_reaches_openai_style_consumer() -> None:
     assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (13, 5, 18)
 
 
+_ANTHROPIC_STREAM_MESSAGE: dict[str, Any] = {
+    "id": "msg_01",
+    "type": "message",
+    "role": "assistant",
+    "content": [],
+    "model": "model-id",
+    "stop_reason": None,
+    "stop_sequence": None,
+    "usage": {"input_tokens": 10, "output_tokens": 1},
+}
+
+
+def _sse(*events: tuple[str, dict[str, Any]]) -> bytes:
+    return "".join(f"event: {name}\ndata: {json.dumps(payload)}\n\n" for name, payload in events).encode()
+
+
+def _text_stream_events(text: str) -> tuple[tuple[str, dict[str, Any]], ...]:
+    return (
+        ("message_start", {"type": "message_start", "message": _ANTHROPIC_STREAM_MESSAGE}),
+        (
+            "content_block_start",
+            {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        ),
+        (
+            "content_block_delta",
+            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}},
+        ),
+    )
+
+
+def _message_delta_event() -> tuple[str, dict[str, Any]]:
+    return (
+        "message_delta",
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": 2},
+        },
+    )
+
+
+def _message_stop_event() -> tuple[str, dict[str, Any]]:
+    return ("message_stop", {"type": "message_stop"})
+
+
+def _streaming_provider(body: bytes, *, stream: httpx2.AsyncByteStream | None = None) -> AnthropicProvider:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.path.endswith("/messages")
+        headers = {"content-type": "text/event-stream"}
+        if stream is not None:
+            return httpx2.Response(200, headers=headers, stream=stream)
+        return httpx2.Response(200, headers=headers, content=body)
+
+    return AnthropicProvider(
+        api_key="test-key",
+        api_base="https://anthropic.test",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+    )
+
+
+def _chunk_text(chunks: list[Any]) -> str:
+    return "".join(choice.delta.content or "" for chunk in chunks for choice in chunk.choices)
+
+
+def _finish_reasons(chunks: list[Any]) -> list[str]:
+    return [choice.finish_reason for chunk in chunks for choice in chunk.choices if choice.finish_reason]
+
+
+async def _consume(stream: AsyncIterator[Any], chunks: list[Any]) -> None:
+    async for chunk in stream:
+        chunks.append(chunk)
+
+
+def _consume_sync(stream: Iterator[Any], chunks: list[Any]) -> None:
+    for chunk in stream:
+        chunks.append(chunk)
+
+
+class _ResettingByteStream(httpx2.AsyncByteStream):
+    """Yield one SSE payload, then fail the way a dropped connection does."""
+
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    @override
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self._payload
+        message = "connection reset"
+        raise RuntimeError(message)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_text", [False, True])
+async def test_streaming_completion_raises_if_anthropic_never_sends_message_stop(include_text: bool) -> None:
+    """A stream that ends without message_stop is incomplete, including an empty body."""
+    body = _sse(*_text_stream_events("A traditional")) if include_text else b""
+    provider = _streaming_provider(body)
+    try:
+        stream = await provider.acompletion(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            max_tokens=16,
+        )
+        assert isinstance(stream, AsyncIterator)
+        chunks: list[Any] = []
+        with pytest.raises(ProviderError, match="before Anthropic sent message_stop") as raised:
+            await _consume(stream, chunks)
+        assert raised.value.provider_name == "anthropic"
+        assert _chunk_text(chunks) == ("A traditional" if include_text else "")
+        assert _finish_reasons(chunks) == []
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_raises_when_stop_reason_arrives_without_message_stop() -> None:
+    """message_delta's stop reason is not the terminal signal; message_stop is."""
+    body = _sse(
+        *_text_stream_events("A traditional"),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        _message_delta_event(),
+    )
+    provider = _streaming_provider(body)
+    try:
+        stream = await provider.acompletion(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            max_tokens=16,
+        )
+        assert isinstance(stream, AsyncIterator)
+        chunks: list[Any] = []
+        with pytest.raises(ProviderError, match="before Anthropic sent message_stop"):
+            await _consume(stream, chunks)
+        assert _chunk_text(chunks) == "A traditional"
+        assert _finish_reasons(chunks) == ["stop"]
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_accepts_stream_that_sends_message_stop() -> None:
+    body = _sse(
+        *_text_stream_events("A traditional"),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        _message_delta_event(),
+        _message_stop_event(),
+    )
+    provider = _streaming_provider(body)
+    try:
+        stream = await provider.acompletion(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            max_tokens=16,
+        )
+        assert isinstance(stream, AsyncIterator)
+        chunks = [chunk async for chunk in stream]
+        assert _chunk_text(chunks) == "A traditional"
+        assert _finish_reasons(chunks) == ["stop"]
+        assert chunks[-1].usage is not None
+        assert chunks[-1].usage.completion_tokens == 2
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_propagates_a_dropped_connection() -> None:
+    """A transport failure is not reported as a missing message_stop."""
+    provider = _streaming_provider(b"", stream=_ResettingByteStream(_sse(*_text_stream_events("A traditional"))))
+    try:
+        stream = await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                max_tokens=16,
+            )
+        )
+        assert isinstance(stream, AsyncIterator)
+        chunks: list[Any] = []
+        with pytest.raises(RuntimeError, match="connection reset"):
+            await _consume(stream, chunks)
+        assert _chunk_text(chunks) == "A traditional"
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_completion_stopped_by_the_caller_does_not_raise() -> None:
+    """Closing the stream after a partial read is the caller's choice, not a cut-off response."""
+    provider = _streaming_provider(_sse(*_text_stream_events("A traditional")))
+    try:
+        stream = await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                max_tokens=16,
+            )
+        )
+        assert isinstance(stream, AsyncGenerator)
+        seen = ""
+        async for chunk in stream:
+            seen += _chunk_text([chunk])
+            if seen:
+                break
+        await stream.aclose()
+        assert seen == "A traditional"
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_messages_raises_if_anthropic_never_sends_message_stop() -> None:
+    provider = _streaming_provider(_sse(*_text_stream_events("A traditional")))
+    try:
+        stream = await provider.amessages(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=16,
+            stream=True,
+        )
+        assert isinstance(stream, AsyncIterator)
+        events: list[Any] = []
+        with pytest.raises(ProviderError, match="Messages stream ended before Anthropic sent message_stop"):
+            await _consume(stream, events)
+        assert [event.type for event in events] == ["message_start", "content_block_start", "content_block_delta"]
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_messages_accepts_stream_that_sends_message_stop() -> None:
+    body = _sse(
+        *_text_stream_events("A traditional"),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        _message_delta_event(),
+        _message_stop_event(),
+    )
+    provider = _streaming_provider(body)
+    try:
+        stream = await provider.amessages(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=16,
+            stream=True,
+        )
+        assert isinstance(stream, AsyncIterator)
+        events = [event async for event in stream]
+        assert events[-1].type == "message_stop"
+    finally:
+        await provider.client.close()
+
+
+def test_sync_streaming_completion_raises_if_anthropic_never_sends_message_stop() -> None:
+    provider = _streaming_provider(_sse(*_text_stream_events("A traditional")))
+    try:
+        stream = provider.completion(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            stream=True,
+            max_tokens=16,
+        )
+        assert isinstance(stream, Iterator)
+        chunks: list[Any] = []
+        with pytest.raises(ProviderError, match="before Anthropic sent message_stop"):
+            _consume_sync(stream, chunks)
+        assert _chunk_text(chunks) == "A traditional"
+    finally:
+        asyncio.run(provider.client.close())
+
+
 @pytest.mark.asyncio
 async def test_default_n_is_not_sent_to_messages_create() -> None:
     with mock_anthropic_provider() as mock_anthropic:
@@ -2540,16 +2815,15 @@ async def test_default_n_is_not_sent_to_messages_create() -> None:
 
 @pytest.mark.asyncio
 async def test_default_n_is_not_sent_to_messages_stream() -> None:
-    async def empty_events() -> AsyncIterator[Any]:
-        if False:
-            yield None
+    async def stopped_events() -> AsyncIterator[Any]:
+        yield MessageStopEvent(type="message_stop")
 
     @asynccontextmanager
-    async def empty_stream() -> AsyncIterator[AsyncIterator[Any]]:
-        yield empty_events()
+    async def stopped_stream() -> AsyncIterator[AsyncIterator[Any]]:
+        yield stopped_events()
 
     with mock_anthropic_provider() as mock_anthropic:
-        mock_anthropic.return_value.messages.stream = Mock(return_value=empty_stream())
+        mock_anthropic.return_value.messages.stream = Mock(return_value=stopped_stream())
         provider = AnthropicProvider(api_key="test-api-key")
         stream = cast(
             "AsyncIterator[Any]",
