@@ -3,7 +3,6 @@ from typing import Any, Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from openai.types.chat.chat_completion_chunk import ChatCompletionChunk as OpenAIChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice as OpenAIChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta as OpenAIChoiceDelta
@@ -574,7 +573,6 @@ def test_strip_extra_content_returns_fully_kept_message_as_same_object() -> None
 def test_strip_extra_content_drops_empty_or_malformed_side_channel(extra_content: object) -> None:
     messages: list[dict[str, Any]] = [{"role": "assistant", "content": "ok", "extra_content": extra_content}]
     assert strip_extra_content(messages, keep_namespaces=("google",)) == [{"role": "assistant", "content": "ok"}]
-
 
 
 def _openai_chunk(content: str, chunk_id: str) -> OpenAIChatCompletionChunk:

@@ -90,6 +90,8 @@ def test_normalize_reasoning_preserves_already_normalized_reasoning() -> None:
         ("prefix <thinking>still thinking", "prefix ", "still thinking"),
         ("<think>reasoning</th", "", "reasoning</th"),
         ("    return 1\n<think>pending", "    return 1\n", "pending"),
+        ("<think>keep</thinking> answer <think>pending", "<think>keep</thinking> answer ", "pending"),
+        ("<think>a <thinking>b", "", "a <thinking>b"),
     ],
 )
 def test_normalize_reasoning_extracts_unclosed_think_like_streaming(
@@ -104,7 +106,6 @@ def test_normalize_reasoning_extracts_unclosed_think_like_streaming(
     assert message["reasoning"] == {"content": expected_reasoning}
 
 
-
 def test_normalize_reasoning_keeps_answer_after_mismatched_closer() -> None:
     """A completed mismatched closer must not swallow the trailing answer."""
     message: dict[str, Any] = {"content": "<think>keep</thinking> answer"}
@@ -112,6 +113,15 @@ def test_normalize_reasoning_keeps_answer_after_mismatched_closer() -> None:
     normalize_reasoning_from_provider_fields_and_xml_tags(message)
 
     assert message["content"] == "<think>keep</thinking> answer"
+    assert "reasoning" not in message
+
+
+def test_normalize_reasoning_drops_empty_unclosed_tag_without_reasoning() -> None:
+    message: dict[str, Any] = {"content": "answer <think>"}
+
+    normalize_reasoning_from_provider_fields_and_xml_tags(message)
+
+    assert message["content"] == "answer "
     assert "reasoning" not in message
 
 

@@ -306,19 +306,14 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(
                 reasoning_content = extracted_reasoning
             content = think_pattern.sub("", content)
 
-        # An unclosed opening tag should match streaming: remaining text after
-        # `<think>` is reasoning, not content (issue #1671). Skip this on
-        # per-chunk deltas, and skip a completed closer for a different tag
-        # (e.g. `<think>keep</thinking> answer`) so the trailing answer stays
-        # in content.
-        unclosed = None
+        # Streaming flushes an unterminated block as reasoning (issue #1671), so do the same here.
+        # Per-chunk deltas opt out. Only an opener after the last completed closer counts, so a
+        # mismatched pair such as `<think>keep</thinking> answer` stays in content.
         if extract_unclosed_tags:
-            unclosed_pattern = re.compile(rf"<(?P<tag>{tag_names})>(?P<reasoning>.*)$", re.DOTALL)
-            completed_closer = re.compile(rf"</(?:{tag_names})>")
-            candidate = unclosed_pattern.search(content)
-            if candidate is not None and not completed_closer.search(candidate.group("reasoning")):
-                unclosed = candidate
-                extracted_unclosed = unclosed.group("reasoning")
+            last_closer_end = max((closer.end() for closer in re.finditer(rf"</(?:{tag_names})>", content)), default=0)
+            unclosed = re.compile(rf"<(?:{tag_names})>").search(content, last_closer_end)
+            if unclosed is not None:
+                extracted_unclosed = content[unclosed.end() :]
                 if extracted_unclosed:
                     if reasoning_content:
                         reasoning_content = f"{reasoning_content}\n{extracted_unclosed}"
@@ -326,9 +321,8 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(
                         reasoning_content = extracted_unclosed
                 content = content[: unclosed.start()]
 
-        # Closed-block removal already stripped surrounding whitespace. Do not
-        # trim the prefix when only an unclosed tag was found, so indentation
-        # and trailing newlines stay aligned with the streaming parser.
+        # Trim only after removing a closed block, as before; text ahead of an unclosed tag keeps
+        # its whitespace, matching what the stream yields.
         content = content.strip() if matches else content
         message_dict["content"] = content
 
