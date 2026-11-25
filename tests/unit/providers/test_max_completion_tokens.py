@@ -50,11 +50,21 @@ def _mistral(params: CompletionParams) -> Any:
     return converted.get("max_tokens")
 
 
+def _sagemaker(params: CompletionParams) -> Any:
+    pytest.importorskip("boto3")
+    from any_llm.providers.sagemaker.sagemaker import SagemakerProvider
+
+    converted = SagemakerProvider._convert_completion_params(params)
+    assert "max_completion_tokens" not in converted
+    return converted.get("max_tokens")
+
+
 PROVIDERS = [
     pytest.param(_anthropic, id="anthropic"),
     pytest.param(_gemini, id="gemini"),
     pytest.param(_bedrock, id="bedrock"),
     pytest.param(_mistral, id="mistral"),
+    pytest.param(_sagemaker, id="sagemaker"),
 ]
 
 
@@ -84,7 +94,12 @@ def test_equal_limits_do_not_warn(convert: Any, caplog: pytest.LogCaptureFixture
 
 @pytest.mark.parametrize(
     "convert",
-    [pytest.param(_gemini, id="gemini"), pytest.param(_bedrock, id="bedrock"), pytest.param(_mistral, id="mistral")],
+    [
+        pytest.param(_gemini, id="gemini"),
+        pytest.param(_bedrock, id="bedrock"),
+        pytest.param(_mistral, id="mistral"),
+        pytest.param(_sagemaker, id="sagemaker"),
+    ],
 )
 def test_no_limit_sends_no_limit(convert: Any) -> None:
     assert convert(_params()) is None
