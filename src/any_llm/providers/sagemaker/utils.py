@@ -31,7 +31,8 @@ def _convert_params(params: CompletionParams, kwargs: dict[str, Any]) -> dict[st
     # prompts from messages; TGI and vLLM ignore a top-level "system" field.
     result_kwargs["messages"] = list(params.messages)
 
-    if max_tokens := resolve_output_token_limit(params):
+    max_tokens = resolve_output_token_limit(params)
+    if max_tokens is not None:
         result_kwargs["max_tokens"] = max_tokens
     if params.temperature is not None:
         result_kwargs["temperature"] = params.temperature

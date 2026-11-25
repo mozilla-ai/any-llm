@@ -105,5 +105,13 @@ def test_no_limit_sends_no_limit(convert: Any) -> None:
     assert convert(_params()) is None
 
 
+@pytest.mark.parametrize(
+    "convert",
+    [pytest.param(_mistral, id="mistral"), pytest.param(_sagemaker, id="sagemaker")],
+)
+def test_explicit_zero_limit_is_sent(convert: Any) -> None:
+    assert convert(_params(max_tokens=300, max_completion_tokens=0)) == 0
+
+
 def test_resolve_output_token_limit_without_limits_returns_none() -> None:
     assert resolve_output_token_limit(_params()) is None
