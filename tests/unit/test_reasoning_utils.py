@@ -30,7 +30,8 @@ def test_normalize_mixed_reasoning_tags_keeps_textual_order(tags: tuple[str, ...
     [
         ("  no tags  ", "  no tags  ", None),
         ("  <unknown>keep</unknown>  ", "  <unknown>keep</unknown>  ", None),
-        ("  <think>keep</thinking>  ", "  <think>keep</thinking>  ", None),
+        # Unclosed <think> (including a mismatched closer) is reasoning, matching streaming.
+        ("  <think>keep</thinking>  ", "", "keep</thinking>  "),
         ("  <think></think>answer  ", "answer", ""),
         ("  <think></think><thinking></thinking>answer  ", "answer", ""),
         # An empty block alongside a real one contributes neither reasoning nor a separator, so
@@ -77,3 +78,25 @@ def test_normalize_reasoning_preserves_already_normalized_reasoning() -> None:
     normalize_reasoning_from_provider_fields_and_xml_tags(message)
 
     assert message == original
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_content", "expected_reasoning"),
+    [
+        ("<think>unterminated reasoning", "", "unterminated reasoning"),
+        ("answer <think>partial", "answer", "partial"),
+        ("<think>first</think>mid <think>unclosed", "mid", "first\nunclosed"),
+        ("prefix <thinking>still thinking", "prefix", "still thinking"),
+        ("<think>reasoning</th", "", "reasoning</th"),
+    ],
+)
+def test_normalize_reasoning_extracts_unclosed_think_like_streaming(
+    content: str, expected_content: str, expected_reasoning: str
+) -> None:
+    """Non-streaming extraction should match wrap_chunks_with_xml_reasoning on unclosed tags."""
+    message: dict[str, Any] = {"content": content}
+
+    normalize_reasoning_from_provider_fields_and_xml_tags(message)
+
+    assert message["content"] == expected_content
+    assert message["reasoning"] == {"content": expected_reasoning}

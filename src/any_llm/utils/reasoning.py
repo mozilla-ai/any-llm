@@ -296,8 +296,22 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
                 reasoning_content = f"{reasoning_content}\n{extracted_reasoning}"
             else:
                 reasoning_content = extracted_reasoning
-            content = think_pattern.sub("", content).strip()
+            content = think_pattern.sub("", content)
 
+        # An unclosed opening tag should match streaming: remaining text after
+        # `<think>` is reasoning, not content (issue #1671).
+        unclosed_pattern = re.compile(rf"<(?P<tag>{tag_names})>(?P<reasoning>.*)$", re.DOTALL)
+        unclosed = unclosed_pattern.search(content)
+        if unclosed:
+            extracted_unclosed = unclosed.group("reasoning")
+            if extracted_unclosed:
+                if reasoning_content:
+                    reasoning_content = f"{reasoning_content}\n{extracted_unclosed}"
+                else:
+                    reasoning_content = extracted_unclosed
+            content = content[: unclosed.start()]
+
+        content = content.strip() if matches or unclosed else content
         message_dict["content"] = content
 
     if reasoning_content is not None:
