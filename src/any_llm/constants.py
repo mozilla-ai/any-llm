@@ -78,6 +78,7 @@ class LLMProvider(StrEnum):
     REQUESTY = "requesty"
     SAMBANOVA = "sambanova"
     SAGEMAKER = "sagemaker"
+    SARVAM = "sarvam"
     TOGETHER = "together"
     VERTEXAI = "vertexai"
     VERTEXAIANTHROPIC = "vertexaianthropic"

@@ -179,6 +179,7 @@ def test_providers_raise_MissingApiKeyError(provider: LLMProvider) -> None:
         ("huggingface", "huggingface_hub"),
         ("mistral", "mistralai"),
         ("ollama", "ollama"),
+        ("sarvam", "sarvamai"),
         ("together", "together"),
         ("tinfoil", "tinfoil"),
         ("typesafe", "typesafe_sdk"),
