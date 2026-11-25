@@ -333,6 +333,7 @@ its SDK's native setting:
 | OpenAI-compatible providers (`openai`, `azureopenai`, `deepseek`, `openrouter`, `meta`, registry gateways, `AnyLLM.create_openai_compatible()`, ...), `anthropic`, `azureanthropic`, `vertexaianthropic`, `groq`, `cerebras`, `together`, `cohere` | `max_retries` on the SDK client |
 | `gemini`, `vertexai` | `http_options.retry_options.attempts`, set to `max_retries + 1` (`vertexai` partner and Mistral models pass `max_retries` to their OpenAI SDK client) |
 | `voyage` | `max_retries` on the SDK client, set to `max_retries + 1` because the SDK counts the first request |
+| `sarvam` | `max_retries` in the `request_options` of each request, since the SDK client has no retry setting |
 
 The other providers (`azure`, `bedrock`, `huggingface`, `liner`, `lmstudio`, `mistral`,
 `ollama`, `otari`, `sagemaker`, `watsonx`, `xai`) raise `UnsupportedParameterError` for `max_retries`,

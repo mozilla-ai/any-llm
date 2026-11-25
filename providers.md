@@ -63,6 +63,7 @@ A provider can be verified whether it ships as a code folder or as a single conf
 | [`requesty`](https://docs.requesty.ai) | 🤝 Community | REQUESTY_API_KEY | REQUESTY_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`sagemaker`](https://aws.amazon.com/sagemaker/) | 🤝 Community | AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY | SAGEMAKER_ENDPOINT_URL | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`sambanova`](https://sambanova.ai/) | ✅ Verified | SAMBANOVA_API_KEY | SAMBANOVA_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| [`sarvam`](https://docs.sarvam.ai/) | 🤝 Community | SARVAM_API_KEY | SARVAM_API_BASE | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`telnyx`](https://developers.telnyx.com/docs/inference/getting-started) | 🤝 Community | TELNYX_API_KEY | TELNYX_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`tinfoil`](https://docs.tinfoil.sh/sdk/python-sdk) | 🤝 Community | TINFOIL_API_KEY | TINFOIL_API_BASE | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [`together`](https://together.ai/) | ✅ Verified | TOGETHER_API_KEY | TOGETHER_API_BASE | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
