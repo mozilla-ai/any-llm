@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 from google.genai import types
+from google.oauth2.credentials import Credentials
 from pydantic import BaseModel, ConfigDict
 
 from any_llm.exceptions import (
@@ -1151,6 +1152,81 @@ async def test_gemini_reasoning_effort_reaches_official_sdk_wire(
     await provider.client.aio.aclose()
 
     assert requests[0]["generationConfig"] == {"thinkingConfig": expected}
+
+
+def _gemini_sse_provider(provider_name: str, *responses: dict[str, object]) -> GoogleProvider:
+    body = "".join(f"data: {json.dumps(response)}\n\n" for response in responses)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith(":streamGenerateContent")
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_options = types.HttpOptions(httpx_async_client=http_client)
+    if provider_name == "vertexai":
+        return VertexaiProvider(
+            project="test-project",
+            location="us-central1",
+            credentials=Credentials("test-token"),  # type: ignore[no-untyped-call]
+            http_options=http_options,
+        )
+    return GeminiProvider(api_key="test-api-key", http_options=http_options)
+
+
+@pytest.mark.parametrize("provider_name", ["gemini", "vertexai"])
+@pytest.mark.parametrize("finish_reason", [None, "FINISH_REASON_UNSPECIFIED"])
+@pytest.mark.asyncio
+async def test_gemini_incomplete_stream_yields_partial_text_then_raises(
+    provider_name: str, finish_reason: str | None
+) -> None:
+    candidate: dict[str, object] = {"content": {"parts": [{"text": "partial"}], "role": "model"}}
+    if finish_reason is not None:
+        candidate["finishReason"] = finish_reason
+    provider = _gemini_sse_provider(provider_name, {"candidates": [candidate]})
+
+    try:
+        stream = await provider.acompletion(
+            model="gemini-2.5-flash", messages=[{"role": "user", "content": "Hi"}], stream=True
+        )
+
+        partial = await anext(stream)
+        assert partial.choices[0].delta.content == "partial"
+        assert partial.choices[0].finish_reason is None
+        with pytest.raises(ProviderError, match="stream ended before the provider sent a finish reason"):
+            await anext(stream)
+    finally:
+        await provider.client.aio.aclose()
+
+
+@pytest.mark.parametrize("provider_name", ["gemini", "vertexai"])
+@pytest.mark.parametrize(
+    ("terminal", "expected_finish_reason"),
+    [
+        ({"candidates": [{"finishReason": "STOP"}]}, "stop"),
+        ({"candidates": [{"finishReason": "OTHER"}]}, None),
+        ({"promptFeedback": {"blockReason": "SAFETY"}}, "content_filter"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_gemini_terminal_stream_still_yields_later_usage(
+    provider_name: str, terminal: dict[str, object], expected_finish_reason: str | None
+) -> None:
+    provider = _gemini_sse_provider(
+        provider_name, terminal, {"usageMetadata": {"promptTokenCount": 2, "totalTokenCount": 2}}
+    )
+
+    try:
+        stream = await provider.acompletion(
+            model="gemini-2.5-flash", messages=[{"role": "user", "content": "Hi"}], stream=True
+        )
+        chunks = [chunk async for chunk in stream]
+    finally:
+        await provider.client.aio.aclose()
+
+    terminal_chunk, usage_chunk = chunks
+    assert terminal_chunk.choices[0].finish_reason == expected_finish_reason
+    assert usage_chunk.usage is not None
+    assert usage_chunk.usage.total_tokens == 2
 
 
 @pytest.mark.asyncio

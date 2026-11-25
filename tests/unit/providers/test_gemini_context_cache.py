@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from google.genai import errors, types
 
+from any_llm.exceptions import ProviderError
 from any_llm.providers.gemini import GeminiProvider, context_cache
 from any_llm.providers.gemini.context_cache import (
     EXPIRY_MARGIN_SECONDS,
@@ -744,7 +745,7 @@ async def test_streamed_request_on_a_gone_cache_is_resent_uncached() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_stream_yields_no_chunks() -> None:
+async def test_empty_stream_raises_incomplete_response() -> None:
     client = _client()
     client.aio.models.generate_content_stream = AsyncMock(return_value=_aiter([]))
 
@@ -753,7 +754,8 @@ async def test_empty_stream_yields_no_chunks() -> None:
     )
 
     assert isinstance(stream, AsyncIterator)
-    assert [chunk async for chunk in stream] == []
+    with pytest.raises(ProviderError, match="stream ended before the provider sent a finish reason"):
+        await anext(stream)
 
 
 @pytest.mark.asyncio

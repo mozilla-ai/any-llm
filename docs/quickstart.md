@@ -135,6 +135,8 @@ for chunk in completion(
     output += chunk_content
 ```
 
+Gemini completion streams, including native Gemini models on Vertex AI, raise `ProviderError` if the stream closes before a finish reason or a prompt block. Chunks received before the error are still yielded.
+
 ### Rebuilding the message from a stream
 
 To replay a streamed turn, for example to send tool results back, feed the chunks to `ChatCompletionAccumulator`. It assembles the same message a non-streaming call returns: text, reasoning, tool calls, and the `extra_content` that providers use to carry state across turns (Gemini's `thought_signature`, Anthropic's thinking `signature`, DeepSeek's `reasoning_content`).
