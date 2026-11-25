@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, UnsupportedParameterError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, ProviderError, UnsupportedParameterError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -46,6 +46,7 @@ try:
         _create_openai_embedding_response_from_google,
         _enable_server_side_tool_invocations,
         _has_additional_properties,
+        _prompt_was_blocked,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -453,13 +454,21 @@ class GoogleProvider(AnyLLM):
             async def _stream() -> AsyncIterator[ChatCompletionChunk]:
                 tool_call_counter: list[int] = [0]
                 code_execution_state = CodeExecutionState()
+                finished = False
                 try:
                     async for chunk in response_stream:
                         converted_chunk = self._convert_completion_chunk_response(
                             chunk, tool_call_counter=tool_call_counter, code_execution_state=code_execution_state
                         )
+                        # Check the native reason because some terminal reasons have no OpenAI equivalent.
+                        finish_reason = chunk.candidates[0].finish_reason if chunk.candidates else None
+                        has_finish_reason = finish_reason not in (None, types.FinishReason.FINISH_REASON_UNSPECIFIED)
+                        finished = finished or has_finish_reason or _prompt_was_blocked(chunk)
                         report_cache_write(converted_chunk.usage, cache_use)
                         yield converted_chunk
+                    if not finished:
+                        msg = "The stream ended before the provider sent a finish reason; the response is incomplete."
+                        raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
                 finally:
                     await aclose_quietly(response_stream)
 
@@ -486,15 +495,17 @@ class GoogleProvider(AnyLLM):
 
     @staticmethod
     async def _open_stream_with_context_cache(
-        send: Callable[..., Awaitable[AsyncIterator[Any]]], cache_use: ContextCacheUse
-    ) -> AsyncIterator[Any]:
+        send: Callable[..., Awaitable[AsyncIterator[types.GenerateContentResponse]]], cache_use: ContextCacheUse
+    ) -> AsyncIterator[types.GenerateContentResponse]:
         """Open a stream, reading its first chunk under the stale-cache retry.
 
         The SDK may not send the request until the stream is first iterated, so a cache that has gone
         only surfaces there.
         """
 
-        async def first_chunk(kwargs: dict[str, Any]) -> tuple[AsyncIterator[Any], list[Any]]:
+        async def first_chunk(
+            kwargs: dict[str, Any],
+        ) -> tuple[AsyncIterator[types.GenerateContentResponse], list[types.GenerateContentResponse]]:
             stream = await send(**kwargs)
             try:
                 return stream, [await anext(stream)]
@@ -512,7 +523,7 @@ class GoogleProvider(AnyLLM):
             cache_use.forget()
             stream, head = await first_chunk(cache_use.uncached_kwargs)
 
-        async def chunks() -> AsyncIterator[Any]:
+        async def chunks() -> AsyncIterator[types.GenerateContentResponse]:
             try:
                 for chunk in head:
                     yield chunk
