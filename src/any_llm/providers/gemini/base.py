@@ -442,7 +442,6 @@ class GoogleProvider(AnyLLM):
         params: CompletionParams,
         **kwargs: Any,
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
-        """Creates a completion and raises on streaming EOF before a terminal signal."""
         kwargs["provider_name"] = self.PROVIDER_NAME
         converted_kwargs = self._convert_completion_params(params, **kwargs)
         cache_use = await prepare_context_cache(self.client, self.PROVIDER_NAME, params.messages, converted_kwargs)

@@ -135,7 +135,7 @@ for chunk in completion(
     output += chunk_content
 ```
 
-Gemini completion streams, including native Gemini models on Vertex AI, raise `ProviderError` if the stream closes before a finish reason or a prompt block. Chunks received before the error are still yielded.
+If a stream closes before the provider's terminal signal (a finish reason, Ollama's `done`, or a Gemini prompt block), the OpenAI-compatible, Ollama and Gemini providers (including native Gemini models on Vertex AI) raise `ProviderError`, so a cut-off answer is not mistaken for a complete one. Chunks received before the error are still yielded.
 
 ### Rebuilding the message from a stream
 
