@@ -135,6 +135,8 @@ for chunk in completion(
     output += chunk_content
 ```
 
+Ollama and Gemini (including native Gemini models on Vertex AI) raise `ProviderError` if a stream closes before the provider's terminal signal (Ollama's `done`, or a Gemini finish reason or prompt block). OpenAI-compatible providers raise it when a choice has started but the stream closes before that choice's `finish_reason`; a stream that sent no choices at all ends normally. In each case, chunks received before the error are still yielded.
+
 ### Rebuilding the message from a stream
 
 To replay a streamed turn, for example to send tool results back, feed the chunks to `ChatCompletionAccumulator`. It assembles the same message a non-streaming call returns: text, reasoning, tool calls, and the `extra_content` that providers use to carry state across turns (Gemini's `thought_signature`, Anthropic's thinking `signature`, DeepSeek's `reasoning_content`).
