@@ -255,7 +255,11 @@ def replay_reasoning_content_as_reasoning(messages: list[dict[str, Any]]) -> lis
     return result
 
 
-def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str, Any]) -> None:
+def normalize_reasoning_from_provider_fields_and_xml_tags(
+    message_dict: dict[str, Any],
+    *,
+    extract_unclosed_tags: bool = True,
+) -> None:
     """Extract and normalize reasoning from provider fields and XML tags.
 
     This function mutates the message_dict in place:
@@ -267,6 +271,10 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
     Args:
         message_dict: A dictionary representing a message with 'content' and
                      optionally 'reasoning' fields.
+        extract_unclosed_tags: When True (the default for complete messages), an
+            opening tag with no matching closer is treated as truncated reasoning.
+            Streamed deltas must pass False: each chunk is normalized alone, so
+            stripping a lone ``<think>`` would hide the open tag from later deltas.
 
     """
     if isinstance(message_dict.get("reasoning"), dict) and "content" in message_dict["reasoning"]:
@@ -299,19 +307,29 @@ def normalize_reasoning_from_provider_fields_and_xml_tags(message_dict: dict[str
             content = think_pattern.sub("", content)
 
         # An unclosed opening tag should match streaming: remaining text after
-        # `<think>` is reasoning, not content (issue #1671).
-        unclosed_pattern = re.compile(rf"<(?P<tag>{tag_names})>(?P<reasoning>.*)$", re.DOTALL)
-        unclosed = unclosed_pattern.search(content)
-        if unclosed:
-            extracted_unclosed = unclosed.group("reasoning")
-            if extracted_unclosed:
-                if reasoning_content:
-                    reasoning_content = f"{reasoning_content}\n{extracted_unclosed}"
-                else:
-                    reasoning_content = extracted_unclosed
-            content = content[: unclosed.start()]
+        # `<think>` is reasoning, not content (issue #1671). Skip this on
+        # per-chunk deltas, and skip a completed closer for a different tag
+        # (e.g. `<think>keep</thinking> answer`) so the trailing answer stays
+        # in content.
+        unclosed = None
+        if extract_unclosed_tags:
+            unclosed_pattern = re.compile(rf"<(?P<tag>{tag_names})>(?P<reasoning>.*)$", re.DOTALL)
+            completed_closer = re.compile(rf"</(?:{tag_names})>")
+            candidate = unclosed_pattern.search(content)
+            if candidate is not None and not completed_closer.search(candidate.group("reasoning")):
+                unclosed = candidate
+                extracted_unclosed = unclosed.group("reasoning")
+                if extracted_unclosed:
+                    if reasoning_content:
+                        reasoning_content = f"{reasoning_content}\n{extracted_unclosed}"
+                    else:
+                        reasoning_content = extracted_unclosed
+                content = content[: unclosed.start()]
 
-        content = content.strip() if matches or unclosed else content
+        # Closed-block removal already stripped surrounding whitespace. Do not
+        # trim the prefix when only an unclosed tag was found, so indentation
+        # and trailing newlines stay aligned with the streaming parser.
+        content = content.strip() if matches else content
         message_dict["content"] = content
 
     if reasoning_content is not None:

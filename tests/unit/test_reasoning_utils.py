@@ -30,8 +30,9 @@ def test_normalize_mixed_reasoning_tags_keeps_textual_order(tags: tuple[str, ...
     [
         ("  no tags  ", "  no tags  ", None),
         ("  <unknown>keep</unknown>  ", "  <unknown>keep</unknown>  ", None),
-        # Unclosed <think> (including a mismatched closer) is reasoning, matching streaming.
-        ("  <think>keep</thinking>  ", "", "keep</thinking>  "),
+        # A completed closer for a different tag is not a truncated block, so
+        # the original content (including any trailing answer) is left alone.
+        ("  <think>keep</thinking>  ", "  <think>keep</thinking>  ", None),
         ("  <think></think>answer  ", "answer", ""),
         ("  <think></think><thinking></thinking>answer  ", "answer", ""),
         # An empty block alongside a real one contributes neither reasoning nor a separator, so
@@ -84,10 +85,11 @@ def test_normalize_reasoning_preserves_already_normalized_reasoning() -> None:
     ("content", "expected_content", "expected_reasoning"),
     [
         ("<think>unterminated reasoning", "", "unterminated reasoning"),
-        ("answer <think>partial", "answer", "partial"),
+        ("answer <think>partial", "answer ", "partial"),
         ("<think>first</think>mid <think>unclosed", "mid", "first\nunclosed"),
-        ("prefix <thinking>still thinking", "prefix", "still thinking"),
+        ("prefix <thinking>still thinking", "prefix ", "still thinking"),
         ("<think>reasoning</th", "", "reasoning</th"),
+        ("    return 1\n<think>pending", "    return 1\n", "pending"),
     ],
 )
 def test_normalize_reasoning_extracts_unclosed_think_like_streaming(
@@ -100,3 +102,24 @@ def test_normalize_reasoning_extracts_unclosed_think_like_streaming(
 
     assert message["content"] == expected_content
     assert message["reasoning"] == {"content": expected_reasoning}
+
+
+
+def test_normalize_reasoning_keeps_answer_after_mismatched_closer() -> None:
+    """A completed mismatched closer must not swallow the trailing answer."""
+    message: dict[str, Any] = {"content": "<think>keep</thinking> answer"}
+
+    normalize_reasoning_from_provider_fields_and_xml_tags(message)
+
+    assert message["content"] == "<think>keep</thinking> answer"
+    assert "reasoning" not in message
+
+
+def test_normalize_reasoning_skips_unclosed_extraction_when_disabled() -> None:
+    """Per-chunk normalization must leave an opening tag in content for later deltas."""
+    message: dict[str, Any] = {"content": "<think>"}
+
+    normalize_reasoning_from_provider_fields_and_xml_tags(message, extract_unclosed_tags=False)
+
+    assert message["content"] == "<think>"
+    assert "reasoning" not in message
