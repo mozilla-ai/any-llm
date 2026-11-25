@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
-from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError
+from any_llm.exceptions import BatchNotCompleteError, InvalidRequestError, ProviderError
 from any_llm.logging import logger
 from any_llm.types.batch import Batch, BatchRequestCounts, BatchResult, BatchResultError, BatchResultItem
 from any_llm.types.messages import (
@@ -297,10 +297,22 @@ class BaseAnthropicProvider(AnyLLM, ABC):
         return _convert_models_list(response)
 
     async def _stream_completion_async(self, **kwargs: Any) -> AsyncIterator[ChatCompletionChunk]:
-        """Handle streaming completion - extracted to avoid generator issues."""
+        """Handle streaming completion. Extracted to avoid generator issues.
+
+        ``message_delta`` can carry a stop reason before the stream is finished. ``message_stop``
+        is the event that ends every complete Anthropic stream, so a connection that closes
+        without it is a cut-off response. Chunks already received are yielded first.
+        """
+        received_message_stop = False
         async with self.client.messages.stream(**kwargs) as anthropic_stream:
             async for event in anthropic_stream:
+                if event.type == "message_stop":
+                    received_message_stop = True
                 yield self._convert_completion_chunk_response(event, model_id=kwargs.get("model", "unknown"))
+
+        if not received_message_stop:
+            msg = "Completion stream ended before Anthropic sent message_stop."
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
 
     @override
     async def _acompletion(
