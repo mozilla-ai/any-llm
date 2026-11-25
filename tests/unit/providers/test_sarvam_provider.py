@@ -1,5 +1,5 @@
 import json
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
@@ -372,7 +372,29 @@ def test_convert_models_list() -> None:
     response = ModelListResponse.model_validate(
         {"data": [{"id": "glm5.3", "created": 2, "owned_by": "sarvam", "access": "provisioned"}]}
     )
-    assert [m.id for m in _convert_models_list(response)] == ["glm5.3"]
+    models = _convert_models_list(response)
+    assert [(m.id, m.object, m.created, m.owned_by) for m in models] == [("glm5.3", "model", 2, "sarvam")]
+    assert models[0].model_dump()["access"] == "provisioned"
+
+
+@pytest.mark.asyncio
+async def test_stream_closes_sdk_stream_when_consumer_stops_early() -> None:
+    closed = {"value": False}
+
+    async def sdk_stream() -> AsyncIterator[SarvamChatCompletionChunk]:
+        try:
+            for event in STREAM_EVENTS:
+                yield SarvamChatCompletionChunk.model_validate(event)
+        finally:
+            closed["value"] = True
+
+    provider = SarvamProvider(api_key="test-key")
+    stream = provider._stream_completion_async(sdk_stream())
+    first = await anext(stream)
+    await stream.aclose()  # type: ignore[attr-defined]
+
+    assert first.choices[0].delta.reasoning is not None
+    assert closed["value"] is True
 
 
 def test_embedding_is_not_supported() -> None:

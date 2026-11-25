@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
+from any_llm.utils.aio import aclose_quietly
 from any_llm.utils.reasoning import strip_extra_content
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 
@@ -165,8 +166,11 @@ class SarvamProvider(AnyLLM):
         self.client = AsyncSarvamAI(api_subscription_key=api_key, environment=environment, **kwargs)
 
     async def _stream_completion_async(self, stream: AsyncIterator[Any]) -> AsyncIterator[ChatCompletionChunk]:
-        async for chunk in stream:
-            yield self._convert_completion_chunk_response(chunk)
+        try:
+            async for chunk in stream:
+                yield self._convert_completion_chunk_response(chunk)
+        finally:
+            await aclose_quietly(stream)
 
     @override
     async def _acompletion(

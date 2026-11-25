@@ -30,6 +30,5 @@ def _convert_chunk(chunk: SarvamChatCompletionChunk) -> ChatCompletionChunk:
 
 
 def _convert_models_list(response: ModelListResponse) -> list[Model]:
-    return [
-        Model(id=model.id, object="model", created=model.created, owned_by=model.owned_by) for model in response.data
-    ]
+    # Extra fields such as `access` ("standard" or "provisioned") stay on the Model.
+    return [Model.model_validate({**model.model_dump(), "object": "model"}) for model in response.data]
