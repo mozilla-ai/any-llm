@@ -3,7 +3,7 @@ import dataclasses
 import json
 import logging
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Self, cast, get_args
@@ -2721,6 +2721,49 @@ async def test_streaming_completion_propagates_a_dropped_connection() -> None:
 @pytest.mark.asyncio
 async def test_streaming_completion_stopped_by_the_caller_does_not_raise() -> None:
     """Closing the stream after a partial read is the caller's choice, not a cut-off response."""
+    provider = _streaming_provider(_sse(*_text_stream_events("A traditional")))
+    try:
+        stream = await provider._acompletion(
+            CompletionParams(
+                model_id="model-id",
+                messages=[{"role": "user", "content": "Hello"}],
+                stream=True,
+                max_tokens=16,
+            )
+        )
+        assert isinstance(stream, AsyncGenerator)
+        seen = ""
+        async for chunk in stream:
+            seen += _chunk_text([chunk])
+            if seen:
+                break
+        await stream.aclose()
+        assert seen == "A traditional"
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_messages_raises_if_anthropic_never_sends_message_stop() -> None:
+    provider = _streaming_provider(_sse(*_text_stream_events("A traditional")))
+    try:
+        stream = await provider.amessages(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=16,
+            stream=True,
+        )
+        assert isinstance(stream, AsyncIterator)
+        events: list[Any] = []
+        with pytest.raises(ProviderError, match="Messages stream ended before Anthropic sent message_stop"):
+            await _consume(stream, events)
+        assert [event.type for event in events] == ["message_start", "content_block_start", "content_block_delta"]
+    finally:
+        await provider.client.close()
+
+
+@pytest.mark.asyncio
+async def test_streaming_messages_accepts_stream_that_sends_message_stop() -> None:
     body = _sse(
         *_text_stream_events("A traditional"),
         ("content_block_stop", {"type": "content_block_stop", "index": 0}),
@@ -2729,19 +2772,15 @@ async def test_streaming_completion_stopped_by_the_caller_does_not_raise() -> No
     )
     provider = _streaming_provider(body)
     try:
-        stream = await provider.acompletion(
+        stream = await provider.amessages(
             model="model-id",
             messages=[{"role": "user", "content": "Hello"}],
-            stream=True,
             max_tokens=16,
+            stream=True,
         )
         assert isinstance(stream, AsyncIterator)
-        seen = ""
-        async for chunk in stream:
-            seen += _chunk_text([chunk])
-            if seen:
-                break
-        assert seen == "A traditional"
+        events = [event async for event in stream]
+        assert events[-1].type == "message_stop"
     finally:
         await provider.client.close()
 
