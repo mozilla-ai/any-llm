@@ -10,6 +10,7 @@ from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
 from any_llm.types.responses import ParsedResponse, Response, ResponsesParams, ResponseStreamEvent
 from any_llm.utils.reasoning import replay_reasoning_content_as_reasoning
+from any_llm.utils.streaming import raise_on_incomplete_stream
 from any_llm.utils.structured_output import (
     build_responses_text_format,
     get_json_schema,
@@ -148,7 +149,7 @@ class GroqProvider(AnyLLM):
             async for chunk in stream:
                 yield self._convert_completion_chunk_response(chunk)
 
-        return _stream()
+        return raise_on_incomplete_stream(_stream())
 
     @override
     async def _acompletion(

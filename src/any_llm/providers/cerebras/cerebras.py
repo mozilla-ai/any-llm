@@ -6,6 +6,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.utils.reasoning import replay_reasoning_content_as_reasoning
+from any_llm.utils.streaming import raise_on_incomplete_stream
 from any_llm.utils.structured_output import get_strict_json_schema, is_structured_output_type
 
 MISSING_PACKAGES_ERROR = None
@@ -118,8 +119,10 @@ class CerebrasProvider(AnyLLM):
             **kwargs,
         )
 
-        async for chunk in cast("cerebras.AsyncStream[ChatCompletion]", cerebras_stream):
-            yield self._convert_completion_chunk_response(chunk)
+        stream = cast("cerebras.AsyncStream[ChatCompletion]", cerebras_stream)
+        chunks = (self._convert_completion_chunk_response(chunk) async for chunk in stream)
+        async for converted in raise_on_incomplete_stream(chunks):
+            yield converted
 
     @override
     async def _acompletion(

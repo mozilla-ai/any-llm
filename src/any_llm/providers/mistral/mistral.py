@@ -11,6 +11,7 @@ from typing_extensions import override
 
 from any_llm.any_llm import AnyLLM
 from any_llm.exceptions import UnsupportedParameterError
+from any_llm.utils.streaming import raise_on_incomplete_stream
 from any_llm.utils.structured_output import get_json_schema, is_structured_output_type
 from any_llm.utils.token_limit import resolve_output_token_limit
 
@@ -191,8 +192,9 @@ class MistralProvider(AnyLLM):
     ) -> AsyncIterator[ChatCompletionChunk]:
         mistral_stream = await self.client.chat.stream_async(model=model, messages=messages, **kwargs)  # type: ignore[arg-type]
 
-        async for event in mistral_stream:
-            yield self._convert_completion_chunk_response(event)
+        chunks = (self._convert_completion_chunk_response(event) async for event in mistral_stream)
+        async for chunk in raise_on_incomplete_stream(chunks):
+            yield chunk
 
     @override
     async def _acompletion(
