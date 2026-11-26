@@ -118,6 +118,8 @@ print(response.choices[0].message.content)
 
 Capability flags follow the OpenAI-compatible defaults. A capability the endpoint does not implement fails either locally with `NotImplementedError` (for flag-gated capabilities such as batch) or with the endpoint's own error for calls that any-llm forwards. Use this whenever you need an OpenAI-compatible endpoint that any-llm does not ship a dedicated provider for.
 
+A call carrying no `api_key` falls back to the `OPENAI_COMPATIBLE_API_KEY` environment variable, so a keyless local server still works where an operator has set one. A gateway that serves endpoints it did not choose, such as one hosting its tenants' servers, passes `allow_env_api_key=False`: the deployment's key is then never sent to an endpoint someone else named, and the call goes out with the `no-key-required` placeholder instead.
+
 ## Streaming
 
 For the [providers that support streaming](providers.md), you can enable it by passing `stream=True`:

@@ -350,7 +350,15 @@ class AnyLLM(FilesMixin, ABC):
         )
 
     @classmethod
-    def create_openai_compatible(cls, name: str, api_base: str, api_key: str | None = None, **kwargs: Any) -> AnyLLM:
+    def create_openai_compatible(
+        cls,
+        name: str,
+        api_base: str,
+        api_key: str | None = None,
+        *,
+        allow_env_api_key: bool = True,
+        **kwargs: Any,
+    ) -> AnyLLM:
         """Create a provider for an arbitrary OpenAI-compatible endpoint.
 
         This is the supported way to use any-llm with a gateway that does not have a
@@ -362,6 +370,10 @@ class AnyLLM(FilesMixin, ABC):
             name: Identifier for the endpoint (e.g. ``"mygateway"``). Reported as the provider name.
             api_base: Base URL of the OpenAI-compatible endpoint (e.g. ``"https://mygateway.example/v1"``).
             api_key: API key, if the endpoint requires one. Optional for keyless local servers.
+            allow_env_api_key: Whether a call carrying no ``api_key`` may fall back to the
+                ``OPENAI_COMPATIBLE_API_KEY`` environment variable. Set ``False`` when the
+                endpoint is not the caller's own choice, so that the deployment's key is
+                never sent to it.
             **kwargs: Additional provider arguments. ``unified_exceptions`` is consumed by the
                 provider; everything else is forwarded to the underlying OpenAI client.
 
@@ -369,7 +381,7 @@ class AnyLLM(FilesMixin, ABC):
             A provider instance bound to the given endpoint.
 
         """
-        from any_llm.providers.openai.custom import OpenAICompatibleProvider
+        from any_llm.providers.openai.custom import OpenAICompatibleProvider, _NoEnvApiKeyProvider
 
         if not name.strip():
             msg = "name must be a non-empty identifier for the endpoint."
@@ -380,7 +392,11 @@ class AnyLLM(FilesMixin, ABC):
         # reads cls.PROVIDER_NAME. The class __name__ stays stable for metadata.class_name.
         provider_cls = cast(
             "type[OpenAICompatibleProvider]",
-            type("OpenAICompatibleProvider", (OpenAICompatibleProvider,), {"PROVIDER_NAME": name}),
+            type(
+                "OpenAICompatibleProvider",
+                (OpenAICompatibleProvider if allow_env_api_key else _NoEnvApiKeyProvider,),
+                {"PROVIDER_NAME": name},
+            ),
         )
         return provider_cls(api_base=api_base, api_key=api_key, **kwargs)
 
