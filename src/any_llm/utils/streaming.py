@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from openai.types.chat.chat_completion import ChoiceLogprobs
 
+from any_llm.exceptions import ProviderError
 from any_llm.types.completion import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -23,9 +24,31 @@ from any_llm.types.completion import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterable, Iterable
+    from collections.abc import AsyncIterable, AsyncIterator, Iterable
 
     from openai.types.chat.chat_completion_token_logprob import ChatCompletionTokenLogprob
+
+
+async def raise_on_incomplete_stream(chunks: AsyncIterable[ChatCompletionChunk]) -> AsyncIterator[ChatCompletionChunk]:
+    """Yield ``chunks``, then raise if a choice that started never got a ``finish_reason``.
+
+    A stream that sent no choices ends normally. A choice stays finished once it has a ``finish_reason``,
+    even if a later chunk (a usage-only one, say) mentions it again without one.
+    """
+    started: set[int] = set()
+    finished: set[int] = set()
+    async for chunk in chunks:
+        for choice in chunk.choices:
+            started.add(choice.index)
+            if choice.finish_reason is not None:
+                finished.add(choice.index)
+        yield chunk
+    if unfinished := started - finished:
+        msg = (
+            "The stream ended before the provider sent a finish_reason for choice(s) "
+            f"{sorted(unfinished)}; the response is incomplete."
+        )
+        raise ProviderError(msg)
 
 
 def _merge_extra_content(target: dict[str, Any], update: dict[str, Any]) -> None:

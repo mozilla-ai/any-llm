@@ -730,7 +730,7 @@ async def test_user_parameter_excluded_streaming() -> None:
         mock_choice = Mock()
         mock_choice.delta = mock_delta
         mock_choice.index = 0
-        mock_choice.finish_reason = None
+        mock_choice.finish_reason = "stop"
 
         mock_chunk = Mock()
         mock_chunk.data = Mock()
