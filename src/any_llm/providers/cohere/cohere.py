@@ -193,18 +193,25 @@ class CohereProvider(AnyLLM):
     async def _stream_completion_async(
         self, model: str, messages: list[dict[str, Any]], *, thinking_from_reasoning_effort: bool, **kwargs: Any
     ) -> AsyncIterator[ChatCompletionChunk]:
+        """Yields completion chunks and raises if the stream closes before message-end."""
         cohere_stream = self.client.chat_stream(
             model=model,
             messages=messages,  # type: ignore[arg-type]
             **kwargs,
         )
 
+        saw_message_end = False
         try:
             async for chunk in cohere_stream:
+                if chunk.type == "message-end":
+                    saw_message_end = True
                 yield self._convert_completion_chunk_response(chunk, model=model)
         except cohere.BadRequestError as e:
             self._raise_if_thinking_unsupported(e, thinking_from_reasoning_effort)
             raise
+        if not saw_message_end:
+            msg = "Completion stream ended before Cohere sent message-end."
+            raise ProviderError(msg, provider_name=self.PROVIDER_NAME)
 
     def _raise_if_thinking_unsupported(
         self, error: cohere.BadRequestError, thinking_from_reasoning_effort: bool
