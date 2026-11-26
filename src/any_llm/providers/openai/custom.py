@@ -54,3 +54,18 @@ class OpenAICompatibleProvider(_OptionalApiKeyProvider):
         # Without this, create_openai_compatible(name="openai", api_base=<anything>)
         # would report the verified tier, because the tier is derived from the name.
         return super().get_provider_metadata().model_copy(update={"tier": ProviderTier.COMMUNITY})
+
+
+class _NoEnvApiKeyProvider(OpenAICompatibleProvider):
+    """An OpenAI-compatible endpoint whose key never comes from the environment.
+
+    ``_OptionalApiKeyProvider`` resolves a key as the argument, then the env var, then the
+    ``"no-key-required"`` placeholder. A caller that serves endpoints it did not choose,
+    such as a gateway hosting its tenants' servers, cannot use that middle step: the
+    deployment's ``OPENAI_COMPATIBLE_API_KEY`` would be forwarded to an endpoint someone
+    else named. Reached through ``AnyLLM.create_openai_compatible(allow_env_api_key=False)``.
+    """
+
+    @override
+    def _verify_and_set_api_key(self, api_key: str | None = None) -> str:
+        return api_key or "no-key-required"

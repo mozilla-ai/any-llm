@@ -65,6 +65,41 @@ def test_explicit_api_key_takes_precedence_over_env(monkeypatch: pytest.MonkeyPa
     assert provider.client.api_key == "explicit-key"
 
 
+def test_allow_env_api_key_defaults_to_reading_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "env-key")
+    provider = AnyLLM.create_openai_compatible(name="mygateway", api_base="https://mygateway.example/v1")
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.client.api_key == "env-key"
+
+
+def test_allow_env_api_key_false_ignores_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A gateway serving endpoints it did not choose must never forward its own
+    # deployment-level key to one of them.
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "env-key")
+    provider = AnyLLM.create_openai_compatible(
+        name="mygateway", api_base="https://mygateway.example/v1", allow_env_api_key=False
+    )
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.client.api_key == "no-key-required"
+
+
+def test_allow_env_api_key_false_still_uses_explicit_key() -> None:
+    provider = AnyLLM.create_openai_compatible(
+        name="mygateway", api_base="https://mygateway.example/v1", api_key="explicit-key", allow_env_api_key=False
+    )
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.client.api_key == "explicit-key"
+
+
+def test_allow_env_api_key_false_keeps_custom_identity() -> None:
+    provider = AnyLLM.create_openai_compatible(
+        name="mygateway", api_base="https://mygateway.example/v1", allow_env_api_key=False
+    )
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.PROVIDER_NAME == "mygateway"
+    assert provider.get_provider_metadata().name == "mygateway"
+
+
 def test_capability_flags_follow_openai_compatible_defaults() -> None:
     provider = AnyLLM.create_openai_compatible(name="mygateway", api_base="https://mygateway.example/v1")
     assert provider.PROMPT_CACHE_KEY_SUPPORT == "passthrough"
