@@ -202,6 +202,10 @@ class _OwnedConverseEvents:
     The SDK stream is synchronous. A read and a close on it must not overlap, and a close
     requested while ``next`` is blocked has to wait until that call returns: cancelling the
     awaiting task does not stop the worker thread inside the socket read.
+
+    ``blocking_next`` takes the read reservation itself. The caller only queues that call,
+    and cancelling a job that is still waiting for a thread drops it, so a reservation taken
+    on the event loop would stay ``reading`` with nobody left to finish it.
     """
 
     def __init__(self, raw: Any) -> None:
@@ -220,25 +224,33 @@ class _OwnedConverseEvents:
             return True
 
     def blocking_next(self) -> Any:
-        """Return the next event, or ``_END`` when the stream is exhausted.
+        """Return the next event, or ``_END`` when the stream is exhausted or not idle.
 
-        ``next(..., _END)`` turns ``StopIteration`` into the sentinel inside this thread, so the
-        executor future never completes with ``StopIteration``.
+        The reservation is taken here, on the worker, so a queued call that cancellation drops
+        never leaves the stream stuck in ``reading``. ``next(..., _END)`` turns ``StopIteration``
+        into the sentinel inside this thread, so the executor future never completes with it.
         """
+        if not self.acquire_read():
+            return _END
         try:
             return next(self._iterator, _END)
         finally:
             self._finish_read()
 
     def prepare_close(self) -> Literal["already", "wait", "close"]:
-        """Decide who closes. The caller must not call the SDK close while a read is in flight."""
+        """Decide who closes. The caller must not call the SDK close while a read is in flight.
+
+        ``idle`` becomes ``closing``, not ``closed``. ``close_raw`` records ``closed``, and only
+        after the SDK close returns, so a close that has not run yet does not look finished.
+        """
         with self._lock:
             if self._state == "closed":
                 return "already"
             if self._state == "idle":
-                self._state = "closed"
+                self._state = "closing"
                 return "close"
-            # ``reading`` or ``closing``: the worker that is inside ``next`` closes afterwards.
+            # ``reading`` or ``closing``: the worker inside ``next`` closes afterwards, or a
+            # close is already underway and this caller waits for it.
             self._state = "closing"
             return "wait"
 
@@ -273,11 +285,14 @@ class _ConverseAsyncStream(AsyncIterator[ChatCompletionChunk]):
     which an async generator cannot do: ``aclose`` never enters a generator that has not started.
 
     Each event is one ``next`` on a worker thread via ``asyncio.to_thread`` (the default
-    executor). The next read is not started until the caller asks for another chunk.
+    executor). The next read is not started until the caller asks for another chunk, and the
+    read is reserved on that worker rather than before the job is queued.
 
     The raw stream is closed exactly once, on exhaustion, on ``aclose`` before any read or
     mid-stream, on a read error, and on cancellation. Close waits, off the event loop, for an
-    in-flight ``next`` to return before it calls the SDK close.
+    in-flight ``next`` to return before it calls the SDK close. A close that is only queued
+    stays on a shielded task: cancelling ``aclose`` does not drop it, the stream counts as
+    closed only after that call returns, and a later ``aclose`` waits for the same task.
 
     Cancelling the task that is waiting on a read does not interrupt that read. ``next`` on a
     boto3 event stream blocks in a synchronous socket read, and a cancelled asyncio task cannot
@@ -291,6 +306,9 @@ class _ConverseAsyncStream(AsyncIterator[ChatCompletionChunk]):
         self._tool_index_map: dict[int, int] = {}
         self._created = int(time())
         self._gate = asyncio.Lock()
+        # Retained so a cancelled ``aclose`` cannot drop a queued ``close_raw``, and so a later
+        # ``aclose`` can wait for the close that is already underway.
+        self._close_task: asyncio.Task[None] | None = None
 
     @override
     def __aiter__(self) -> _ConverseAsyncStream:
@@ -307,8 +325,6 @@ class _ConverseAsyncStream(AsyncIterator[ChatCompletionChunk]):
 
     async def _next_chunk(self) -> ChatCompletionChunk:
         while True:
-            if not self._events.acquire_read():
-                raise StopAsyncIteration
             item = await asyncio.to_thread(self._events.blocking_next)
             if item is _END:
                 raise StopAsyncIteration
@@ -326,13 +342,20 @@ class _ConverseAsyncStream(AsyncIterator[ChatCompletionChunk]):
         # ``prepare_close`` only flips state. The SDK close and the wait for an in-flight
         # socket read both run off the event loop. A second close finds the stream already
         # closed or already waiting, and does not call the SDK again.
+        if self._close_task is not None:
+            await asyncio.shield(self._close_task)
+            return
         action = self._events.prepare_close()
         if action == "already":
             return
         if action == "wait":
             await asyncio.to_thread(self._events.wait_until_closed)
             return
-        await asyncio.to_thread(self._events.close_raw)
+        # Cancelling the caller cancels a queued executor job, so this task is retained and
+        # shielded. ``close_raw`` records ``closed`` only after the SDK close returns, and a
+        # later ``aclose`` awaits this same task instead of starting another close.
+        self._close_task = asyncio.create_task(asyncio.to_thread(self._events.close_raw))
+        await asyncio.shield(self._close_task)
 
 
 class BedrockProvider(AnyLLM):

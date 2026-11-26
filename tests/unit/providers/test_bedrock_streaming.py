@@ -1,11 +1,14 @@
 import asyncio
 import threading
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from typing import Any, cast
 from unittest.mock import MagicMock, Mock
 
 import pytest
 from botocore.exceptions import EventStreamError
+from typing_extensions import override
 
 from any_llm.exceptions import RateLimitError
 from any_llm.providers.bedrock import BedrockProvider
@@ -91,6 +94,58 @@ async def _open_stream(
 
 async def _next_chunk(stream: AsyncIterator[ChatCompletionChunk]) -> ChatCompletionChunk:
     return await anext(stream)
+
+
+class _CountingExecutor(ThreadPoolExecutor):
+    """One-worker pool that records how many jobs have been submitted."""
+
+    def __init__(self) -> None:
+        super().__init__(max_workers=1, thread_name_prefix="bedrock-queued")
+        self.submitted = 0
+        self.second_job = asyncio.Event()
+
+    @override
+    def submit(self, fn: Any, /, *args: Any, **kwargs: Any) -> Future[Any]:
+        self.submitted += 1
+        future: Future[Any] = super().submit(fn, *args, **kwargs)
+        if self.submitted == 2:
+            self.second_job.set()
+        return future
+
+
+@asynccontextmanager
+async def _busy_single_worker_executor() -> AsyncIterator[tuple[_CountingExecutor, threading.Event]]:
+    """Install a one-worker default executor and hold its only worker until ``release`` is set.
+
+    ``asyncio.to_thread`` uses the loop's default executor. A job submitted while that worker is
+    inside ``occupy`` stays queued, which is the cancellation window these tests reproduce.
+    """
+    loop = asyncio.get_running_loop()
+    raw_executor: object = getattr(loop, "_default_executor", None)
+    previous = raw_executor if isinstance(raw_executor, ThreadPoolExecutor) else None
+    executor = _CountingExecutor()
+    loop.set_default_executor(executor)
+    entered = asyncio.Event()
+    release = threading.Event()
+
+    def occupy() -> None:
+        loop.call_soon_threadsafe(entered.set)
+        if not release.wait(5):
+            msg = "test left the executor worker blocked"
+            raise TimeoutError(msg)
+
+    occupier = asyncio.create_task(asyncio.to_thread(occupy))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        yield executor, release
+    finally:
+        release.set()
+        await asyncio.gather(occupier, return_exceptions=True)
+        if previous is not None:
+            loop.set_default_executor(previous)
+        else:
+            loop.set_default_executor(ThreadPoolExecutor(thread_name_prefix="asyncio"))
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 @pytest.mark.asyncio
@@ -302,6 +357,95 @@ async def test_converse_stream_cancel_during_read_closes_once_after_the_read() -
             read.cancel()
             await asyncio.gather(read, return_exceptions=True)
         await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_converse_stream_cancel_queued_read_finishes_and_closes_with_no_reads() -> None:
+    """Cancelling a read that is only queued must finish, and must close the raw stream.
+
+    The default executor has one worker and that worker is busy, so ``__anext__`` queues
+    ``blocking_next``. Cancelling the task drops that queued job. Cleanup still has to finish,
+    with the read never having started.
+    """
+    event_stream = _FakeEventStream([_text("first"), _text("second")])
+    stream = BedrockProvider._stream_converse(event_stream, MODEL, "req-1")
+    async with _busy_single_worker_executor() as (executor, release):
+        read = asyncio.create_task(_next_chunk(stream))
+        try:
+            await asyncio.wait_for(executor.second_job.wait(), timeout=2)
+            assert executor.submitted == 2
+            assert not read.done()
+            assert event_stream.read_threads == []
+            assert not event_stream.closed
+
+            read.cancel()
+            release.set()
+            done, _pending = await asyncio.wait({read}, timeout=2)
+            assert read in done
+            with pytest.raises(asyncio.CancelledError):
+                read.result()
+            assert event_stream.close_count == 1
+            assert event_stream.read_threads == []
+            assert not event_stream.closed_while_reading
+        finally:
+            release.set()
+            if not read.done():
+                # A regressed cleanup waits forever for a read that will never run. Wake that
+                # wait so the worker can exit and this failure stays an assertion, not a hang.
+                stream._events._closed.set()
+                await asyncio.wait({read}, timeout=2)
+            await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_converse_stream_cancelled_aclose_still_closes_and_a_later_aclose_waits() -> None:
+    """Cancelling ``aclose`` while ``close_raw`` is only queued must not abandon the raw stream.
+
+    The close used to be recorded before the queued call ran. Dropping that call left the stream
+    open, and the next ``aclose`` returned without closing it. The later call has to wait for the
+    same close, which cannot finish until the busy worker is released.
+    """
+    event_stream = _FakeEventStream([_text("first")])
+    stream = BedrockProvider._stream_converse(event_stream, MODEL, "req-1")
+    async with _busy_single_worker_executor() as (executor, release):
+        closing = asyncio.create_task(stream.aclose())
+        try:
+            await asyncio.wait_for(executor.second_job.wait(), timeout=2)
+            assert executor.submitted == 2
+            assert not closing.done()
+            assert not event_stream.closed
+            assert event_stream.read_threads == []
+
+            closing.cancel()
+            done, _pending = await asyncio.wait({closing}, timeout=2)
+            assert closing in done
+            with pytest.raises(asyncio.CancelledError):
+                closing.result()
+            # The only worker is still inside the test's blocker, so a dropped close cannot have run.
+            assert not event_stream.closed
+
+            again = asyncio.create_task(stream.aclose())
+            for _ in range(5):
+                await asyncio.sleep(0)
+            assert not again.done()
+            assert not event_stream.closed
+
+            release.set()
+            done, _pending = await asyncio.wait({again}, timeout=2)
+            assert again in done
+            assert again.exception() is None
+            assert event_stream.close_count == 1
+            assert executor.submitted == 2
+            assert event_stream.read_threads == []
+            assert not event_stream.closed_while_reading
+            await stream.aclose()
+            assert event_stream.close_count == 1
+        finally:
+            release.set()
+            if not closing.done():
+                closing.cancel()
+                await asyncio.wait({closing}, timeout=2)
+            await stream.aclose()
 
 
 @pytest.mark.asyncio
