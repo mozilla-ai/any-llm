@@ -1674,7 +1674,7 @@ def test_messages_params_to_responses_params_maps_request_fields() -> None:
             "content": [
                 {"type": "input_text", "text": "And this?"},
                 {"type": "input_image", "image_url": "https://example.com/a.png", "detail": "auto"},
-                {"type": "document", "source": {"type": "url", "url": "https://example.com/a.pdf"}},
+                {"type": "input_file", "file_url": "https://example.com/a.pdf"},
             ],
         },
     ]
