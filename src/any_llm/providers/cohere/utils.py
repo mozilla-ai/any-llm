@@ -176,9 +176,6 @@ def _create_openai_chunk_from_cohere_chunk(chunk: Any, model: str) -> ChatComple
                 }
             ]
 
-    elif chunk_type == "tool-call-end":
-        finish_reason = "tool_calls"
-
     elif chunk_type == "message-end":
         chunk_delta = getattr(chunk, "delta", None)
         finish_reason = _map_cohere_finish_reason(getattr(chunk_delta, "finish_reason", None))

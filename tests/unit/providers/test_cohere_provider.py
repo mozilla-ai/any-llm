@@ -1,6 +1,9 @@
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from cohere.types import Usage as CohereUsage
 from cohere.types import UsageTokens
@@ -13,6 +16,7 @@ from cohere.v2.types import (
 )
 from pydantic import BaseModel
 
+from any_llm import AnyLLM
 from any_llm.exceptions import ProviderError, UnsupportedParameterError
 from any_llm.providers.cohere.utils import (
     _convert_cohere_embedding_response,
@@ -22,6 +26,20 @@ from any_llm.providers.cohere.utils import (
 )
 from any_llm.types.completion import CompletionParams, CreateEmbeddingResponse, ReasoningEffort
 from any_llm.utils.streaming import accumulate_chunks
+
+
+def _cohere_sse_client(*events: dict[str, object]) -> httpx.AsyncClient:
+    body = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v2/chat"
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def _completed_cohere_stream() -> AsyncIterator[MessageEndV2ChatStreamResponse]:
+    yield MessageEndV2ChatStreamResponse.model_validate({"delta": {"finish_reason": "COMPLETE"}})
 
 
 def _mk_provider() -> Any:
@@ -55,11 +73,7 @@ async def test_stream_with_response_format_passes_to_chat_stream() -> None:
     response_format = {"type": "json_object"}
     provider = _mk_provider()
 
-    async def _stream() -> Any:
-        if False:
-            yield None
-
-    provider.client.chat_stream = Mock(return_value=_stream())
+    provider.client.chat_stream = Mock(return_value=_completed_cohere_stream())
     result = await provider._acompletion(
         CompletionParams(
             model_id="model-id",
@@ -70,7 +84,7 @@ async def test_stream_with_response_format_passes_to_chat_stream() -> None:
     )
     collected = [chunk async for chunk in result]
 
-    assert collected == []
+    assert [chunk.choices[0].finish_reason for chunk in collected] == ["stop"]
     provider.client.chat_stream.assert_called_once_with(
         model="model-id",
         messages=[{"role": "user", "content": "Hello"}],
@@ -99,6 +113,83 @@ async def test_streamed_chunks_carry_requested_model_id() -> None:
 
     assert len(collected) == 3
     assert {chunk.model for chunk in collected} == {"command-r7b-12-2024"}
+
+
+@pytest.mark.asyncio
+async def test_cohere_incomplete_stream_yields_partial_text_then_raises() -> None:
+    async with _cohere_sse_client(
+        {"type": "message-start", "id": "reply-1", "delta": {"message": {"role": "assistant"}}},
+        {"type": "content-delta", "index": 0, "delta": {"message": {"content": {"text": "partial"}}}},
+    ) as client:
+        provider = AnyLLM.create("cohere", api_key="test-api-key", httpx_client=client)
+        stream = await provider.acompletion(
+            model="command-a-03-2025", messages=[{"role": "user", "content": "Hi"}], stream=True
+        )
+
+        await anext(stream)
+        partial = await anext(stream)
+        assert partial.choices[0].delta.content == "partial"
+        assert partial.choices[0].finish_reason is None
+        with pytest.raises(ProviderError, match="stream ended before Cohere sent message-end") as error:
+            await anext(stream)
+        assert error.value.provider_name == "cohere"
+
+
+@pytest.mark.asyncio
+async def test_cohere_parallel_tool_stream_finishes_at_message_end() -> None:
+    events: list[dict[str, object]] = [
+        {"type": "message-start", "id": "reply-1", "delta": {"message": {"role": "assistant"}}},
+    ]
+    for index, city in enumerate(("Paris", "Madrid")):
+        tool_call = {"id": f"call-{index}", "type": "function", "function": {"name": "get_weather", "arguments": ""}}
+        arguments = {"function": {"arguments": json.dumps({"city": city})}}
+        events.extend(
+            [
+                {"type": "tool-call-start", "index": index, "delta": {"message": {"tool_calls": tool_call}}},
+                {"type": "tool-call-delta", "index": index, "delta": {"message": {"tool_calls": arguments}}},
+                {"type": "tool-call-end", "index": index},
+            ]
+        )
+    events.append(
+        {
+            "type": "message-end",
+            "delta": {"finish_reason": "TOOL_CALL", "usage": {"tokens": {"input_tokens": 12, "output_tokens": 8}}},
+        }
+    )
+
+    async with _cohere_sse_client(*events) as client:
+        provider = AnyLLM.create("cohere", api_key="test-api-key", httpx_client=client)
+        stream = await provider.acompletion(
+            model="command-a-03-2025",
+            messages=[{"role": "user", "content": "How is the weather in Paris and Madrid?"}],
+            stream=True,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"city": {"type": "string"}},
+                            "required": ["city"],
+                        },
+                    },
+                }
+            ],
+        )
+        chunks = [chunk async for chunk in stream]
+
+    assert [chunk.choices[0].finish_reason for chunk in chunks] == [None] * (len(chunks) - 1) + ["tool_calls"]
+    completion = accumulate_chunks(chunks)
+    tool_calls = completion.choices[0].message.tool_calls
+    assert tool_calls is not None
+    assert [tool_call.id for tool_call in tool_calls] == ["call-0", "call-1"]
+    assert [json.loads(tool_call.function.arguments) for tool_call in tool_calls if tool_call.type == "function"] == [
+        {"city": "Paris"},
+        {"city": "Madrid"},
+    ]
+    assert completion.usage is not None
+    assert completion.usage.total_tokens == 20
 
 
 def test_convert_completion_chunk_response_without_model_reports_unknown() -> None:
@@ -181,15 +272,13 @@ async def test_single_completion_n_is_not_sent_to_chat(n: int | None) -> None:
 async def test_single_completion_n_is_not_sent_to_chat_stream() -> None:
     provider = _mk_provider()
 
-    async def _stream() -> Any:
-        if False:
-            yield None
-
-    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+    with patch.object(
+        provider.client, "chat_stream", autospec=True, return_value=_completed_cohere_stream()
+    ) as mock_chat_stream:
         result = await provider.acompletion(
             model="model-id", messages=[{"role": "user", "content": "Hello"}], n=1, stream=True
         )
-        assert [chunk async for chunk in result] == []
+        assert [chunk.choices[0].finish_reason async for chunk in result] == ["stop"]
 
     assert "n" not in mock_chat_stream.call_args.kwargs
 
@@ -588,11 +677,9 @@ async def test_strict_tools_sent_when_every_tool_is_strict() -> None:
 async def test_strict_tools_not_sent_for_non_strict_tools() -> None:
     provider = _mk_provider()
 
-    async def _stream() -> Any:
-        if False:
-            yield None
-
-    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+    with patch.object(
+        provider.client, "chat_stream", autospec=True, return_value=_completed_cohere_stream()
+    ) as mock_chat_stream:
         result = await provider._acompletion(
             CompletionParams(
                 model_id="model-id",
@@ -601,7 +688,7 @@ async def test_strict_tools_not_sent_for_non_strict_tools() -> None:
                 stream=True,
             )
         )
-        assert [chunk async for chunk in result] == []
+        assert [chunk.choices[0].finish_reason async for chunk in result] == ["stop"]
 
     assert mock_chat_stream.call_args.kwargs["tools"] == [_function_tool("get_city")]
     assert "strict_tools" not in mock_chat_stream.call_args.kwargs
@@ -1531,11 +1618,9 @@ async def test_openai_style_params_are_renamed_for_chat(
 async def test_openai_style_params_are_renamed_for_chat_stream() -> None:
     provider = _mk_provider()
 
-    async def _stream() -> Any:
-        if False:
-            yield None
-
-    with patch.object(provider.client, "chat_stream", autospec=True, return_value=_stream()) as mock_chat_stream:
+    with patch.object(
+        provider.client, "chat_stream", autospec=True, return_value=_completed_cohere_stream()
+    ) as mock_chat_stream:
         result = await provider.acompletion(
             model="model-id",
             messages=[{"role": "user", "content": "Hello"}],
@@ -1544,7 +1629,7 @@ async def test_openai_style_params_are_renamed_for_chat_stream() -> None:
             max_completion_tokens=64,
             stream=True,
         )
-        assert [chunk async for chunk in result] == []
+        assert [chunk.choices[0].finish_reason async for chunk in result] == ["stop"]
 
     sent = mock_chat_stream.call_args.kwargs
     for name in ("stop", "top_p", "max_completion_tokens"):
