@@ -490,7 +490,7 @@ def _convert_user_blocks_to_openai(
 ) -> list[dict[str, Any]]:
     """Convert Anthropic user content blocks to OpenAI format.
 
-    Handles tool_result blocks (→ role:tool messages) and content blocks (text, image).
+    Handles tool_result blocks (→ role:tool messages) and content blocks (text, image, document).
 
     A tool result marked ``is_error`` has its text prefixed with ``Error: ``, unless it already
     starts with one, rather than carrying the flag as a message key. OpenAI has no field for it, the OpenAI SDK forwards unknown message
@@ -548,6 +548,8 @@ def _convert_user_blocks_to_openai(
             content_blocks.append({"type": "text", "text": block.get("text", "")})
         elif block_type == "image":
             content_blocks.append(_convert_image_block_to_openai(block))
+        elif block_type == "document":
+            content_blocks.append(_convert_document_block_to_openai(block))
         else:
             content_blocks.append(block)
         content_marks.append(block.get("cache_control"))

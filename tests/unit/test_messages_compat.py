@@ -2921,6 +2921,53 @@ def test_image_block_url_source_conversion() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            {"type": "base64", "media_type": "application/pdf", "data": "JVBERi0="},
+            {"type": "file", "file": {"file_data": "data:application/pdf;base64,JVBERi0="}},
+            id="base64",
+        ),
+        pytest.param(
+            {"type": "url", "url": "https://example.test/a.pdf"},
+            {"type": "file", "file": {"file_data": "https://example.test/a.pdf"}},
+            id="url",
+        ),
+        pytest.param(
+            {"type": "text", "media_type": "text/plain", "data": "DOCBODY"},
+            {"type": "text", "text": "DOCBODY"},
+            id="text",
+        ),
+    ],
+)
+def test_document_block_in_user_content_conversion(source: dict[str, Any], expected: dict[str, Any]) -> None:
+    """A document in plain user content becomes the same OpenAI part as a document in a tool result."""
+    params = MessagesParams(
+        model="claude-3-5-sonnet",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "document", "source": source},
+                    {"type": "text", "text": "Summarize this."},
+                ],
+            }
+        ],
+        max_tokens=1024,
+    )
+    result = messages_params_to_completion_params(params)
+    assert result["messages"][0]["content"] == [expected, {"type": "text", "text": "Summarize this."}]
+
+
+def test_document_block_in_user_content_without_payload_raises() -> None:
+    """A document in plain user content with no payload is rejected, like one in a tool result."""
+    with pytest.raises(InvalidRequestError, match="carries no data"):
+        _convert_user_blocks_to_openai(
+            [{"type": "document", "source": {"type": "base64", "media_type": "application/pdf"}}]
+        )
+
+
 def test_assistant_blocks_multiple_thinking_blocks_emit_no_signature() -> None:
     """Interleaved thinking puts several blocks in one turn, and no signature signs the join.
 
