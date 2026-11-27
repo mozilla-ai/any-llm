@@ -172,7 +172,7 @@ For [providers that support reasoning](providers.md), you can request thinking t
 from any_llm import completion
 
 response = completion(
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     provider="anthropic",
     messages=[{"role": "user", "content": "How many r's are in strawberry?"}],
     reasoning_effort="high",

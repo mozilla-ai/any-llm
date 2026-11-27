@@ -15,7 +15,7 @@ print(response)
 
 # Switch providers without changing your code
 response = completion(
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     messages=[{"role": "user", "content": "What is Python?"}],
     provider="anthropic"
 )
