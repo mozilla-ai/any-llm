@@ -2803,6 +2803,24 @@ def test_sync_streaming_completion_raises_if_anthropic_never_sends_message_stop(
         asyncio.run(provider.client.close())
 
 
+def test_sync_streaming_messages_raises_if_anthropic_never_sends_message_stop() -> None:
+    provider = _streaming_provider(_sse(*_text_stream_events("A traditional")))
+    try:
+        stream = provider.messages(
+            model="model-id",
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=16,
+            stream=True,
+        )
+        assert isinstance(stream, Iterator)
+        events: list[Any] = []
+        with pytest.raises(ProviderError, match="Messages stream ended before Anthropic sent message_stop"):
+            _consume_sync(stream, events)
+        assert [event.type for event in events] == ["message_start", "content_block_start", "content_block_delta"]
+    finally:
+        asyncio.run(provider.client.close())
+
+
 @pytest.mark.asyncio
 async def test_default_n_is_not_sent_to_messages_create() -> None:
     with mock_anthropic_provider() as mock_anthropic:

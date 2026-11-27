@@ -135,7 +135,7 @@ for chunk in completion(
     output += chunk_content
 ```
 
-Ollama and Gemini (including native Gemini models on Vertex AI) raise `ProviderError` if a stream closes before the provider's terminal signal (Ollama's `done`, or a Gemini finish reason or prompt block). OpenAI-compatible providers raise it when a choice has started but the stream closes before that choice's `finish_reason`; a stream that sent no choices at all ends normally. In each case, chunks received before the error are still yielded.
+Anthropic, Ollama, and Gemini (including native Gemini models on Vertex AI) raise `ProviderError` if a stream closes before the provider's terminal signal (Anthropic's `message_stop`, Ollama's `done`, or a Gemini finish reason or prompt block). OpenAI-compatible providers raise it when a choice has started but the stream closes before that choice's `finish_reason`; a stream that sent no choices at all ends normally. In each case, chunks received before the error are still yielded. Anthropic's native `messages(stream=True)` iterator also requires `message_stop`. Catch `ProviderError` around iteration, not just when opening the stream, and don't replay a partial turn as a completed message.
 
 ### Rebuilding the message from a stream
 
