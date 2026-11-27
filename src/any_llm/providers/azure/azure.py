@@ -85,6 +85,10 @@ class AzureProvider(AnyLLM):
         return api_key
 
     @override
+    def _owned_clients(self) -> list[object]:
+        return [self.chat_client, self.embeddings_client]
+
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         token_credential: AsyncTokenCredential | None = kwargs.pop("credential", None)
 

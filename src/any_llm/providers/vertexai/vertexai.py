@@ -166,6 +166,15 @@ class VertexaiProvider(GoogleProvider):
         """Return a valid OAuth access token from the credentials the genai client uses, refreshing it if expired."""
         return cast("str", await self.client._api_client._async_access_token())
 
+    @override
+    def _owned_clients(self) -> list[object]:
+        owned = super()._owned_clients()
+        if self._partner_provider is not None:
+            owned.append(self._partner_provider)
+        if self._mistral_client is not None:
+            owned.append(self._mistral_client)
+        return owned
+
     def _get_partner_provider(self) -> _VertexaiPartnerProvider:
         if self._partner_provider is None:
             api_client = self.client._api_client

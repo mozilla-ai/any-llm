@@ -239,6 +239,11 @@ class GoogleProvider(AnyLLM):
             http_options.timeout = timeout_ms
 
     @override
+    def _owned_clients(self) -> list[object]:
+        # genai.Client.close() closes only the sync transport; requests go through the async one on .aio.
+        return [self.client.aio, self.client]
+
+    @override
     def _apply_max_retries(self, max_retries: int, client_kwargs: dict[str, Any]) -> None:
         """Set ``http_options.retry_options`` unless the caller already configured one.
 
