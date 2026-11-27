@@ -1,7 +1,7 @@
 import enum
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
@@ -9,6 +9,26 @@ import pytest
 from pydantic import BaseModel
 
 from any_llm.tools import callable_to_tool, prepare_tools
+
+
+def test_dataclass_tool_input_omits_computed_fields() -> None:
+    @dataclass
+    class Span:
+        start: int
+        end: int
+        length: int = field(init=False)
+
+        def __post_init__(self) -> None:
+            self.length = self.end - self.start
+
+    def measure(span: Span) -> int:
+        """Measure the span."""
+        return span.length
+
+    schema = callable_to_tool(measure)["function"]["parameters"]["properties"]["span"]
+    assert schema["properties"] == {"start": {"type": "integer"}, "end": {"type": "integer"}}
+    assert schema["required"] == ["start", "end"]
+    assert measure(Span(**dict.fromkeys(schema["required"], 3))) == 0
 
 
 def test_callable_to_tool_basic() -> None:

@@ -233,6 +233,8 @@ def _type_to_json_schema(python_type: Any) -> dict[str, Any]:
         dc_properties: dict[str, Any] = {}
         dc_required: list[str] = []
         for field in dataclasses.fields(python_type):
+            if not field.init:
+                continue
             field_type = type_hints.get(field.name, Any)
             dc_field_info = dc_pydantic_fields.get(field.name)
             if dc_field_info is not None:
