@@ -320,6 +320,14 @@ class BedrockProvider(AnyLLM):
         return [Model(id=model_id, object="model", created=0, owned_by="aws") for model_id in model_ids]
 
     @override
+    def _owned_clients(self) -> list[object]:
+        # A client passed in by the caller is theirs to close.
+        owned: list[object] = [] if self._custom_client is not None else [self.client]
+        with self._timeout_clients_lock:
+            owned.extend(self._timeout_clients.values())
+        return owned
+
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         self.api_base = api_base
         self.kwargs = kwargs

@@ -105,6 +105,10 @@ class DeepseekProvider(BaseOpenAIProvider):
     _anthropic_client: AsyncAnthropic
 
     @override
+    def _owned_clients(self) -> list[object]:
+        return [self.client, self._anthropic_client]
+
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         resolved_base = api_base or self.API_BASE
         self.client = AsyncOpenAI(base_url=resolved_base, api_key=api_key, **kwargs)

@@ -35,6 +35,24 @@ async def aclose_quietly(async_iter: object) -> None:
                 await maybe_awaitable
 
 
+async def aclose_sdk_client(client: object) -> None:
+    """Close a provider SDK client, awaiting the close if the SDK made it a coroutine.
+
+    SDKs disagree on the spelling: ``aclose()`` (google-genai's async client), ``close()`` that is
+    a coroutine (OpenAI-style SDKs) or synchronous (boto3, google-genai's sync client), or only
+    ``__aexit__`` (cohere, mistralai). A client with none of these holds nothing to release.
+    """
+    close = getattr(client, "aclose", None) or getattr(client, "close", None)
+    if callable(close):
+        maybe_awaitable = close()
+        if inspect.isawaitable(maybe_awaitable):
+            await maybe_awaitable
+        return
+    aexit = getattr(client, "__aexit__", None)
+    if callable(aexit):
+        await aexit(None, None, None)
+
+
 def _start_loop_thread(name: str) -> tuple[asyncio.AbstractEventLoop, threading.Thread]:
     """Start an event loop in a new daemon thread and return both once the loop is running."""
     loop = asyncio.new_event_loop()

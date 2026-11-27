@@ -9,7 +9,7 @@ import re
 import time
 import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, TypeVar, cast, overload
 
 import httpx
 from openresponses_types import ResponseResource
@@ -59,7 +59,13 @@ from any_llm.types.responses import (
     ResponseStreamEvent,
 )
 from any_llm.types.video import VideoGenerationParams, VideoJob, VideoOutput
-from any_llm.utils.aio import aclose_quietly, async_coro_to_sync_iter, async_iter_to_sync_iter, run_async_in_sync
+from any_llm.utils.aio import (
+    aclose_quietly,
+    aclose_sdk_client,
+    async_coro_to_sync_iter,
+    async_iter_to_sync_iter,
+    run_async_in_sync,
+)
 from any_llm.utils.exception_handler import handle_exceptions, provider_exception_handler
 from any_llm.utils.structured_output import (
     build_parsed_message,
@@ -84,6 +90,7 @@ _DEEPSEEK_V4_EFFORTS: dict[str, ReasoningEffort] = {"minimal": "low", "medium": 
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
+    from types import TracebackType
 
     from any_llm.types.batch import Batch, BatchResult
     from any_llm.types.completion import ChatCompletionChunk, CreateEmbeddingResponse
@@ -693,6 +700,53 @@ class AnyLLM(FilesMixin, ABC):
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         msg = "Subclasses must implement this method"
         raise NotImplementedError(msg)
+
+    def _owned_clients(self) -> list[object]:
+        """Return the SDK clients (or nested providers) this provider created and must close.
+
+        Most providers keep a single SDK client in ``self.client``. Providers that hold more, or
+        that wrap a client the caller passed in, override this.
+        """
+        # ``client`` is set by each provider's _init_client and is not declared on the base class.
+        client = vars(self).get("client")
+        return [] if client is None else [client]
+
+    async def aclose(self) -> None:
+        """Close the SDK clients this provider holds, on the running event loop.
+
+        SDK clients own connection pools bound to the event loop they were first used on. Call
+        this (or use the provider as an ``async with`` block) before that loop ends; otherwise the
+        clients are closed later by the garbage collector, on whatever loop is running then, which
+        fails with ``RuntimeError: Event loop is closed``. Every client is closed even if one of
+        them fails, and the first failure is raised afterwards. The provider cannot send requests
+        once closed; create a new one instead.
+        """
+        first_error: Exception | None = None
+        seen: set[int] = set()
+        for client in self._owned_clients():
+            if id(client) in seen:
+                continue
+            seen.add(id(client))
+            try:
+                if isinstance(client, AnyLLM):
+                    await client.aclose()
+                else:
+                    await aclose_sdk_client(client)
+            except Exception as exc:
+                first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.aclose()
 
     # Overloads let type checkers narrow the return type based on response_format and stream.
     # The implementation only declares these discriminating params; everything else

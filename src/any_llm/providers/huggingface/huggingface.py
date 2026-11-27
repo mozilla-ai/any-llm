@@ -142,6 +142,10 @@ class HuggingfaceProvider(AnyLLM):
         return _convert_models_list(response)
 
     @override
+    def _owned_clients(self) -> list[object]:
+        return [self.client, self.responses_client]
+
+    @override
     def _init_client(self, api_key: str | None = None, api_base: str | None = None, **kwargs: Any) -> None:
         """Create the inference and OpenResponses clients.
 

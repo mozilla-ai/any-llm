@@ -143,6 +143,14 @@ class XaiProvider(AnyLLM):
         self._client_kwargs: dict[str, Any] = {"api_key": api_key, **kwargs}
         self._clients_by_loop: dict[asyncio.AbstractEventLoop, XaiAsyncClient] = {}
 
+    @override
+    def _owned_clients(self) -> list[object]:
+        # Called from aclose(), so a loop is running. A client can only be awaited closed on its
+        # own loop; clients of loops that already closed are released synchronously instead.
+        self._discard_clients_for_closed_loops()
+        client = self._clients_by_loop.pop(asyncio.get_running_loop(), None)
+        return [] if client is None else [client]
+
     @property
     def client(self) -> XaiAsyncClient:
         """The xAI client for the running event loop, built on first use.
