@@ -94,6 +94,7 @@ class LLMProvider(StrEnum):
     ZAI = "zai"
     TELNYX = "telnyx"
     TINFOIL = "tinfoil"
+    TRUSTEDROUTER = "trustedrouter"
     TYPESAFE = "typesafe"
 
     @classmethod
