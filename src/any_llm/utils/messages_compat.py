@@ -546,6 +546,8 @@ def _convert_user_blocks_to_openai(
             continue
         if block_type == "text":
             content_blocks.append({"type": "text", "text": block.get("text", "")})
+        elif block_type == "search_result":
+            content_blocks.append({"type": "text", "text": _render_tool_result_block_as_text(block)})
         elif block_type == "image":
             content_blocks.append(_convert_image_block_to_openai(block))
         else:

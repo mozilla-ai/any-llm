@@ -2642,6 +2642,31 @@ def test_user_blocks_tool_result_search_result_rendered_as_text() -> None:
     assert result[0]["content"] == "Found:\nParis weather\nhttps://example.com/paris\nSunny, 15C\nDone."
 
 
+def test_user_blocks_search_result_in_user_content_rendered_as_text() -> None:
+    """A search_result in plain user content becomes a text part, not a raw Anthropic block."""
+    result = _convert_user_blocks_to_openai(
+        [
+            {
+                "type": "search_result",
+                "title": "Paris weather",
+                "source": "https://example.com/paris",
+                "content": [{"type": "text", "text": "Sunny, 15C"}],
+                "citations": {"enabled": True},
+            },
+            {"type": "text", "text": "What is the weather?"},
+        ]
+    )
+    assert result == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Paris weather\nhttps://example.com/paris\nSunny, 15C"},
+                {"type": "text", "text": "What is the weather?"},
+            ],
+        }
+    ]
+
+
 def test_user_blocks_tool_result_search_result_skips_missing_fields_and_non_text_parts() -> None:
     """Absent fields leave no blank lines, and only text parts of a search result are kept."""
     result = _convert_user_blocks_to_openai(
