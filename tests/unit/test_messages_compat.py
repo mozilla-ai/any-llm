@@ -911,6 +911,34 @@ def test_streaming_tool_call_id_repeated_reuses_the_same_block() -> None:
     assert state.current_block_index == 0
 
 
+def test_streaming_new_tool_call_on_a_used_index_gets_its_own_block() -> None:
+    """Some converters, such as Ollama's, give every call the same index; a new id and name is a new call."""
+    state = StreamingState()
+    calls = [("call_a", "get_weather", '{"city":"Paris"}'), ("call_b", "get_time", '{"zone":"CET"}')]
+    chunk = _tool_calls_chunk(
+        *[
+            ChoiceDeltaToolCall(
+                index=0,
+                id=call_id,
+                type="function",
+                function=ChoiceDeltaToolCallFunction(name=name, arguments=arguments),
+            )
+            for call_id, name, arguments in calls
+        ]
+    )
+
+    events = [*chat_completion_chunk_to_message_stream_events(chunk, state), *close_open_blocks(state)]
+
+    starts = [e for e in events if e.type == "content_block_start"]
+    assert [(e.index, e.content_block.id, e.content_block.name) for e in starts] == [
+        (0, "call_a", "get_weather"),
+        (1, "call_b", "get_time"),
+    ]
+    deltas = [e for e in events if e.type == "content_block_delta"]
+    assert [(e.index, e.delta.partial_json) for e in deltas] == [(0, '{"city":"Paris"}'), (1, '{"zone":"CET"}')]
+    assert [e.index for e in events if e.type == "content_block_stop"] == [0, 1]
+
+
 def test_streaming_tool_call_arguments_without_a_known_index_are_dropped() -> None:
     """A fragment for an index that was never announced is not filed under the open tool block."""
     state = StreamingState()

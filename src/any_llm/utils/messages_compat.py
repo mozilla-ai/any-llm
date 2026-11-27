@@ -916,6 +916,8 @@ class StreamingState:
         """Content block index of each open tool_use block, keyed by OpenAI ``tool_calls[].index``."""
         self.tool_call_blocks: dict[int, int] = {}
         """Content block index of every tool_use block of the message, open or closed, by the same key."""
+        self.tool_call_ids: dict[int, str] = {}
+        """Id of the call that owns each of those blocks, by the same key."""
         self.pending_text = ""
         """Text that arrived while tool_use blocks were open, emitted as a text block once they close."""
         self.pending_code_result: tuple[dict[str, Any], list[dict[str, Any]]] | None = None
@@ -1095,17 +1097,27 @@ def chat_completion_chunk_to_message_stream_events(
     if delta.tool_calls:
         for tc in delta.tool_calls:
             # An id repeated on later fragments of the same tool call must not open a second block.
-            if tc.id and tc.index not in state.tool_call_blocks:
+            # Several converters give separate calls the same index, so a different id that comes
+            # with a name is a new call, as in ``ChatCompletionAccumulator``.
+            is_new_call = tc.index not in state.tool_call_blocks or bool(
+                tc.id != state.tool_call_ids[tc.index] and tc.function and tc.function.name
+            )
+            if tc.id and is_new_call:
                 # Parallel tool calls share one tool_use section: only a text or thinking block
                 # is closed here, so a block stays open for every call still receiving arguments.
                 if state.current_block_type != "tool_use":
                     _close_current_block(state, events)
+                # The call this one replaces at its index can get no more fragments.
+                replaced_block = state.tool_block_indexes.pop(tc.index, None)
+                if replaced_block is not None:
+                    events.append(ContentBlockStopEvent(type="content_block_stop", index=replaced_block))
                 state.current_block_index += 1
                 state.current_block_type = "tool_use"
                 state.tool_call_id = tc.id
                 state.tool_call_name = tc.function.name if tc.function else ""
                 state.tool_block_indexes[tc.index] = state.current_block_index
                 state.tool_call_blocks[tc.index] = state.current_block_index
+                state.tool_call_ids[tc.index] = tc.id
                 events.append(
                     ContentBlockStartEvent(
                         type="content_block_start",
