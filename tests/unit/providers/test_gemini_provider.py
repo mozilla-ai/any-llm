@@ -3191,6 +3191,23 @@ def test_convert_messages_replays_assistant_text_ahead_of_its_tool_calls() -> No
     assert parts[1].thought_signature == b"call"
 
 
+def test_convert_messages_assistant_text_parts_become_one_text_part() -> None:
+    """Assistant content given as OpenAI text parts is sent as text, like a string."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Hello, "}, {"type": "text", "text": "how can I help?"}],
+        },
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[1].parts
+    assert parts is not None
+    assert [part.text for part in parts] == ["Hello, how can I help?"]
+
+
 @pytest.mark.parametrize("content", [None, "", [{"type": "text", "text": "ignored"}]])
 def test_convert_messages_tool_call_turn_without_text_emits_only_function_calls(content: Any) -> None:
     """Only a non-empty string adds a text part to a tool-call turn; the first call keeps the skip sentinel."""

@@ -557,6 +557,9 @@ def _convert_messages(
             parts = _code_execution_parts(message)
             # The model's own text belongs in its turn, ahead of any function calls it made.
             content = message.get("content")
+            if isinstance(content, list) and not message.get("tool_calls"):
+                # OpenAI also accepts assistant content as a list of text parts.
+                content = "".join(part["text"] for part in content if part.get("type") == "text")
             has_text = isinstance(content, str) and content
             # Code execution parts already give the turn content, so it needs no empty text part.
             if has_text or not (parts or message.get("tool_calls")):
