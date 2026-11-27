@@ -314,6 +314,24 @@ def test_create_chat_completion_preserves_timing_details() -> None:
     }
 
 
+@pytest.mark.parametrize(("prompt", "completion"), [(0, 0), (0, None), (None, 0), (None, None)])
+def test_streaming_chunk_reports_explicit_zero_usage(prompt: int | None, completion: int | None) -> None:
+    chunk = OllamaChatResponse(
+        model="llama3.1",
+        done=True,
+        done_reason="stop",
+        prompt_eval_count=prompt,
+        eval_count=completion,
+        message=OllamaMessage(role="assistant", content=""),
+    )
+    usage = _create_openai_chunk_from_ollama_chunk(chunk).usage
+    if prompt is None and completion is None:
+        assert usage is None
+    else:
+        assert usage is not None
+        assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (0, 0, 0)
+
+
 def test_streaming_chunk_preserves_timing_details() -> None:
     """Streaming usage keeps timing fields, including reported zero values."""
     chunk = OllamaChatResponse(

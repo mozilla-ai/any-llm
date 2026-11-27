@@ -107,7 +107,7 @@ def _ollama_timestamp_to_epoch(created_at: str) -> int:
 
 
 def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> ChatCompletionChunk:
-    """Convert an Ollama streaming chunk to OpenAI ChatCompletionChunk format."""
+    """Convert an Ollama streaming chunk, preserving usage even when reported counts are zero."""
 
     message = ollama_chunk.message
     created_str = ollama_chunk.created_at
@@ -161,7 +161,7 @@ def _create_openai_chunk_from_ollama_chunk(ollama_chunk: OllamaChatResponse) -> 
     prompt_tokens = ollama_chunk.prompt_eval_count
     completion_tokens = ollama_chunk.eval_count
     timing_details = _extract_ollama_timing_details(ollama_chunk)
-    if prompt_tokens or completion_tokens or timing_details:
+    if prompt_tokens is not None or completion_tokens is not None or timing_details:
         usage = CompletionUsage.model_validate(
             {
                 "prompt_tokens": prompt_tokens or 0,
