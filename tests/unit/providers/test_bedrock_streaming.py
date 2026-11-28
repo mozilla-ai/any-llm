@@ -97,17 +97,19 @@ async def _next_chunk(stream: AsyncIterator[ChatCompletionChunk]) -> ChatComplet
 
 
 class _CountingExecutor(ThreadPoolExecutor):
-    """One-worker pool that records how many jobs have been submitted."""
+    """One-worker pool that tracks submitted jobs and their futures."""
 
     def __init__(self) -> None:
         super().__init__(max_workers=1, thread_name_prefix="bedrock-queued")
         self.submitted = 0
+        self.futures: list[Future[Any]] = []
         self.second_job = asyncio.Event()
 
     @override
     def submit(self, fn: Any, /, *args: Any, **kwargs: Any) -> Future[Any]:
         self.submitted += 1
         future: Future[Any] = super().submit(fn, *args, **kwargs)
+        self.futures.append(future)
         if self.submitted == 2:
             self.second_job.set()
         return future
@@ -370,6 +372,11 @@ async def test_converse_stream_cancel_queued_read_finishes_and_closes_with_no_re
     event_stream = _FakeEventStream([_text("first"), _text("second")])
     stream = BedrockProvider._stream_converse(event_stream, MODEL, "req-1")
     async with _busy_single_worker_executor() as (executor, release):
+
+        async def wait_for_read_cancellation() -> None:
+            while not executor.futures[1].cancelled():  # noqa: ASYNC110
+                await asyncio.sleep(0)
+
         read = asyncio.create_task(_next_chunk(stream))
         try:
             await asyncio.wait_for(executor.second_job.wait(), timeout=2)
@@ -379,6 +386,7 @@ async def test_converse_stream_cancel_queued_read_finishes_and_closes_with_no_re
             assert not event_stream.closed
 
             read.cancel()
+            await asyncio.wait_for(wait_for_read_cancellation(), timeout=2)
             release.set()
             done, _pending = await asyncio.wait({read}, timeout=2)
             assert read in done
