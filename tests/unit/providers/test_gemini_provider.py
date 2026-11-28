@@ -3208,6 +3208,26 @@ def test_convert_messages_assistant_text_parts_become_one_text_part() -> None:
     assert [part.text for part in parts] == ["Hello, how can I help?"]
 
 
+def test_convert_messages_assistant_refusal_part_is_kept_in_order() -> None:
+    """A refusal part is the model's own words, so it is replayed in place, not dropped."""
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Part one. "},
+                {"type": "refusal", "refusal": "I can't help with that."},
+            ],
+        },
+    ]
+
+    formatted_messages, _ = _convert_messages(messages)
+
+    parts = formatted_messages[1].parts
+    assert parts is not None
+    assert [part.text for part in parts] == ["Part one. I can't help with that."]
+
+
 @pytest.mark.parametrize("content", [None, "", [{"type": "text", "text": "ignored"}]])
 def test_convert_messages_tool_call_turn_without_text_emits_only_function_calls(content: Any) -> None:
     """Only a non-empty string adds a text part to a tool-call turn; the first call keeps the skip sentinel."""
