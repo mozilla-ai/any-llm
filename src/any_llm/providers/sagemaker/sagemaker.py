@@ -22,6 +22,7 @@ try:
         _convert_response,
         _create_openai_chunk_from_sagemaker_chunk,
         _create_openai_embedding_response_from_sagemaker,
+        _iter_sagemaker_stream_lines,
     )
 except ImportError as e:
     MISSING_PACKAGES_ERROR = e
@@ -159,6 +160,10 @@ class SagemakerProvider(AnyLLM):
             raise UnsupportedParameterError(param, "sagemaker")
 
         if params.stream:
+            # Without "stream" in the body the container answers with a single non-streaming completion.
+            completion_kwargs["stream"] = True
+            if params.stream_options is not None:
+                completion_kwargs["stream_options"] = params.stream_options
             response = self.client.invoke_endpoint_with_response_stream(
                 EndpointName=params.model_id,
                 Body=json.dumps(completion_kwargs),
@@ -168,7 +173,7 @@ class SagemakerProvider(AnyLLM):
             event_stream = response["Body"]
             return (
                 self._convert_completion_chunk_response(event, model=params.model_id)
-                for event in event_stream
+                for event in _iter_sagemaker_stream_lines(event_stream)
                 if _create_openai_chunk_from_sagemaker_chunk(event, model=params.model_id) is not None
             )
 

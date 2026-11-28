@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterable, Iterator
 from time import time
 from typing import Any, Literal, cast
 
@@ -128,14 +129,43 @@ def _convert_response(response: dict[str, Any], model: str) -> ChatCompletion:
     )
 
 
+def _parse_stream_line(line: bytes) -> dict[str, Any] | None:
+    """Parse one line of a response stream, either JSON lines or server-sent events (`data: {...}`)."""
+    try:
+        payload = json.loads(line.strip().removeprefix(b"data:").decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _iter_sagemaker_stream_lines(events: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    """Regroup a SageMaker event stream into one `PayloadPart` event per line.
+
+    SageMaker does not align `PayloadPart` boundaries with the container's messages: a JSON object can be
+    split over several parts, and one part can carry several lines.
+    """
+    buffer = b""
+    for event in events:
+        buffer += event.get("PayloadPart", {}).get("Bytes", b"")
+        *lines, buffer = buffer.split(b"\n")
+        # Containers that don't newline-terminate their messages send a complete object per part.
+        if _parse_stream_line(buffer) is not None:
+            lines.append(buffer)
+            buffer = b""
+        for line in lines:
+            if line.strip():
+                yield {"PayloadPart": {"Bytes": line}}
+    if buffer.strip():
+        yield {"PayloadPart": {"Bytes": buffer}}
+
+
 def _create_openai_chunk_from_sagemaker_chunk(event: dict[str, Any], model: str) -> ChatCompletionChunk | None:
     """Create an OpenAI ChatCompletionChunk from a SageMaker streaming event."""
     if "PayloadPart" not in event:
         return None
 
-    try:
-        payload = json.loads(event["PayloadPart"]["Bytes"].decode("utf-8"))
-    except (json.JSONDecodeError, KeyError):
+    payload = _parse_stream_line(event["PayloadPart"].get("Bytes", b""))
+    if payload is None:
         return None
 
     content: str | None = None
@@ -183,12 +213,21 @@ def _create_openai_chunk_from_sagemaker_chunk(event: dict[str, Any], model: str)
     delta = ChoiceDelta(content=content, role="assistant", tool_calls=tool_calls)
     choice = ChunkChoice(delta=delta, finish_reason=finish_reason, index=0)
 
+    usage: CompletionUsage | None = None
+    if usage_data := payload.get("usage"):
+        usage = CompletionUsage(
+            completion_tokens=usage_data.get("completion_tokens", 0),
+            prompt_tokens=usage_data.get("prompt_tokens", 0),
+            total_tokens=usage_data.get("total_tokens", 0),
+        )
+
     return ChatCompletionChunk(
         id=payload.get("id") or f"chatcmpl-{int(time())}",
         choices=[choice],
         model=model,
         created=payload.get("created") or int(time()),
         object="chat.completion.chunk",
+        usage=usage,
     )
 
 
