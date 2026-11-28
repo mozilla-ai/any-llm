@@ -1,5 +1,6 @@
 import json
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -188,3 +189,56 @@ def test_convert_params_keeps_system_messages_in_messages() -> None:
 
     assert result["messages"] == messages
     assert "system" not in result
+
+
+def _stream_with_body(parts: list[bytes], **params: Any) -> tuple[list[Any], dict[str, Any]]:
+    """Run a streaming completion against a mocked runtime; return the chunks and the request body."""
+    with patch.object(SagemakerProvider, "_verify_and_set_api_key", return_value=None), patch("boto3.client"):
+        provider = SagemakerProvider()
+    provider.client.invoke_endpoint_with_response_stream.return_value = {
+        "Body": [{"PayloadPart": {"Bytes": part}} for part in parts]
+    }
+
+    result = provider._completion(
+        CompletionParams(model_id="model-id", messages=[{"role": "user", "content": "hi"}], stream=True, **params)
+    )
+    chunks = list(result)
+    body = json.loads(provider.client.invoke_endpoint_with_response_stream.call_args.kwargs["Body"])
+    return chunks, body
+
+
+def test_stream_request_body_asks_the_container_to_stream() -> None:
+    _, body = _stream_with_body([], stream_options={"include_usage": True})
+
+    assert body["stream"] is True
+    assert body["stream_options"] == {"include_usage": True}
+
+
+def test_stream_parses_server_sent_events_split_across_payload_parts() -> None:
+    chunks, _ = _stream_with_body(
+        [
+            b'data: {"choices": [{"index": 0, "delta": {"content": "Hel"}}]}\n\ndata: {"choices": [{"ind',
+            b'ex": 0, "delta": {"content": "lo"}, "finish_reason": "stop"}]}\n\n',
+            b'data: {"choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}\n\n',
+            b"data: [DONE]\n\n",
+        ]
+    )
+
+    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "Hello"
+    assert chunks[1].choices[0].finish_reason == "stop"
+    assert chunks[-1].usage is not None
+    assert chunks[-1].usage.total_tokens == 5
+
+
+@pytest.mark.parametrize(
+    "parts",
+    [
+        [b'{"outputs": [{"text": "a"}]}\n{"outputs": [{"text": "b"}]}\n'],
+        [b'{"outputs": ', b'[{"text": "a"}]}\n{"outputs": [{"text": "b"}]}'],
+        [b'{"outputs": [{"text": "a"}]}', b'{"outputs": [{"text": "b"}]}'],
+    ],
+)
+def test_stream_parses_json_lines(parts: list[bytes]) -> None:
+    chunks, _ = _stream_with_body(parts)
+
+    assert [chunk.choices[0].delta.content for chunk in chunks] == ["a", "b"]
